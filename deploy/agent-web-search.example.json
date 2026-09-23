@@ -1,0 +1,8 @@
+{
+  "AgentWebSearch": {
+    "Enabled": false,
+    "ApiKey": "",
+    "MaxResults": 5,
+    "TimeoutSeconds": 15
+  }
+}

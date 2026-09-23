@@ -1,0 +1,113 @@
+@page
+@model ToDo.Razor.Pages.Agents.IndexModel
+@{
+    ViewData["Title"] = "Agent 中心";
+    Layout = "/Pages/Shared/_Layout.cshtml";
+}
+<div class="container py-3">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div><h1 class="page-heading">Agent 工作台</h1><div class="page-subtitle">查看数字员工正在做什么、交付了什么，以及哪里需要你介入。</div></div>
+        <div class="d-flex flex-wrap gap-2">
+            @if (Model.IsSystemAdmin)
+            {
+                <a asp-page="/Agents/Manage/Index" class="btn btn-primary">Agent 管理</a>
+                <a asp-page="/Agents/WorkItems/Index" class="btn btn-outline-primary">执行中心</a>
+                <a href="/EventBus/Index" class="btn btn-outline-secondary">事件自动化</a>
+            }
+            <a href="/AiSessions/Index" class="btn btn-outline-secondary">全部执行记录</a>
+        </div>
+    </div>
+    <div asp-validation-summary="All" class="text-danger"></div>
+    @if (Model.IsSystemAdmin)
+    {
+        <details class="mb-3" open="@(!ViewData.ModelState.IsValid)"><summary class="text-muted mb-2">管理员调试（可选）</summary>
+        <div class="row g-3">
+        <div class="col-lg-5"><div class="card shadow-sm"><div class="card-header">已注册 Agent</div><div class="list-group list-group-flush">
+            @foreach (var agent in Model.Agents)
+            {
+                <div class="list-group-item"><div class="d-flex justify-content-between"><strong>@agent.Name</strong><span class="badge @(agent.IsEnabled ? "bg-success" : "bg-secondary")">@(agent.IsEnabled ? "启用" : "停用")</span></div><div class="small text-muted mt-1">@agent.AgentKey</div><div class="small">@agent.Description</div></div>
+            }
+            @if (Model.Agents.Count == 0) { <div class="list-group-item text-muted">暂无可用 Agent</div> }
+        </div></div></div>
+        <div class="col-lg-7"><div class="card shadow-sm"><div class="card-header">运行 Agent</div><div class="card-body">
+            <form method="post" asp-page-handler="Run" id="agentRunForm">
+                <div class="mb-3"><label asp-for="AgentKey" class="form-label">Agent</label><select asp-for="AgentKey" class="form-select">@foreach (var agent in Model.Agents.Where(a => a.IsEnabled)) { <option value="@agent.AgentKey">@agent.Name</option> }</select></div>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6"><label asp-for="ProjectId" class="form-label">项目</label><select asp-for="ProjectId" class="form-select"><option value="">不关联项目</option>@foreach (var project in Model.Projects) { <option value="@project.Id">@project.Name</option> }</select></div>
+                    <div class="col-md-6"><label asp-for="TaskId" class="form-label">任务</label><select asp-for="TaskId" class="form-select"><option value="">不关联任务</option>@foreach (var task in Model.Tasks) { var projectName = Model.Projects.FirstOrDefault(item => item.Id == task.ProjectId)?.Name; <option value="@task.Id" data-project-id="@task.ProjectId">@projectName · @task.Title</option> }</select></div>
+                </div>
+                <div class="mb-3"><label asp-for="Prompt" class="form-label">指令</label><textarea asp-for="Prompt" rows="6" class="form-control" placeholder="输入需要 Agent 处理的内容"></textarea></div>
+                <button class="btn btn-primary" id="agentRunSubmit" type="submit">加入后台运行队列</button>
+                <div id="agentRunProgress" class="ai-generation-status d-none mt-3" aria-live="polite"></div>
+            </form>
+        </div></div>
+        @if (!string.IsNullOrWhiteSpace(Model.LastResponse)) { <div class="card shadow-sm mt-3"><div class="card-header">本次执行结果</div><div class="card-body"><pre class="mb-0" style="white-space:pre-wrap">@Model.LastResponse</pre></div></div> }
+        </div>
+        </div>
+        </details>
+    }
+        <div class="card shadow-sm border-0">
+            <div class="card-body p-4">
+                <div class="d-flex flex-column flex-lg-row justify-content-between gap-4 align-items-lg-center">
+                    <div>
+                        <span class="badge bg-primary-subtle text-primary mb-2">自动分配</span>
+                        <h4>创建任务，不必选择具体 Agent</h4>
+                        <p class="text-muted mb-0">把执行主体设为“数字员工”，系统自动匹配、规划和执行。普通分析与报告通过检查后自动完成；重要变更、资料不足或检查未通过时，才在“待我处理”请你介入。</p>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 flex-shrink-0">
+                        <a asp-page="/Tasks/Index" class="btn btn-primary">创建或查看任务</a>
+                        <a asp-page="/ActionCenter/Index" class="btn btn-outline-secondary">待我处理</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    <div class="card shadow-sm mt-3"><div class="card-header d-flex justify-content-between align-items-center"><span>最近执行</span><a asp-page="/AiSessions/Index" class="small text-decoration-none">查看全部</a></div><div class="table-responsive"><table class="table table-hover mb-0 align-middle"><thead><tr><th>任务 / 项目</th><th>数字员工</th><th>状态</th><th>最近活动</th><th></th></tr></thead><tbody>
+    @foreach (var session in Model.RecentSessions)
+    {
+        var agentName = Model.Agents.FirstOrDefault(item => string.Equals(item.AgentKey, session.AgentKey, StringComparison.OrdinalIgnoreCase))?.Name ?? session.AgentKey;
+        var statusText = session.Status switch { AiSessionStatus.Running => "执行中", AiSessionStatus.WaitingHuman => "已回复，可继续提问", AiSessionStatus.Succeeded => "本轮已结束", AiSessionStatus.Cancelled => "已取消", _ => "执行失败" };
+        var statusClass = session.Status switch { AiSessionStatus.Running => "text-primary", AiSessionStatus.WaitingHuman => "text-success", AiSessionStatus.Succeeded => "text-success", AiSessionStatus.Cancelled => "text-secondary", _ => "text-danger" };
+        var taskTitle = session.TaskId.HasValue && Model.TaskTitles.TryGetValue(session.TaskId.Value, out var title) ? title : "独立执行";
+        var projectName = session.ProjectId.HasValue && Model.ProjectNames.TryGetValue(session.ProjectId.Value, out var name) ? name : "未关联项目";
+        <tr>
+            <td><div class="fw-semibold">@taskTitle</div><div class="small text-muted">@projectName</div></td>
+            <td><div>@agentName</div><div class="technical-id">@session.AgentKey</div></td>
+            <td><span class="@statusClass"><span class="status-dot"></span>@statusText</span></td>
+            <td><div>@session.LastActivityAt.ToString("MM-dd HH:mm")</div>@if (session.DurationMilliseconds > 0) { <div class="small text-muted">耗时 @Math.Max(1, session.DurationMilliseconds / 1000) 秒</div> }</td>
+            <td>@if (session.TaskId.HasValue) { <a asp-page="/Tasks/Details" asp-route-id="@session.TaskId" class="btn btn-sm btn-outline-primary">查看任务与交付</a> } else { <a asp-page="/AiSessions/Details" asp-route-id="@session.Id" class="btn btn-sm btn-outline-secondary">查看结果</a> }</td>
+        </tr>
+    }
+    @if (Model.RecentSessions.Count == 0) { <tr><td colspan="5" class="text-center text-muted py-4">还没有数字员工执行记录</td></tr> }
+    </tbody></table></div></div>
+</div>
+
+@section Scripts {
+    @if (Model.IsSystemAdmin)
+    {
+        <script>
+        const projectSelect = document.querySelector('#ProjectId');
+        const taskSelect = document.querySelector('#TaskId');
+        const filterTasks = () => {
+            const projectId = projectSelect.value;
+            for (const option of taskSelect.options) {
+                if (!option.value) continue;
+                option.hidden = !!projectId && option.dataset.projectId !== projectId;
+            }
+            if (taskSelect.selectedOptions[0]?.hidden) taskSelect.value = '';
+        };
+        projectSelect.addEventListener('change', filterTasks);
+        taskSelect.addEventListener('change', () => {
+            const projectId = taskSelect.selectedOptions[0]?.dataset.projectId;
+            if (projectId) projectSelect.value = projectId;
+        });
+        filterTasks();
+        AiGeneration.bindForm(
+            '#agentRunForm',
+            '#agentRunSubmit',
+            '#agentRunProgress',
+            ['校验 Agent 配置', '创建 AI Session', '加入后台队列', '跳转执行详情'],
+            '正在加入后台队列...'
+        );
+        </script>
+    }
+}

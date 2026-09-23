@@ -1,0 +1,40 @@
+@page
+@model ToDo.Razor.Pages.SystemHealth.IndexModel
+@{
+    ViewData["Title"] = "系统健康";
+    Layout = "/Pages/Shared/_Layout.cshtml";
+    var statusClass = Model.Snapshot.Status == "healthy" ? "text-success" : Model.Snapshot.Status == "degraded" ? "text-warning" : "text-danger";
+}
+
+<div class="container-fluid py-3 px-2 px-lg-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div>
+            <h2 class="mb-1">系统健康</h2>
+            <div class="text-muted">Agent 队列、人工关口与生产安全基线。</div>
+        </div>
+        <a href="/health/ready" target="_blank" rel="noopener" class="btn btn-outline-secondary">就绪探针</a>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-sm-6 col-xl-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="text-muted small">总体状态</div><div class="fs-3 fw-semibold @statusClass">@Model.Snapshot.Status</div><div class="small text-muted">数据库：@(Model.Snapshot.DatabaseAvailable ? "可连接" : "不可用")</div></div></div></div>
+        <div class="col-sm-6 col-xl-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="text-muted small">待执行队列</div><div class="display-6">@(Model.Snapshot.PendingAssignmentJobs + Model.Snapshot.PendingManualJobs)</div><div class="small text-muted">自动派单 @Model.Snapshot.PendingAssignmentJobs · 手工运行 @Model.Snapshot.PendingManualJobs</div></div></div></div>
+        <div class="col-sm-6 col-xl-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="text-muted small">超时执行锁</div><div class="display-6 @(Model.Snapshot.StaleJobs > 0 ? "text-danger" : "text-success")">@Model.Snapshot.StaleJobs</div><div class="small text-muted">后台维护会自动释放并重试</div></div></div></div>
+        <div class="col-sm-6 col-xl-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="text-muted small">待人工处理</div><div class="display-6">@(Model.Snapshot.PendingApprovals + Model.Snapshot.PendingDeliveries)</div><div class="small text-muted">审批 @Model.Snapshot.PendingApprovals · 交付验收 @Model.Snapshot.PendingDeliveries</div></div></div></div>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-header">生产安全基线</div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4"><div class="text-muted small">交付/审批 HMAC 签名</div><div class="fw-semibold @(Model.SigningConfigured ? "text-success" : "text-warning")">@(Model.SigningConfigured ? $"已配置 · {Model.SigningKeyId}" : "开发环境未配置")</div></div>
+                <div class="col-md-4"><div class="text-muted small">自动数据留存</div><div class="fw-semibold">@(Model.RetentionEnabled ? "已启用" : "默认关闭")</div></div>
+                <div class="col-md-4"><div class="text-muted small">遥测源</div><code>@Model.TelemetrySource</code></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="alert alert-light border mb-0">
+        最近检查：@Model.Snapshot.CheckedAt.ToString("yyyy-MM-dd HH:mm:ss")。
+        生产环境必须配置签名密钥；队列出现超时锁或数据库不可连接时，就绪状态会降级或失败。
+    </div>
+</div>

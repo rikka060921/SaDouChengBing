@@ -1,0 +1,166 @@
+﻿@page "{id:int?}/{projectId:int?}"
+@model ToDo.Razor.Pages.TaskGroups.EditModel
+
+<div class="container mt-4">
+    <div class="mb-4">
+        @* <h1 class="display-5 fw-bold">@((Model.TaskGroup.Id == 0) ? "新建分组" : "编辑分组")</h1> *@
+        <h1 class="display-5">
+            @((Model.TaskGroup.Id == 0) ? "新建任务分组" : "编辑任务分组")
+        </h1>
+        <hr/>
+    </div>
+    <form method="post">
+        <!-- 确保编辑时传回 Id -->
+        <input type="hidden" asp-for="TaskGroup.Id" />
+        <input type="hidden" asp-for="OriginalProjectId" />
+        @Html.AntiForgeryToken()
+
+        <div class="mb-3">
+            <label asp-for="TaskGroup.Name" class="form-label"></label>
+            <input asp-for="TaskGroup.Name" class="form-control"/>
+            <span asp-validation-for="TaskGroup.Name" class="text-danger small"></span>
+        </div>
+
+        @* <div>
+            <label asp-for="TaskGroup.ProjectId">所属项目</label>
+            <select asp-for="TaskGroup.ProjectId" asp-items="Model.ProjectList" class="form-select"></select>
+            <span asp-validation-for="TaskGroup.ProjectId" class="text-danger"></span>
+        </div> *@
+
+        <div>
+            <label asp-for="TaskGroup.ProjectId">所属项目</label>
+            <select asp-for="TaskGroup.ProjectId" asp-items="Model.ProjectList" class="form-select" disabled></select>
+            <input type="hidden" asp-for="TaskGroup.ProjectId" />
+            <span asp-validation-for="TaskGroup.ProjectId" class="text-danger"></span>
+        </div>
+
+
+        @* <div class="mb-4">
+            <label asp-for="TaskGroup.Description" class="form-label"></label>
+            <textarea asp-for="TaskGroup.Description" rows="4" class="form-control"></textarea>
+        </div> *@
+
+        <div class="mb-3">
+            <label class="form-label fw-bold text-dark">任务描述（支持 Markdown）</label>
+
+            <!-- 工具栏 -->
+            <div class="border rounded p-2 bg-light mb-2 d-flex flex-wrap gap-1">
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="insertText('**', '**')">粗体 (Ctrl+B)</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="insertText('*', '*')">斜体 (Ctrl+I)</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="insertText('# ', '')">一级标题</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="insertText('## ', '')">二级标题</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="insertText('### ', '')">三级标题</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="insertText('- ', '')">无序列表</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="insertText('1. ', '')">有序列表</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="insertText('```\n', '\n```')">代码块</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="insertText('![图片描述](', ')')">图片</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="insertText('[链接文本](', ')')">链接</button>
+            </div>
+
+            <!-- 编辑和预览区域 -->
+            <div class="row">
+                <!-- 编辑区 -->
+                <div class="col-md-6 mb-3">
+                    <div class="card h-100">
+                        <div class="card-header bg-light">编辑区</div>
+                        <div class="card-body p-0">
+                            <textarea asp-for="TaskGroup.Description"
+                                      class="form-control border-0 rounded-0 h-100"
+                                      rows="15"
+                                      placeholder="输入 Markdown 内容..."
+                                      id="markdown-editor"
+                                      required></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 预览区 -->
+                <div class="col-md-6 mb-3">
+                    <div class="card h-100">
+                        <div class="card-header bg-light">预览区</div>
+                        <div class="card-body overflow-auto" id="markdown-preview">
+                            <div class="text-muted">实时预览将在这里显示...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <span asp-validation-for="TaskGroup.Description" class="text-danger"></span>
+            <div class="form-text mt-1">
+                Markdown 示例：**粗体**、*斜体*、# 标题、- 列表项、```代码块```
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-between">
+            <button type="submit" class="btn btn-primary">保存</button>
+            <a asp-page="Index" asp-route-projectId="@Model.CurrentProjectId" class="btn btn-outline-secondary">返回列表</a>
+        </div>
+    </form>
+
+    <!-- 删除 -->
+    @if (Model.TaskGroup.Id != 0)
+{
+    <form method="post" asp-page-handler="Delete" onsubmit="return confirm('确定要删除该分组吗？');">
+        <input type="hidden" asp-for="TaskGroup.Id" />
+        <button type="submit" class="btn btn-danger mt-3">删除该分组</button>
+    </form>
+}
+
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js"></script>
+
+    <script>
+        const editor = document.getElementById("markdown-editor");
+        const preview = document.getElementById("markdown-preview");
+
+        // 安全性
+        marked.setOptions({
+            mangle: false, // 避免邮箱编码
+            headerIds: false,
+            sanitizer: (html) => DOMPurify.sanitize(html) // 配合 DOMPurify
+        });
+
+
+        // 插入文本工具函数
+        function insertText(prefix, suffix) {
+            const start = editor.selectionStart;
+            const end = editor.selectionEnd;
+            const selected = editor.value.substring(start, end);
+
+            // 拼接新内容
+            editor.value =
+                editor.value.substring(0, start) +
+                prefix + selected + suffix +
+                editor.value.substring(end);
+
+            editor.focus();
+
+            // 把光标放到选中文本中间，方便继续编辑
+            editor.selectionStart = start + prefix.length;
+            editor.selectionEnd = end + prefix.length;
+
+            updatePreview();
+        }
+
+        // 实时预览
+        function updatePreview() {
+            const content = editor.value.trim();
+
+            if (content) {
+                // 先用 marked 解析，再用 DOMPurify 过滤，防止 XSS
+                const dirtyHtml = marked.parse(content);
+                preview.innerHTML = DOMPurify.sanitize(dirtyHtml);
+            } else {
+                preview.innerHTML = '<div class="text-muted">实时预览将在这里显示...</div>';
+            }
+        }
+
+        editor.addEventListener("input", updatePreview);
+        window.addEventListener("DOMContentLoaded", updatePreview);
+    </script>
+}
+

@@ -1,0 +1,419 @@
+﻿@page "{id:int}"
+@model ToDo.Razor.Pages.Projects.DetailsModel
+@{
+    ViewData["Title"] = "项目详情";
+}
+
+<div class="container mt-4">
+    @{ ViewData["ProjectId"] = Model.Project.Id; ViewData["ProjectSection"] = "overview"; }
+    <partial name="_ProjectNav" view-data="ViewData" />
+
+    <!-- 显示成功消息 -->
+    @if (TempData["SuccessMessage"] != null)
+    {
+        <div class="alert alert-success alert-dismissible fade show">
+            @TempData["SuccessMessage"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+
+    <!-- 显示表单验证错误 -->
+    <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+
+    <div class="card shadow-sm">
+        <div class="card-header bg-primary text-white">
+            <div class="d-flex justify-content-between align-items-center">
+                <h2 class="h4 mb-0">
+                    <i class="bi bi-folder me-2"></i>@Model.Project.Name
+                </h2>
+                <span class="badge @GetStatusBadgeClass(Model.Project.Status)">
+                    @GetStatusDisplayText(Model.Project.Status)
+                </span>
+            </div>
+        </div>
+
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-4">
+                        <h5 class="text-primary mb-3">
+                            <i class="bi bi-info-circle me-2"></i>基本信息
+                        </h5>
+                        <dl class="row">
+                            <dt class="col-sm-4">需求对象</dt>
+                            <dd class="col-sm-8">@(Model.Project.Requirements ?? "无对象")</dd>
+
+                            <dt class="col-sm-4">创建时间</dt>
+                            <dd class="col-sm-8">@AppTime.ToBeijingTime(Model.Project.CreatedAt).ToString("yyyy-MM-dd HH:mm")</dd>
+                            <dt class="col-sm-4">创建人</dt>
+                            <dd class="col-sm-8">@Model.Project.CreatedByUserName</dd>
+
+                            <dt class="col-sm-4">关联任务</dt>
+                            <dd class="col-sm-8">@Model.TaskCount 个</dd>
+                        </dl>
+                    </div>
+                </div>
+
+                <div class="col-md-6">
+                    <div class="border-start ps-4">
+                        <h5 class="text-primary mb-3">
+                            <i class="bi bi-card-checklist me-2"></i>项目描述
+                        </h5>
+                        <div class="bg-light p-3 rounded">
+                            @if (string.IsNullOrEmpty(Model.Project.Description))
+                            {
+                                <p class="text-muted mb-0"><i>暂无项目描述</i></p>
+                            }
+                            else
+                            {
+                                <div class="text-break">@Model.Project.Description</div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card-footer bg-transparent">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <a href="/Projects/Index" class="btn btn-outline-secondary">
+                        <i class="bi bi-arrow-left me-1"></i>返回列表
+                    </a>
+                </div>
+                <div class="btn-group">
+                    <a asp-page="/TaskGroups/Index" asp-route-projectId="@Model.CurrentProjectId" class="btn btn-outline-primary">
+                        <i class="bi bi-collection me-1"></i>查看任务分组
+                    </a>
+                    <a asp-page="/Tasks/Index" asp-route-projectId="@Model.Project.Id" class="btn btn-primary">
+                        查看项目任务
+                    </a>
+                    <a asp-page="/Projects/Materials" asp-route-projectId="@Model.Project.Id" class="btn btn-outline-primary">
+                        <i class="bi bi-folder2-open me-1"></i>项目资料
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mt-4">
+        <div class="card-header">
+            <h5>项目成员</h5>
+        </div>
+        <div class="card-body">
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>姓名</th>
+                        <th>用户名</th>
+                        <th>角色</th>
+                        @if (Model.CanManageMembers)
+                        {
+                            <th>操作</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var member in Model.Members)
+                    {
+                        var isCurrentUser = member.UserId == Model.CurrentUserId;
+                        var adminCount = Model.GetAdminCount();
+                        var isLastAdmin = member.IsAdmin && adminCount <= 1;
+                        var canToggleAdmin = Model.CanToggleAdmin(member.UserId, member.IsAdmin);
+                        var canRemoveMember = Model.CanRemoveMember(member.UserId);
+
+                        <tr>
+                            <td>
+                                @member.RealName
+                                @if (isCurrentUser)
+                                {
+                                    <span class="badge bg-info ms-1">我</span>
+                                }
+                            </td>
+                            <td>@member.UserName</td>
+                            <td>
+                                <span class="badge @(member.IsAdmin ? "bg-primary" : "bg-secondary")">
+                                    @(member.IsAdmin ? "管理员" : "成员")
+                                </span>
+                            </td>
+                            @if (Model.CanManageMembers)
+                            {
+                                <td>
+                                    <!-- 切换管理员状态按钮 -->
+                                    @if (canToggleAdmin)
+                                    {
+                                        <button class="btn btn-sm @(member.IsAdmin ? "btn-warning" : "btn-success") toggle-admin-btn"
+                                                data-user-id="@member.UserId"
+                                                title="@(member.IsAdmin ? "取消管理员权限" : "设为管理员")">
+                                            @(member.IsAdmin ? "取消管理员" : "设为管理员")
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn btn-sm @(member.IsAdmin ? "btn-warning" : "btn-success")" disabled
+                                                title="@(isLastAdmin ? "不能取消最后一个管理员" : "不能操作自己")">
+                                            @(member.IsAdmin ? "取消管理员" : "设为管理员")
+                                        </button>
+                                    }
+
+                                    <!-- 移除成员按钮 -->
+                                    @if (canRemoveMember)
+                                    {
+                                        <button class="btn btn-sm btn-danger remove-member-btn"
+                                                data-user-id="@member.UserId"
+                                                title="移除成员">
+                                            移除
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn btn-sm btn-danger" disabled
+                                                title="@(isCurrentUser ? "不能移除自己" : isLastAdmin ? "不能移除最后一个管理员" : "无权限")">
+                                            移除
+                                        </button>
+                                    }
+
+                                    <!-- 提示信息 -->
+                                    @if (!canToggleAdmin || !canRemoveMember)
+                                    {
+                                        <div class="mt-1">
+                                            @if (isLastAdmin)
+                                            {
+                                                <small class="text-warning"><i class="bi bi-exclamation-triangle"></i> 最后一个管理员</small>
+                                            }
+                                            else if (isCurrentUser)
+                                            {
+                                                <small class="text-info"><i class="bi bi-person"></i> 当前用户</small>
+                                            }
+                                        </div>
+                                    }
+                                </td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+            @if (Model.CanManageMembers)
+            {
+                <div class="mt-3">
+                    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addMemberModal">
+                        <i class="bi bi-plus"></i> 添加成员
+                    </button>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<!-- 添加成员模态框 -->
+@if (Model.CanManageMembers)
+{
+<div class="modal fade" id="addMemberModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">添加项目成员</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post" asp-page-handler="AddMember">
+                <input type="hidden" name="id" value="@Model.Project.Id" />
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">选择用户</label>
+                        <select asp-for="Input.UserId" class="form-select" required>
+                            <option value="">-- 请选择用户 --</option>
+                            @foreach (var user in Model.ActiveUsers)
+                            {
+                                <option value="@user.Value">@user.Text</option>
+                            }
+                        </select>
+                        <span asp-validation-for="Input.UserId" class="text-danger"></span>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" asp-for="Input.MakeAdmin">
+                        <label class="form-check-label" asp-for="Input.MakeAdmin">设为项目管理员</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">确认添加</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+}
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+
+    <script>
+        $(document).ready(function() {
+            // 显示临时消息的函数
+            function showTempMessage(type, message) {
+                const safeType = ['success', 'danger', 'warning', 'info'].includes(type) ? type : 'info';
+                const alert = $('<div>')
+                    .addClass(`alert alert-${safeType} alert-dismissible fade show position-fixed top-0 end-0 m-3`)
+                    .css('z-index', 1100)
+                    .text(message);
+                alert.append($('<button>', {
+                    type: 'button',
+                    class: 'btn-close',
+                    'data-bs-dismiss': 'alert',
+                    'aria-label': '关闭'
+                }));
+                $('body').append(alert);
+                setTimeout(() => alert.alert('close'), 5000);
+            }
+
+            // 重新加载可添加用户列表的函数
+            function reloadActiveUsers() {
+                $.ajax({
+                    url: `?handler=ActiveUsers&id=@Model.CurrentProjectId`,
+                    method: 'GET',
+                    success: function(response) {
+                        if (response.success && response.users) {
+                            const select = $('#Input_UserId');
+                            select.empty();
+                            select.append('<option value="">-- 请选择用户 --</option>');
+
+                            response.users.forEach(function(user) {
+                                select.append($('<option>', {
+                                    value: user.value,
+                                    text: user.text
+                                }));
+                            });
+                        }
+                    },
+                    error: function(xhr) {
+                        console.error('重新加载用户列表失败:', xhr);
+                    }
+                });
+            }
+
+            // 切换管理员状态
+            $('.toggle-admin-btn').click(function() {
+                const userId = $(this).data('user-id');
+                const isAdmin = $(this).text().includes('取消');
+                const btn = $(this);
+
+                if (confirm(`确定要${isAdmin ? '取消' : '设为'}管理员吗？`)) {
+                    btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> 处理中...');
+
+                    $.ajax({
+                        url: `?handler=ToggleAdmin&id=@Model.Project.Id`,
+                        method: 'POST',
+                        headers: {
+                            "RequestVerificationToken": $('input[name="__RequestVerificationToken"]').val()
+                        },
+                        data: { TargetUserId: userId },
+                        success: function(response) {
+                            if (response.success) {
+                                showTempMessage('success', `成功${isAdmin ? '取消' : '设置'}管理员权限`);
+                                window.location.reload();
+                            } else {
+                                btn.prop('disabled', false).text(isAdmin ? '取消管理员' : '设为管理员');
+                                showTempMessage('danger', response.message || '操作失败');
+                            }
+                        },
+                        error: function(xhr) {
+                            btn.prop('disabled', false).text(isAdmin ? '取消管理员' : '设为管理员');
+                            const errorMsg = xhr.responseJSON?.message || '服务器错误，请稍后重试';
+                            showTempMessage('danger', errorMsg);
+                        }
+                    });
+                }
+            });
+
+            // 移除成员
+            $('.remove-member-btn').click(function() {
+                const userId = $(this).data('user-id');
+                const btn = $(this);
+                const row = btn.closest('tr');
+
+                if (confirm('确定要移除此成员吗？')) {
+                    btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> 处理中...');
+
+                    $.ajax({
+                        url: `?handler=RemoveMember&id=@Model.Project.Id`,
+                        method: 'POST',
+                        headers: {
+                            "RequestVerificationToken": $('input[name="__RequestVerificationToken"]').val()
+                        },
+                        data: { TargetUserId: userId },
+                        success: function(response) {
+                            if (response.success) {
+                                showTempMessage('success', '成员移除成功');
+
+                                // 移除表格行
+                                row.fadeOut(400, function() {
+                                    $(this).remove();
+
+                                    // 重新加载可添加用户列表
+                                    reloadActiveUsers();
+                                });
+                            } else {
+                                btn.prop('disabled', false).text('移除');
+                                showTempMessage('danger', response.message || '移除成员失败');
+                            }
+                        },
+                        error: function(xhr) {
+                            btn.prop('disabled', false).text('移除');
+                            const errorMsg = xhr.responseJSON?.message || '服务器错误，请稍后重试';
+                            showTempMessage('danger', errorMsg);
+                        }
+                    });
+                }
+            });
+
+            // 添加成员模态框显示时重新加载用户列表
+            $('#addMemberModal').on('show.bs.modal', function() {
+                reloadActiveUsers();
+            });
+        });
+    </script>
+}
+
+@functions {
+    string GetStatusBadgeClass(ProjectStatus status)
+    {
+        return status switch
+        {
+            ProjectStatus.Active => "bg-light text-success",
+            ProjectStatus.Archived => "bg-light text-dark",
+            _ => "bg-light text-secondary"
+        };
+    }
+
+    string GetStatusDisplayText(ProjectStatus status)
+    {
+        return status switch
+        {
+            ProjectStatus.Active => "活跃",
+            ProjectStatus.Archived => "已归档",
+            _ => status.ToString()
+        };
+    }
+}
+
+<style>
+    .card {
+        border-radius: 0.5rem;
+        border: none;
+    }
+
+    .card-header {
+        border-radius: 0.5rem 0.5rem 0 0 !important;
+    }
+
+    dt {
+        font-weight: 500;
+        color: #6c757d;
+    }
+
+    .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+</style>

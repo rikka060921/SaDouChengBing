@@ -1,0 +1,119 @@
+﻿@page
+@model ToDo.Razor.Pages.Projects.CreateModel
+@{
+    ViewData["Title"] = "创建项目";
+}
+
+<!-- 页面标题 -->
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-12">
+            <h1 class="display-5">创建新项目</h1>  <!-- 只添加 display-5 类 -->
+            <hr />
+
+            <!-- 保持原有内容不变... -->
+        </div>
+    </div>
+</div>
+
+<!-- 创建项目表单 -->
+<div class="card border-0 shadow-sm">
+    <div class="card-body">
+        <!-- 在表单上方添加消息显示区域 -->
+        @if (TempData["ErrorMessage"] != null)
+        {
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                @TempData["ErrorMessage"]
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        }
+
+        @if (TempData["SuccessMessage"] != null)
+        {
+            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                @TempData["SuccessMessage"]
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        }
+        <form method="post" enctype="multipart/form-data">
+            <div class="mb-4">
+                <label asp-for="Project.Name" class="form-label fw-bold text-dark">项目名称</label>
+                <input asp-for="Project.Name" class="form-control form-control-lg" placeholder="请输入项目名称" required />
+                <span asp-validation-for="Project.Name" class="text-danger"></span>
+                <div class="form-text">项目名称是项目的唯一标识，最多255个字符。</div>
+            </div>
+
+            <div class="mb-4">
+                <label asp-for="Project.Description" class="form-label fw-bold text-dark">项目描述</label>
+                <textarea asp-for="Project.Description" class="form-control" rows="5" placeholder="请输入项目描述（可选）"></textarea>
+                <span asp-validation-for="Project.Description" class="text-danger"></span>
+                <div class="form-text">描述项目的目标、范围和背景信息，最多1000个字符。</div>
+            </div>
+
+            <div class="mb-4">
+                <label asp-for="Project.Requirements" class="form-label fw-bold text-dark">需求对象</label>
+                <textarea asp-for="Project.Requirements" class="form-control" rows="5" placeholder="请输入需求对象" required></textarea>
+                <span asp-validation-for="Project.Requirements" class="text-danger"></span>
+                <div class="form-text">描述项目的需求对象，最多50个字符。</div>
+            </div>
+
+            <!-- 根据用户角色显示不同的选项 -->
+            @if (User.IsInRole("SystemAdmin"))
+            {
+                <div class="alert alert-info mb-4">
+                    <i class="bi bi-shield-lock"></i> 您以系统管理员身份创建项目，将自动成为项目管理员。
+                </div>
+            }
+            else if (User.IsInRole("TeamMember"))
+            {
+                <div class="alert alert-info mb-4">
+                    <i class="bi bi-people"></i> 您以团队成员身份创建项目，将自动成为项目管理员。
+                </div>
+            }
+
+            <div class="mt-6">
+                <button type="submit" class="btn btn-primary btn-lg">
+                    <i class="bi bi-save"></i> 创建项目
+                </button>
+                <a href="/Projects" class="btn btn-outline-secondary btn-lg ms-3">
+                    <i class="bi bi-arrow-left"></i> 返回
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        // 初始化Bootstrap的工具提示
+        document.addEventListener('DOMContentLoaded', function() {
+            // 初始化alert的关闭按钮
+            var alertList = [].slice.call(document.querySelectorAll('.alert'));
+            alertList.map(function (alertEl) {
+                new bootstrap.Alert(alertEl)
+            });
+
+            // 实时验证项目名称
+            $('#Project_Name').on('blur', function() {
+                var projectName = $(this).val();
+                if (!projectName) return;
+
+                $.ajax({
+                    url: '/Projects/Create?handler=CheckProjectName',
+                    type: 'POST',
+                    headers: {
+                        "RequestVerificationToken": $('input[name="__RequestVerificationToken"]').val()
+                    },
+                    data: { projectName: projectName },
+                    success: function(response) {
+                        if (response.exists) {
+                            $('#name-error').text('项目名称已存在').show();
+                        } else {
+                            $('#name-error').hide();
+                        }
+                    }
+                });
+            });
+        });
+    </script>
+}

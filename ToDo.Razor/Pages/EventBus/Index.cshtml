@@ -1,0 +1,287 @@
+@page
+@model ToDo.Razor.Pages.EventBus.IndexModel
+@{
+    ViewData["Title"] = "事件自动化";
+    Layout = "/Pages/Shared/_Layout.cshtml";
+}
+
+<div class="container-fluid py-3 px-2 px-lg-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div>
+            <h2 class="mb-1">事件自动化</h2>
+            <div class="text-muted">配置“事件 → Agent”规则，系统自动匹配、排队并执行。</div>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="/Agents/WorkItems" class="btn btn-outline-primary">任务执行中心</a>
+            <a href="/Agents/Index" class="btn btn-outline-secondary">返回 Agent 中心</a>
+        </div>
+    </div>
+
+    @if (TempData["SuccessMessage"] != null)
+    {
+        <div class="alert alert-success">@TempData["SuccessMessage"]</div>
+    }
+    @if (TempData["ErrorMessage"] != null)
+    {
+        <div class="alert alert-danger">@TempData["ErrorMessage"]</div>
+    }
+
+    <div class="alert alert-light border small">
+        <strong>安全边界：</strong>规则只能由系统管理员配置；低风险操作可直接执行，中风险操作由 AI 自动审核，高风险操作必须人工审批；无法确定时自动转人工。
+        <code>ai.session.*</code>、<code>agent.tool.*</code> 等内部事件禁止订阅，避免 Agent 自己触发自己形成循环。
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-12 col-xl-5">
+            <div class="card shadow-sm h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>@(Model.Rule.Id > 0 ? "编辑订阅规则" : "新增订阅规则")</span>
+                    @if (Model.Rule.Id > 0)
+                    {
+                        <a asp-page="Index" class="btn btn-sm btn-outline-secondary">取消编辑</a>
+                    }
+                </div>
+                <div class="card-body">
+                    <form method="post" asp-page-handler="SaveRule">
+                        <input asp-for="Rule.Id" type="hidden" />
+                        <div class="mb-3">
+                            <label asp-for="Rule.Name" class="form-label">规则名称</label>
+                            <input asp-for="Rule.Name" class="form-control" placeholder="例如：日报完成后生成风险建议" />
+                        </div>
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-7">
+                                <label asp-for="Rule.EventType" class="form-label">精确事件类型</label>
+                                <input asp-for="Rule.EventType" class="form-control" list="agent-event-types" placeholder="daily-report.generated" />
+                                <datalist id="agent-event-types">
+                                    <option value="task.created"></option>
+                                    <option value="task.updated"></option>
+                                    <option value="task.comment-added"></option>
+                                    <option value="task.reviewed"></option>
+                                    <option value="meeting-minutes.published"></option>
+                                    <option value="meeting-minutes.updated"></option>
+                                    <option value="project-document.version-created"></option>
+                                    <option value="project-document.category-changed"></option>
+                                    <option value="project-document.version-rolled-back"></option>
+                                    <option value="daily-report.generated"></option>
+                                    <option value="personal-daily-summary.generated"></option>
+                                    <option value="red-blue.completed"></option>
+                                </datalist>
+                            </div>
+                            <div class="col-md-5">
+                                <label asp-for="Rule.AgentDefinitionId" class="form-label">执行 Agent</label>
+                                <select asp-for="Rule.AgentDefinitionId" class="form-select">
+                                    <option value="0">请选择</option>
+                                    @foreach (var agent in Model.Agents)
+                                    {
+                                        <option value="@agent.Id">@agent.Name</option>
+                                    }
+                                </select>
+                            </div>
+                        </div>
+                        <div class="border rounded p-3 mb-3">
+                            <div class="fw-semibold mb-2">可视化触发条件（可选）</div>
+                            <div class="row g-2">
+                                <div class="col-md-5">
+                                    <label asp-for="Rule.ConditionField" class="form-label small">条件字段</label>
+                                    <input asp-for="Rule.ConditionField" class="form-control" list="event-condition-fields" placeholder="payload.status" />
+                                    <datalist id="event-condition-fields">
+                                        <option value="aggregateType"></option><option value="aggregateId"></option>
+                                        <option value="projectId"></option><option value="taskId"></option>
+                                        <option value="payload.status"></option><option value="payload.priority"></option>
+                                        <option value="payload.source"></option><option value="payload.changeType"></option>
+                                    </datalist>
+                                </div>
+                                <div class="col-md-3">
+                                    <label asp-for="Rule.ConditionOperator" class="form-label small">判断方式</label>
+                                    <select asp-for="Rule.ConditionOperator" class="form-select">
+                                        <option value="0">不设置条件</option>
+                                        <option value="1">等于</option>
+                                        <option value="2">不等于</option>
+                                        <option value="3">包含</option>
+                                        <option value="4">开头是</option>
+                                        <option value="5">数值大于</option>
+                                        <option value="6">数值小于</option>
+                                        <option value="7">字段存在</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-4"><label asp-for="Rule.ConditionValue" class="form-label small">比较值</label><input asp-for="Rule.ConditionValue" class="form-control" placeholder="例如：High" /></div>
+                            </div>
+                            <div class="form-text">字段支持聚合信息、项目/任务 ID，以及最多五层的 payload 路径。“字段存在”不需要比较值。</div>
+                        </div>
+                        <div class="row g-3 mb-3">
+                            <div class="col-6 col-md-3"><label asp-for="Rule.MaxSteps" class="form-label">最多步骤</label><input asp-for="Rule.MaxSteps" type="number" min="1" max="10" class="form-control" /></div>
+                            <div class="col-6 col-md-3"><label asp-for="Rule.DailyExecutionLimit" class="form-label">每日上限</label><input asp-for="Rule.DailyExecutionLimit" type="number" min="1" max="1000" class="form-control" /></div>
+                            <div class="col-12 col-md-6"><label asp-for="Rule.MaxTokenBudget" class="form-label">单次 Token 预算</label><input asp-for="Rule.MaxTokenBudget" type="number" min="256" max="200000" class="form-control" /></div>
+                        </div>
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-6">
+                                <label asp-for="Rule.ProjectId" class="form-label">项目范围</label>
+                                <select asp-for="Rule.ProjectId" class="form-select">
+                                    <option value="">跟随事件</option>
+                                    @foreach (var project in Model.Projects)
+                                    {
+                                        <option value="@project.Id">@project.Name</option>
+                                    }
+                                </select>
+                                <div class="form-text">选择项目后，只匹配能解析到该项目的事件。</div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <label asp-for="Rule.CooldownSeconds" class="form-label">冷却秒数</label>
+                                <input asp-for="Rule.CooldownSeconds" type="number" min="0" max="86400" class="form-control" />
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <label asp-for="Rule.MaxAttempts" class="form-label">最大尝试</label>
+                                <input asp-for="Rule.MaxAttempts" type="number" min="1" max="5" class="form-control" />
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label asp-for="Rule.PromptTemplate" class="form-label">提示词模板</label>
+                            <textarea asp-for="Rule.PromptTemplate" class="form-control font-monospace" rows="6"></textarea>
+                            <div class="form-text">可用变量：{eventType}、{aggregateType}、{aggregateId}、{projectId}、{taskId}、{payload}</div>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center gap-3">
+                            <div class="form-check form-switch">
+                                <input asp-for="Rule.IsEnabled" class="form-check-input" />
+                                <label asp-for="Rule.IsEnabled" class="form-check-label">保存后启用</label>
+                            </div>
+                            <button type="submit" class="btn btn-primary">保存规则</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-xl-7">
+            <div class="card shadow-sm h-100">
+                <div class="card-header">订阅规则</div>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead><tr><th>规则</th><th>Agent / 项目</th><th>限制</th><th>状态</th><th class="text-end">操作</th></tr></thead>
+                        <tbody>
+                        @foreach (var rule in Model.Rules)
+                        {
+                            <tr>
+                                <td>
+                                    <div class="fw-semibold">@rule.Name</div>
+                                    <code>@rule.EventType</code>
+                                </td>
+                                <td>
+                                    <div>@(rule.AgentDefinition?.Name ?? $"Agent #{rule.AgentDefinitionId}")</div>
+                                    <div class="small text-muted">@(rule.Project?.Name ?? "跟随事件项目")</div>
+                                </td>
+                                <td class="small">
+                                    冷却 @rule.CooldownSeconds 秒 · 重试 @rule.MaxAttempts 次<br />
+                                    每日 @rule.DailyExecutionLimit 次 · @rule.MaxTokenBudget Token
+                                    @if (rule.ConditionOperator != ToDo.Entities.AgentEventConditionOperator.None)
+                                    {<div class="text-muted">@rule.ConditionField @Model.GetConditionOperatorLabel(rule.ConditionOperator) @rule.ConditionValue</div>}
+                                </td>
+                                <td><span class="badge bg-@(rule.IsEnabled ? "success" : "secondary")">@(rule.IsEnabled ? "已启用" : "已停用")</span></td>
+                                <td class="text-end text-nowrap">
+                                    <a asp-page="Index" asp-route-editId="@rule.Id" class="btn btn-sm btn-outline-primary">编辑</a>
+                                    <form method="post" asp-page-handler="ToggleRule" class="d-inline">
+                                        <input type="hidden" name="id" value="@rule.Id" />
+                                        <button type="submit" class="btn btn-sm btn-outline-secondary">@(rule.IsEnabled ? "停用" : "启用")</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        }
+                        @if (Model.Rules.Count == 0)
+                        {
+                            <tr><td colspan="5" class="text-center text-muted py-5">尚未配置自动触发规则</td></tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <span>最近 Agent 事件执行</span>
+            <span class="small text-muted">失败会按 1、5、15 分钟退避重试；敏感工具等待审批后继续原 Session。</span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead><tr><th>规则 / 事件</th><th>范围</th><th>状态</th><th>尝试 / 步骤</th><th>时间</th><th>结果</th></tr></thead>
+                <tbody>
+                @foreach (var item in Model.Executions)
+                {
+                    <tr>
+                        <td>
+                            <div class="fw-semibold">@(item.Subscription?.Name ?? $"规则 #{item.SubscriptionId}")</div>
+                            <div class="small text-muted">事件 #@item.EventBusMessageId · @(item.AgentDefinition?.Name ?? $"Agent #{item.AgentDefinitionId}")</div>
+                        </td>
+                        <td class="small">
+                            <div>@(item.Project?.Name ?? "无项目")</div>
+                            <div class="text-muted">@(item.Task?.Title ?? "无任务")</div>
+                        </td>
+                        <td>
+                            <span class="badge bg-@Model.StatusClass(item.Status)">@Model.StatusLabel(item.Status)</span>
+                            @if (item.WaitingApprovalRequestId.HasValue)
+                            {
+                                <div><a href="/Approvals" class="small">审批 #@item.WaitingApprovalRequestId</a></div>
+                            }
+                        </td>
+                        <td class="small">@item.AttemptCount / @item.MaxAttempts<br />@item.StepCount / @item.MaxSteps<br />@item.ConsumedTokens / @item.MaxTokenBudget Token</td>
+                        <td class="small text-nowrap">@item.CreatedAt.ToString("MM-dd HH:mm:ss")</td>
+                        <td style="min-width:220px;max-width:420px">
+                            @if (item.AiSessionId.HasValue)
+                            {
+                                <a href="/AiSessions/Details?id=@item.AiSessionId" class="small">Session #@item.AiSessionId</a>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(item.ErrorMessage))
+                            {
+                                <div class="small text-danger text-break">@item.ErrorMessage</div>
+                            }
+                            else if (!string.IsNullOrWhiteSpace(item.ResultSummary))
+                            {
+                                <details><summary class="small">查看结果</summary><div class="small text-break mt-1" style="white-space:pre-wrap">@item.ResultSummary</div></details>
+                            }
+                        </td>
+                    </tr>
+                }
+                @if (Model.Executions.Count == 0)
+                {
+                    <tr><td colspan="6" class="text-center text-muted py-4">暂无 Agent 事件执行记录</td></tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-12 col-xl-5">
+            <div class="card shadow-sm">
+                <div class="card-header">发布测试事件</div>
+                <div class="card-body">
+                    <form method="post" asp-page-handler="Publish">
+                        <div class="mb-2"><input asp-for="EventType" class="form-control" placeholder="manual.test" /></div>
+                        <div class="mb-2"><textarea asp-for="PayloadJson" class="form-control font-monospace" rows="4" placeholder='{"projectId":1,"source":"manual"}'></textarea></div>
+                        <button class="btn btn-outline-primary" type="submit">发布并等待后台匹配</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-xl-7">
+            <div class="card shadow-sm">
+                <div class="card-header">最近原始事件</div>
+                <div class="table-responsive" style="max-height:360px;overflow:auto">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="sticky-top bg-white"><tr><th>事件类型</th><th>对象</th><th>状态</th><th>创建时间</th><th>错误</th></tr></thead>
+                        <tbody>
+                        @foreach (var item in Model.Messages)
+                        {
+                            <tr><td><code>@item.EventType</code></td><td>@item.AggregateType/@item.AggregateId</td><td>@item.Status</td><td class="text-nowrap">@item.CreatedAt.ToString("MM-dd HH:mm:ss")</td><td class="small text-danger">@item.ErrorMessage</td></tr>
+                        }
+                        @if (Model.Messages.Count == 0)
+                        {
+                            <tr><td colspan="5" class="text-center text-muted py-4">暂无事件</td></tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

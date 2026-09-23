@@ -1,0 +1,1125 @@
+@page
+@model ToDo.Razor.Pages.MeetingMinutes.CreateModel
+@{
+	ViewData["Title"] = "新建会议纪要";
+}
+
+<style>
+	#markdown-preview {
+		font-size: 14px;
+		line-height: 1.8;
+		max-height: 500px;
+		overflow-y: auto;
+		background: #f8f9fa;
+		padding: 15px;
+		border-radius: 4px;
+	}
+
+		#markdown-preview p {
+			margin-bottom: 6px;
+		}
+
+		#markdown-preview br {
+			display: block;
+			content: "";
+			margin-top: 4px;
+		}
+
+	#markdown-editor {
+		transition: height 0.3s ease;
+	}
+
+	.editor-toolbar .btn {
+		font-size: 0.8rem;
+		padding: 0.2rem 0.5rem;
+	}
+
+	/* 多选项目样式 */
+	.project-checkbox-list {
+		max-height: 260px;
+		overflow-y: auto;
+		border: 1px solid #dee2e6;
+		border-radius: 6px;
+		padding: 0.5rem 0.75rem;
+		background: #fff;
+	}
+
+		.project-checkbox-list .form-check {
+			margin-bottom: 0.25rem;
+		}
+
+			.project-checkbox-list .form-check:last-child {
+				margin-bottom: 0;
+			}
+
+	/* 简报卡片 */
+	.briefing-project-card {
+		border: 1px solid #e3e6ea;
+		border-radius: 6px;
+		margin-bottom: 0.75rem;
+		overflow: hidden;
+	}
+
+		.briefing-project-card:last-child {
+			margin-bottom: 0;
+		}
+
+		.briefing-project-card .card-header {
+			background: #f1f3f5;
+			padding: 0.5rem 0.75rem;
+			font-weight: 600;
+			color: #343a40;
+			cursor: pointer;
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+		}
+
+		.briefing-project-card .card-body {
+			padding: 0.75rem;
+		}
+</style>
+
+<div class="container mt-4">
+	<div class="row">
+		<div class="col-md-12">
+			<h1>新建会议纪要</h1>
+			<hr />
+
+			@if (!ViewData.ModelState.IsValid)
+			{
+				<div class="alert alert-danger mb-4">
+					<strong>提交失败，请修正以下问题：</strong>
+					<ul>
+						@foreach (var error in ViewData.ModelState.Values.SelectMany(v => v.Errors))
+						{
+							<li>@error.ErrorMessage</li>
+						}
+					</ul>
+				</div>
+			}
+
+			@if (!string.IsNullOrWhiteSpace(Model.DebugInfo))
+			{
+				<div class="alert alert-info mb-4" style="font-family: monospace; font-size: 0.8em; white-space: pre;">
+					<strong>调试信息：</strong>
+					@Model.DebugInfo
+				</div>
+			}
+
+			<form method="post" enctype="multipart/form-data" onsubmit="return validateForm()">
+				<!-- ===== 多项目改造：项目多选 ===== -->
+				<div class="mb-3">
+					<label class="form-label fw-bold text-dark">
+						关联项目 <span class="text-muted small">（可多选）</span>
+					</label>
+					<div class="project-checkbox-list" id="projectCheckboxList">
+						@foreach (var option in Model.ProjectOptions)
+						{
+							var isChecked = Model.MeetingMinutes.ProjectIds.Contains(int.Parse(option.Value));
+							<div class="form-check">
+								<input class="form-check-input project-checkbox" type="checkbox"
+									   value="@option.Value" id="proj_@option.Value"
+									   data-project-name="@option.Text"
+									   @(isChecked ? "checked" : "") />
+								<label class="form-check-label" for="proj_@option.Value">
+									@option.Text
+								</label>
+							</div>
+						}
+					</div>
+					<!-- 默认项目ID（技术字段，界面不显示） -->
+					<input type="hidden" name="MeetingMinutes.ProjectId" id="primaryProjectId" value="@Model.MeetingMinutes.ProjectId" />
+					<!-- 多选项目：动态生成多个同名 hidden input -->
+					<div id="projectIdsHiddenContainer"></div>
+					<div id="primaryProjectHint" class="form-text mt-1">
+						<i class="bi bi-info-circle me-1"></i>请选择至少一个项目；会议纪要将同时出现在所有选中项目的列表中。
+					</div>
+					<span asp-validation-for="MeetingMinutes.ProjectId" class="text-danger"></span>
+					<span asp-validation-for="MeetingMinutes.ProjectIds" class="text-danger"></span>
+				</div>
+
+				<!-- 关联会前准备草稿（可选） -->
+				<div class="mb-4">
+					<label asp-for="MeetingMinutes.PrepDraftId" class="form-label fw-bold text-dark">关联会前准备草稿 <span class="text-muted small">（可选）</span></label>
+					<select asp-for="MeetingMinutes.PrepDraftId" asp-items="Model.MeetingPrepDraftOptions"
+							class="form-select" aria-label="关联会前准备草稿">
+						<option value="">不关联（无预设任务）</option>
+					</select>
+					<span class="text-muted small">关联后，确认会议纪要时草稿会自动锁定；详情页会显示"未讨论到的任务"对比。</span>
+				</div>
+
+				<!-- ===== 多项目改造：会议前项目简报（所有选中项目） ===== -->
+				<div id="meetingBriefing" class="card border-primary mb-4 d-none" aria-live="polite">
+					<div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+						<div>
+							<span><i class="bi bi-clipboard2-check me-1"></i>会议前项目简报</span>
+							<span id="meetingBriefingCount" class="badge bg-light text-primary ms-2"></span>
+						</div>
+						<button type="button" class="btn btn-sm btn-light text-primary" onclick="toggleBriefingWhole()">
+							<i id="icon-briefing-whole" class="bi bi-chevron-up"></i>
+						</button>
+					</div>
+					<div id="briefing-whole-body" class="card-body">
+						<div id="meetingBriefingContent">
+							<div class="text-muted">请选择项目后加载简报...</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- 纪要来源选择 -->
+				<div class="mb-3">
+					<label class="form-label fw-bold text-dark">纪要来源</label>
+					<select id="sourceTypeSelect" class="form-select">
+						<option value="0">手动录入</option>
+						<option value="1">腾讯会议CLI拉取转写</option>
+						<option value="2">粘贴转写原文</option>
+					</select>
+				</div>
+
+				<!-- 腾讯会议拉取面板 -->
+				<div id="tencentMeetPanel" class="card border-info mb-4 d-none">
+					<div class="card-header bg-info text-white">
+						<i class="bi bi-camera-video"></i> 按日期拉取当日腾讯会议转写
+					</div>
+					<div class="card-body">
+						<div class="row mb-3 align-items-end">
+							<div class="col-auto">
+								<label class="form-label">选择查询日期</label>
+								<input type="date" id="queryMeetDate" class="form-control" value="@AppTime.Today.ToString("yyyy-MM-dd")">
+							</div>
+							<div class="col-auto">
+								<button type="button" id="queryMeetBtn" class="btn btn-primary">
+									<i class="bi bi-search"></i> 查询当日可转写会议
+								</button>
+							</div>
+						</div>
+
+						<div id="meetListLoading" class="text-secondary d-none">
+							<span class="spinner-border spinner-border-sm"></span> 正在查询腾讯会议列表...
+						</div>
+
+						<div id="meetListWrap" class="table-responsive d-none mt-3">
+							<table class="table table-sm table-bordered table-hover">
+								<thead class="table-light">
+									<tr>
+										<th width="60">勾选</th>
+										<th>会议主题</th>
+										<th>会议号</th>
+										<th>开始时间</th>
+										<th>是否带转写</th>
+									</tr>
+								</thead>
+								<tbody id="meetListBody"></tbody>
+							</table>
+
+							<div class="mt-3">
+								<button type="button" id="fetchMergeBtn" class="btn btn-success">
+									<i class="bi bi-cloud-download"></i> 拉取选中会议并合并转写内容
+								</button>
+								<span class="text-muted small ms-2">多场自动加分隔标题</span>
+							</div>
+						</div>
+
+						<div id="meetEmptyTip" class="alert alert-light d-none mt-3">
+							当日没有已结束且生成转写文稿的腾讯会议
+						</div>
+					</div>
+				</div>
+				<!-- 粘贴转写面板 -->
+				<div id="pasteTranscriptPanel" class="card border-info mb-4 d-none">
+					<div class="card-header bg-info text-white">
+						<i class="bi bi-clipboard-paste"></i> 手动粘贴转写原文
+					</div>
+					<div class="card-body">
+						<label class="form-label fw-semibold">转写原文</label>
+						<textarea id="pasteTranscriptInput" class="form-control" rows="10"
+								  placeholder="把录音转写、会议速记或其它原始文本粘贴到这里，然后点击下面的「载入到转写区」按钮"></textarea>
+						<div class="form-text mt-1">
+							粘贴后点击下方按钮，内容会被载入到只读转写区，然后可以点击「AI 生成会议纪要」自动整理。
+						</div>
+						<button type="button" id="pasteLoadBtn" class="btn btn-success mt-2">
+							<i class="bi bi-box-arrow-in-down"></i> 载入到转写区
+						</button>
+					</div>
+				</div>
+
+				<!-- 转写原文只读文本框 -->
+				<div id="transcriptPanel" class="card border-secondary mb-4 d-none">
+					<div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
+						<span><i class="bi bi-file-text me-1"></i>转写原文（只读）</span>
+						<button type="button" class="btn btn-sm btn-light text-secondary" onclick="toggleTranscript()">
+							<i id="icon-transcript" class="bi bi-chevron-up"></i>
+						</button>
+					</div>
+					<div id="transcript-body" class="card-body">
+						<textarea id="transcriptText" class="form-control" rows="12" readonly
+								  placeholder="拉取腾讯会议转写后，原文将显示在这里（只读，不可编辑）"></textarea>
+					</div>
+				</div>
+
+				<!-- AI 生成会议纪要按钮 -->
+				<div id="aiGeneratePanel" class="mb-4 d-none">
+					<button type="button" id="btnGenerateMeeting" class="btn btn-primary" onclick="generateMeetingFromTranscript()">
+						<i class="bi bi-magic me-1"></i>AI 生成会议纪要
+					</button>
+					<span class="text-muted small ms-2">根据转写原文，使用会议纪要模板自动生成</span>
+				</div>
+
+				<!-- 隐藏域 -->
+				<input type="hidden" name="TencentSourceFlag" id="hidSourceFlag" value="0">
+				<input type="hidden" name="RawTranscriptJson" id="hidRawJson" value="">
+				<input type="hidden" name="CleanContent" id="hidCleanContent" value="">
+				<input type="hidden" name="SelectedRecordIds" id="hidRecordIds" value="">
+				<input type="hidden" name="TencentTranscriptText" id="hidTranscriptText" value="">
+				<input type="hidden" name="SourceKind" id="hidSourceKind" value="0">
+
+				<!-- 会议标题 -->
+				<div class="mb-3">
+					<label asp-for="MeetingMinutes.MeetingTitle" class="form-label fw-bold text-dark">会议标题</label>
+					<input asp-for="MeetingMinutes.MeetingTitle" class="form-control" id="meetingTitle"
+						   placeholder="系统将自动生成标题，可手动修改">
+					<span asp-validation-for="MeetingMinutes.MeetingTitle" class="text-danger"></span>
+				</div>
+
+				<!-- 会议日期 -->
+				<div class="mb-3">
+					<label asp-for="MeetingMinutes.MeetingDate" class="form-label fw-bold text-dark">会议日期</label>
+					<input asp-for="MeetingMinutes.MeetingDate" type="date" class="form-control" required
+						   id="meetingDate">
+					<span asp-validation-for="MeetingMinutes.MeetingDate" class="text-danger"></span>
+				</div>
+
+				<!-- Markdown编辑器和预览区 -->
+				<div class="mb-3">
+					<div class="d-flex justify-content-between align-items-center mb-2">
+						<label class="form-label fw-bold text-dark mb-0">会议内容（支持Markdown）</label>
+						<div></div>
+					</div>
+
+					<div class="border rounded p-2 bg-light mb-2 d-flex flex-wrap gap-1 editor-toolbar">
+						<button type="button" class="btn btn-sm btn-outline-secondary" onclick="insertText('**', '**')">粗体 (Ctrl+B)</button>
+						<button type="button" class="btn btn-sm btn-outline-secondary" onclick="insertText('*', '*')">斜体 (Ctrl+I)</button>
+						<button type="button" class="btn btn-sm btn-outline-secondary" onclick="insertText('# ', '')">一级标题</button>
+						<button type="button" class="btn btn-sm btn-outline-secondary" onclick="insertText('## ', '')">二级标题</button>
+						<button type="button" class="btn btn-sm btn-outline-secondary" onclick="insertText('### ', '')">三级标题</button>
+						<button type="button" class="btn btn-sm btn-outline-secondary" onclick="insertText('- ', '')">无序列表</button>
+						<button type="button" class="btn btn-sm btn-outline-secondary" onclick="insertText('1. ', '')">有序列表</button>
+						<button type="button" class="btn btn-sm btn-outline-secondary" onclick="insertText('```\n', '\n```')">代码块</button>
+						<button type="button" class="btn btn-sm btn-outline-secondary" onclick="insertText('[链接文本](', ')')">链接</button>
+					</div>
+
+					<div class="row">
+						<div class="col-md-6 mb-3">
+							<div class="card h-100">
+								<div class="card-header bg-light">编辑区</div>
+								<div class="card-body p-0">
+									<textarea asp-for="MeetingMinutes.MeetingContent"
+											  class="form-control border-0 rounded-0 h-100"
+											  rows="15"
+											  placeholder="输入Markdown内容..."
+											  id="markdown-editor"
+											  required></textarea>
+								</div>
+							</div>
+						</div>
+
+						<div class="col-md-6 mb-3">
+							<div class="card h-100">
+								<div class="card-header bg-light">预览区</div>
+								<div class="card-body overflow-auto" id="markdown-preview">
+									<div class="text-muted">实时预览将在这里显示...</div>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<span asp-validation-for="MeetingMinutes.MeetingContent" class="text-danger"></span>
+					<div class="form-text mt-1">
+						格式提示：**粗体**、*斜体*、# 标题、- 列表项、```代码块```
+					</div>
+				</div>
+
+				<details class="mb-4">
+					<summary class="fw-semibold">会议原始记录（可选）</summary>
+					<div class="mt-3">
+						<label asp-for="MeetingMinutes.TranscriptText" class="form-label">录音转写或未经整理的原始文本</label>
+						<textarea asp-for="MeetingMinutes.TranscriptText" class="form-control" rows="8"
+								  placeholder="可粘贴录音转写、聊天记录或现场速记。该内容在详情页默认折叠。"></textarea>
+						<div class="form-text">AI提取任务时优先读取原始记录；留空时使用会议内容。</div>
+					</div>
+				</details>
+
+				<!-- 附件上传 -->
+				<div class="mb-3">
+					<label class="form-label fw-bold text-dark">附件上传（可选）</label>
+					<input type="file" name="Attachments" multiple class="form-control"
+						   accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.txt"
+						   id="attachmentInput">
+					<div class="form-text mt-1">
+						支持格式：pdf、doc、docx、xls、xlsx、ppt、pptx、jpg、png、txt，单个文件≤10MB，单次上传不超过5个文件
+					</div>
+					<div id="fileList" class="mt-2 d-flex flex-wrap gap-2"></div>
+				</div>
+
+				<!-- 操作按钮 -->
+				<div class="d-flex justify-content-between flex-wrap gap-2 align-items-center">
+					<a asp-page="Index" class="btn btn-outline-secondary">返回列表</a>
+
+					<div class="d-flex align-items-center gap-3 flex-wrap">
+						<div class="form-check mb-0">
+							<input asp-for="MeetingMinutes.IsDraft" class="form-check-input" />
+							<label asp-for="MeetingMinutes.IsDraft" class="form-check-label">保存为草稿（稍后继续编辑）</label>
+						</div>
+						<span class="text-muted small">
+							<i class="bi bi-info-circle me-1"></i>
+							保存后自动解析任务预览，点击"确认并写入任务"后正式提交
+						</span>
+						<button type="submit" class="btn btn-primary">保存会议纪要</button>
+					</div>
+				</div>
+			</form>
+		</div>
+	</div>
+</div>
+
+@section Scripts {
+	<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js"></script>
+
+	<script>
+		marked.setOptions({ breaks: true, gfm: true });
+
+		const editor = document.getElementById('markdown-editor');
+		const preview = document.getElementById('markdown-preview');
+
+		function updatePreview() {
+			const markdown = editor.value || '<div class="text-muted">实时预览将在这里显示...</div>';
+			try {
+				preview.innerHTML = DOMPurify.sanitize(marked.parse(markdown));
+			} catch (e) {
+				preview.innerHTML = '<div class="text-danger">Markdown 解析错误</div>';
+			}
+		}
+
+		// ========== 多项目改造：项目多选逻辑 ==========
+		const projectCheckboxes = document.querySelectorAll('.project-checkbox');
+		const primaryProjectIdInput = document.getElementById('primaryProjectId');
+		const projectIdsHiddenContainer = document.getElementById('projectIdsHiddenContainer');
+		const primaryProjectHint = document.getElementById('primaryProjectHint');
+
+		function getSelectedProjectIds() {
+			return Array.from(projectCheckboxes)
+				.filter(cb => cb.checked)
+				.map(cb => parseInt(cb.value));
+		}
+
+		function getSelectedProjectNames() {
+			return Array.from(projectCheckboxes)
+				.filter(cb => cb.checked)
+				.map(cb => cb.dataset.projectName);
+		}
+
+		// ===== 标题实时自动生成（关键改动）=====
+		// 只在标题为空或标题等于"上次自动生成的值"时才覆盖
+		// 用户手动改过标题后，不再自动覆盖
+		let lastAutoTitle = '';
+
+		function tryAutoUpdateTitle() {
+			const titleInput = document.getElementById('meetingTitle');
+			const dateInput = document.getElementById('meetingDate');
+			const userName = "@User.Identity?.Name";
+
+			const selectedIds = getSelectedProjectIds();
+			const selectedNames = getSelectedProjectNames();
+
+			if (selectedIds.length === 0 || !dateInput.value || !userName) return;
+
+			const formattedDate = dateInput.value.replace(/-/g, '');
+			const autoTitle = selectedIds.length > 1
+				? `${userName}_${formattedDate}_${selectedNames[0]}等${selectedIds.length}个项目`
+				: `${userName}_${formattedDate}_${selectedNames[0]}`;
+
+			// 如果标题为空，或者标题就是上次自动生成的值，则更新
+			const currentTitle = titleInput.value.trim();
+			if (!currentTitle || currentTitle === lastAutoTitle) {
+				titleInput.value = autoTitle;
+				lastAutoTitle = autoTitle;
+			}
+		}
+
+		// 初始项目回显会立即请求简报，计数器必须先初始化。
+		let briefingRequestId = 0;
+		function syncProjectHiddenFields() {
+			const selectedIds = getSelectedProjectIds();
+			const selectedNames = getSelectedProjectNames();
+
+			// 默认项目ID = 第一个选中的（技术字段，界面不显示）
+			if (selectedIds.length > 0) {
+				primaryProjectIdInput.value = selectedIds[0];
+				primaryProjectHint.innerHTML = `<i class="bi bi-info-circle me-1"></i>已选 <strong>${selectedIds.length}</strong> 个项目：${selectedNames.map(escapeHtml).join('、')}`;
+			} else {
+				primaryProjectIdInput.value = '';
+				primaryProjectHint.innerHTML = `<i class="bi bi-info-circle me-1"></i>请选择至少一个项目；会议纪要将同时出现在所有选中项目的列表中。`;
+			}
+
+			// 关键：为每个选中的项目生成一个同名 hidden input
+			projectIdsHiddenContainer.innerHTML = '';
+			selectedIds.forEach(id => {
+				const input = document.createElement('input');
+				input.type = 'hidden';
+				input.name = 'MeetingMinutes.ProjectIds';
+				input.value = id;
+				projectIdsHiddenContainer.appendChild(input);
+			});
+
+			// 实时更新标题
+			tryAutoUpdateTitle();
+
+			// 简报：显示所有选中项目
+			loadAllBriefings(selectedIds);
+		}
+
+		// 防止取消勾选后，剩余的第一个自动成为默认项目ID
+		projectCheckboxes.forEach(cb => {
+			cb.addEventListener('change', syncProjectHiddenFields);
+		});
+
+		// 初始化一次（回显情况）
+		syncProjectHiddenFields();
+
+		// ========== 编辑器折叠 ==========
+		let editorCollapsed = false;
+		function toggleEditorHeight() {
+			const textarea = document.getElementById('markdown-editor');
+			const btn = document.getElementById('toggleEditorBtn');
+			editorCollapsed = !editorCollapsed;
+			if (editorCollapsed) {
+				textarea.style.height = '80px';
+				textarea.style.minHeight = '80px';
+				btn.innerHTML = '<i class="bi bi-chevron-down"></i> 展开';
+			} else {
+				textarea.style.height = '';
+				textarea.style.minHeight = '';
+				btn.innerHTML = '<i class="bi bi-chevron-up"></i> 折叠';
+			}
+		}
+
+		function insertText(prefix, suffix) {
+			const start = editor.selectionStart;
+			const end = editor.selectionEnd;
+			const selectedText = editor.value.substring(start, end);
+
+			editor.value =
+				editor.value.substring(0, start) +
+				prefix + selectedText + suffix +
+				editor.value.substring(end);
+
+			const cursorPos = start + prefix.length + (selectedText ? selectedText.length : 0);
+			editor.focus();
+			editor.setSelectionRange(cursorPos, cursorPos);
+			updatePreview();
+		}
+
+		editor.addEventListener('keydown', (e) => {
+			if (e.ctrlKey && e.key === 'b') {
+				e.preventDefault();
+				insertText('**', '**');
+			}
+			if (e.ctrlKey && e.key === 'i') {
+				e.preventDefault();
+				insertText('*', '*');
+			}
+		});
+
+		// ========== 附件处理 ==========
+		document.getElementById('attachmentInput').addEventListener('change', function(e) {
+			const fileList = document.getElementById('fileList');
+			fileList.innerHTML = '';
+
+			if (this.files.length === 0) return;
+
+			if (this.files.length > 5) {
+				alert('最多只能上传5个文件');
+				this.value = '';
+				return;
+			}
+
+			Array.from(this.files).forEach(file => {
+				if (file.size > 10 * 1024 * 1024) {
+					alert(`文件「${file.name}」超过10MB限制`);
+					this.value = '';
+					fileList.innerHTML = '';
+					return;
+				}
+
+				const fileItem = document.createElement('div');
+				fileItem.className = 'bg-light p-2 rounded d-flex align-items-center gap-2';
+				fileItem.innerHTML = `
+					<i class="bi bi-file-earmark"></i>
+					<span class="flex-grow-1">${escapeHtml(file.name)}</span>
+					<span class="text-muted small">${(file.size / 1024).toFixed(1)}KB</span>
+					<button type="button" class="btn btn-sm btn-danger" onclick="removeFile(this)"> <i class="bi bi-x"></i> </button>
+				`;
+				fileList.appendChild(fileItem);
+			});
+		});
+
+		function removeFile(button) {
+			button.closest('div').remove();
+		}
+
+		// ========== 腾讯会议来源切换 ==========
+		const sourceSelect = document.getElementById('sourceTypeSelect');
+		const tencentPanel = document.getElementById('tencentMeetPanel');
+		const hidSourceFlag = document.getElementById('hidSourceFlag');
+
+		const pastePanel = document.getElementById('pasteTranscriptPanel');
+
+		sourceSelect.addEventListener('change', function() {
+			tencentPanel.classList.add('d-none');
+			pastePanel.classList.add('d-none');
+
+			if (this.value === '1') {
+				tencentPanel.classList.remove('d-none');
+				hidSourceFlag.value = '1';
+				document.getElementById('hidSourceKind').value = '1';   // 腾讯会议
+			} else if (this.value === '2') {
+				pastePanel.classList.remove('d-none');
+				hidSourceFlag.value = '1';   // 让后端知道"有非手动录入的内容"
+				document.getElementById('hidSourceKind').value = '2';   // 粘贴转写
+			} else {
+				hidSourceFlag.value = '0';
+				document.getElementById('hidSourceKind').value = '0';   // 手动
+				document.getElementById('hidRawJson').value = '';
+				document.getElementById('hidCleanContent').value = '';
+				document.getElementById('hidRecordIds').value = '';
+			}
+		});
+
+		// ========== 查询会议 ==========
+		const queryBtn = document.getElementById('queryMeetBtn');
+		const loadingTip = document.getElementById('meetListLoading');
+		const listWrap = document.getElementById('meetListWrap');
+		const emptyTip = document.getElementById('meetEmptyTip');
+		const listBody = document.getElementById('meetListBody');
+		const fetchBtn = document.getElementById('fetchMergeBtn');
+
+		function escapeHtml(str) {
+			if (!str) return '';
+			return str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+		}
+
+		queryBtn.addEventListener('click', async function() {
+			const meetDate = document.getElementById('queryMeetDate').value;
+			const projectId = primaryProjectIdInput.value;
+			if (!projectId) {
+				alert('请先选择项目');
+				return;
+			}
+			if (!meetDate) {
+				alert('请选择日期');
+				return;
+			}
+
+			loadingTip.classList.remove('d-none');
+			listWrap.classList.add('d-none');
+			emptyTip.classList.add('d-none');
+			listBody.innerHTML = '';
+
+			try {
+				const res = await fetch(`?handler=TencentMeetList&meetDate=${encodeURIComponent(meetDate)}&projectId=${encodeURIComponent(projectId)}`, {
+					method: 'GET',
+					headers: { 'Accept': 'application/json' }
+				});
+				const json = await res.json();
+				loadingTip.classList.add('d-none');
+
+				if (!json.success) {
+					alert(json.msg);
+					return;
+				}
+
+				const data = json.data || [];
+				if (data.length === 0) {
+					emptyTip.classList.remove('d-none');
+					return;
+				}
+
+				data.forEach(item => {
+					const tr = document.createElement('tr');
+					tr.innerHTML = `
+						<td><input type="checkbox" class="meet-checkbox" data-record-id="${escapeHtml(String(item.recordFileId || ''))}"></td>
+						<td>${escapeHtml(item.subject)}</td>
+						<td>${escapeHtml(String(item.meetingCode || ''))}</td>
+						<td>${escapeHtml(String(item.startTimeShort || ''))}</td>
+						<td>${item.hasTranscript ? '<span class="text-success">有</span>' : '<span class="text-danger">无</span>'}</td>
+					`;
+					listBody.appendChild(tr);
+				});
+				listWrap.classList.remove('d-none');
+			} catch (err) {
+				loadingTip.classList.add('d-none');
+				alert('网络请求异常：' + err.message);
+			}
+		});
+
+		// ========== 拉取转写 ==========
+		fetchBtn.addEventListener('click', async function() {
+			const checkboxes = document.querySelectorAll('.meet-checkbox:checked');
+			const selectedIds = Array.from(checkboxes).map(cb => cb.dataset.recordId);
+			const projectId = primaryProjectIdInput.value;
+			if (!projectId) {
+				alert('请先选择项目');
+				return;
+			}
+			if (selectedIds.length === 0) {
+				alert('请至少勾选一场会议');
+				return;
+			}
+
+			const titleMap = {};
+			checkboxes.forEach(cb => {
+				const tr = cb.closest('tr');
+				const subjectCell = tr.querySelector('td:nth-child(2)');
+				if (subjectCell) {
+					titleMap[cb.dataset.recordId] = subjectCell.textContent.trim();
+				}
+			});
+
+			this.disabled = true;
+			this.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 正在调用tmeet拉取转写...';
+
+			try {
+				const token = document.querySelector('input[name="__RequestVerificationToken"]').value;
+				const res = await fetch(`?handler=FetchMergeTranscript`, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						'RequestVerificationToken': token
+					},
+					body: JSON.stringify({
+						recordIds: selectedIds,
+						titleMap: titleMap,
+						projectId: parseInt(projectId)
+					})
+				});
+
+				const json = await res.json();
+				this.disabled = false;
+				this.innerHTML = '<i class="bi bi-cloud-download"></i> 拉取选中会议并合并转写内容';
+
+				if (!json.success) {
+					alert(json.msg);
+					return;
+				}
+
+				const transcriptText = document.getElementById('transcriptText');
+				transcriptText.value = json.content;
+				document.getElementById('hidTranscriptText').value = json.content;
+
+				document.getElementById('transcriptPanel').classList.remove('d-none');
+				document.getElementById('aiGeneratePanel').classList.remove('d-none');
+
+				editor.value = '';
+				updatePreview();
+
+				document.getElementById('hidRawJson').value = json.rawJson;
+				document.getElementById('hidCleanContent').value = json.content;
+				document.getElementById('hidRecordIds').value = json.recordIds;
+
+				alert(`已合并${selectedIds.length}场会议转写内容，请点击「AI 生成会议纪要」按钮生成正式会议纪要`);
+			} catch (err) {
+				this.disabled = false;
+				alert('拉取失败：' + err.message);
+			}
+		});
+
+		// ========== 简报功能：多项目 ==========
+		// 每个项目单独加载简报，逐个渲染成卡片
+
+		function statusBadge(status) {
+			const classes = {
+				'已完成': 'bg-success', '进行中': 'bg-primary', '待审核': 'bg-warning text-dark',
+				'未开始': 'bg-secondary', '已取消': 'bg-dark', '未关联任务': 'bg-light text-dark border'
+			};
+			return `<span class="badge ${classes[status] || 'bg-secondary'}">${escapeHtml(status)}</span>`;
+		}
+
+		// 单个项目的简报 HTML 渲染
+		function renderOneBriefing(projectId, data) {
+			const previous = data.previousMeeting;
+			const completedTasks = data.completedTasksSinceLastMeeting || [];
+			const openTasks = data.openTasksExcludingPreviousMeeting || [];
+			const projectName = data.projectName || '未知项目';
+
+			let html = `
+			<div class="briefing-project-card" data-project-id="${projectId}">
+				<div class="card-header" onclick="toggleBriefingCard(${projectId})">
+					<span>
+						<i class="fas fa-project-diagram me-1"></i>
+						<strong>${escapeHtml(projectName)}</strong>
+						<span class="badge bg-light text-primary ms-2">${openTasks.length} 项未完成</span>
+					</span>
+					<i id="briefing-icon-${projectId}" class="fas fa-chevron-up text-muted"></i>
+				</div>
+				<div class="card-body" id="briefing-body-${projectId}">`;
+
+			// 上一场会议
+			if (previous) {
+				const actionItems = previous.actionItems || [];
+				html += `
+				<div class="mb-3 border rounded overflow-hidden">
+					<div class="p-2 d-flex justify-content-between align-items-center" onclick="toggleBlock('prevMeetingBlock-${projectId}','prevMeetingIcon-${projectId}')" style="cursor:pointer;background:#f8f9fa;">
+						<h6 class="mb-0 fs-6 text-dark">上一场会议：${escapeHtml(previous.title)} <span class="text-secondary small">（点击展开）</span></h6>
+						<div class="d-flex gap-2 align-items-center">
+							<span class="text-dark small">${escapeHtml(previous.meetingDate)}</span>
+							<i id="prevMeetingIcon-${projectId}" class="fas fa-chevron-down text-dark"></i>
+						</div>
+					</div>
+					<div id="prevMeetingBlock-${projectId}" class="p-3 border-top d-none">
+						<div class="bg-light rounded p-2 mb-2" style="white-space: pre-wrap; font-size: 0.85rem;">${escapeHtml(previous.summary || '暂无会议摘要')}</div>`;
+
+				if (actionItems.length) {
+					html += `<div class="table-responsive"><table class="table table-sm table-bordered align-middle mb-0" style="font-size: 0.85rem;">
+						<thead class="table-light"><tr><th>任务</th><th>责任人</th><th>状态</th><th>截止</th></tr></thead><tbody>`;
+					actionItems.forEach(item => {
+						let taskTitle;
+						let taskDesc = '';
+						const firstSpaceIndex = item.content.indexOf(' ');
+						if (firstSpaceIndex > 0) {
+							taskTitle = item.content.substring(0, firstSpaceIndex);
+							taskDesc = item.content.substring(firstSpaceIndex + 1);
+						} else {
+							taskTitle = item.content;
+							taskDesc = '';
+						}
+						let taskCellHtml;
+						if (item.taskId != null) {
+							taskCellHtml = `<a href="/Tasks/Details/${item.taskId}">${escapeHtml(taskTitle)}</a>`;
+							if (taskDesc) {
+								taskCellHtml += `<br/><span class="text-muted small">${escapeHtml(taskDesc)}</span>`;
+							}
+						} else {
+							taskCellHtml = escapeHtml(taskTitle);
+							if (taskDesc) {
+								taskCellHtml += `<br/><span class="text-muted small">${escapeHtml(taskDesc)}</span>`;
+							}
+						}
+						html += `<tr>
+							<td>${taskCellHtml}</td>
+							<td>${escapeHtml(item.assignee)}</td>
+							<td>${statusBadge(item.taskStatus)}</td>
+							<td>${escapeHtml(item.deadline)}</td>
+						</tr>`;
+					});
+					html += '</tbody></table></div>';
+				} else {
+					html += '<div class="text-muted small">上一场会议没有已记录的任务。</div>';
+				}
+				html += `</div></div>`;
+			} else {
+				html += '<div class="alert alert-light border mb-3 small">该项目暂无已提交的上一场会议纪要。</div>';
+			}
+
+			// 上次会议至今已完成任务
+			html += `
+			<div class="border rounded overflow-hidden mb-3">
+				<div class="p-2 d-flex justify-content-between align-items-center" onclick="toggleBlock('completedTaskBlock-${projectId}','completedTaskIcon-${projectId}')" style="cursor:pointer;background:#f8f9fa;">
+					<h6 class="mb-0 fs-6 text-dark">上次会议至今已完成任务 <span class="text-secondary small">（点击展开）</span></h6>
+					<div class="d-flex gap-2 align-items-center">
+						<span class="badge bg-light text-primary">${completedTasks.length} 项</span>
+						<i id="completedTaskIcon-${projectId}" class="fas fa-chevron-down text-dark"></i>
+					</div>
+				</div>
+				<div id="completedTaskBlock-${projectId}" class="p-3 border-top d-none">`;
+
+			if (completedTasks.length) {
+				html += `<div class="table-responsive"><table class="table table-sm table-bordered align-middle mb-0" style="font-size: 0.85rem;">
+					<thead class="table-light"><tr><th>任务</th><th>责任人</th><th>状态</th><th>完成时间</th></tr></thead><tbody>`;
+				completedTasks.forEach(task => {
+					let cellHtml = `<a href="/Tasks/Details/${encodeURIComponent(task.id)}">${escapeHtml(task.title)}</a>`;
+					if (task.description) {
+						cellHtml += `<br/><span class="text-muted small">${escapeHtml(task.description)}</span>`;
+					}
+					html += `<tr>
+						<td>${cellHtml}</td>
+						<td>${escapeHtml(task.assignee)}</td>
+						<td>${statusBadge('已完成')}</td>
+						<td>${escapeHtml(task.completionDate)}</td>
+					</tr>`;
+				});
+				html += '</tbody></table></div>';
+			} else {
+				html += '<div class="text-muted small">上次会议至今暂无已完成任务。</div>';
+			}
+			html += `</div></div>`;
+
+			// 当前未完成项目任务
+			html += `
+			<div class="border rounded overflow-hidden">
+				<div class="p-2 d-flex justify-content-between align-items-center" onclick="toggleBlock('openTaskBlock-${projectId}','openTaskIcon-${projectId}')" style="cursor:pointer;background:#f8f9fa;">
+					<h6 class="mb-0 fs-6 text-dark">当前未完成项目任务（不包括上次会议） <span class="text-secondary small">（点击展开）</span></h6>
+					<div class="d-flex gap-2 align-items-center">
+						<span class="badge bg-light text-primary">${openTasks.length} 项</span>
+						<i id="openTaskIcon-${projectId}" class="fas fa-chevron-down text-dark"></i>
+					</div>
+				</div>
+				<div id="openTaskBlock-${projectId}" class="p-3 border-top d-none">`;
+
+			if (openTasks.length) {
+				html += `<div class="table-responsive"><table class="table table-sm table-bordered align-middle mb-0" style="font-size: 0.85rem;">
+					<thead class="table-light"><tr><th>任务</th><th>责任人</th><th>状态</th><th>截止</th></tr></thead><tbody>`;
+				openTasks.forEach(task => {
+					let taskTitle;
+					let taskDesc = '';
+					const firstSpaceIndex = task.title.indexOf(' ');
+					if (firstSpaceIndex > 0) {
+						taskTitle = task.title.substring(0, firstSpaceIndex);
+						taskDesc = task.title.substring(firstSpaceIndex + 1);
+					} else {
+						taskTitle = task.title;
+						taskDesc = '';
+					}
+					let cellHtml = `<a href="/Tasks/Details/${encodeURIComponent(task.id)}">${escapeHtml(taskTitle)}</a>`;
+					if (taskDesc) {
+						cellHtml += `<br/><span class="text-muted small">${escapeHtml(taskDesc)}</span>`;
+					}
+					html += `<tr>
+						<td>${cellHtml}</td>
+						<td>${escapeHtml(task.assignee)}</td>
+						<td>${statusBadge(task.status)}</td>
+						<td>${escapeHtml(task.deadline)}</td>
+					</tr>`;
+				});
+				html += '</tbody></table></div>';
+			} else {
+				html += '<div class="text-muted small">当前没有未完成任务。</div>';
+			}
+			html += `</div></div>`;
+
+			html += `</div></div>`;
+			return html;
+		}
+
+		// 加载所有选中项目的简报
+		async function loadAllBriefings(projectIds) {
+			const requestId = ++briefingRequestId;
+			const panel = document.getElementById('meetingBriefing');
+			const container = document.getElementById('meetingBriefingContent');
+			const countBadge = document.getElementById('meetingBriefingCount');
+
+			if (!projectIds || projectIds.length === 0) {
+				panel.classList.add('d-none');
+				container.textContent = '';
+				countBadge.textContent = '';
+				return;
+			}
+
+			panel.classList.remove('d-none');
+			countBadge.textContent = `共 ${projectIds.length} 个项目`;
+			container.innerHTML = '<div class="text-muted"><span class="spinner-border spinner-border-sm me-2"></span>正在加载项目简报...</div>';
+
+			try {
+				// 并发加载所有项目
+				const results = await Promise.all(projectIds.map(async (pid) => {
+					try {
+						const response = await fetch(`${window.location.pathname}?handler=Briefing&projectId=${encodeURIComponent(pid)}`, {
+							headers: { 'Accept': 'application/json' }
+						});
+						if (!response.ok) return { projectId: pid, data: null };
+						const data = await response.json();
+						return { projectId: pid, data };
+					} catch {
+						return { projectId: pid, data: null };
+					}
+				}));
+
+				if (requestId !== briefingRequestId) return; // 已过期
+
+				let html = '';
+				for (const r of results) {
+					if (r.data) {
+						html += renderOneBriefing(r.projectId, r.data);
+					} else {
+						html += `<div class="alert alert-warning small mb-2">项目 #${r.projectId} 简报加载失败</div>`;
+					}
+				}
+				container.innerHTML = html || '<div class="text-muted">暂无简报数据。</div>';
+			} catch (e) {
+				if (requestId === briefingRequestId) {
+					container.innerHTML = '<div class="alert alert-warning mb-0">项目简报暂时无法加载，请稍后重试。</div>';
+				}
+			}
+		}
+
+		function toggleBriefingWhole() {
+			const body = document.getElementById('briefing-whole-body');
+			const icon = document.getElementById('icon-briefing-whole');
+			body.classList.toggle('d-none');
+			if (body.classList.contains('d-none')) {
+				icon.classList.replace('fa-chevron-up', 'fa-chevron-down');
+			} else {
+				icon.classList.replace('fa-chevron-down', 'fa-chevron-up');
+			}
+		}
+
+		function toggleBriefingCard(projectId) {
+			const body = document.getElementById(`briefing-body-${projectId}`);
+			const icon = document.getElementById(`briefing-icon-${projectId}`);
+			if (!body) return;
+			body.classList.toggle('d-none');
+			if (body.classList.contains('d-none')) {
+				icon.classList.replace('fa-chevron-up', 'fa-chevron-down');
+			} else {
+				icon.classList.replace('fa-chevron-down', 'fa-chevron-up');
+			}
+		}
+
+		function toggleBlock(blockId, iconId) {
+			const block = document.getElementById(blockId);
+			const icon = document.getElementById(iconId);
+			if (!block || !icon) return;
+			block.classList.toggle('d-none');
+			if (block.classList.contains('d-none')) {
+				icon.classList.replace('fa-chevron-up', 'fa-chevron-down');
+			} else {
+				icon.classList.replace('fa-chevron-down', 'fa-chevron-up');
+			}
+		}
+
+		function toggleTranscript() {
+			const body = document.getElementById('transcript-body');
+			const icon = document.getElementById('icon-transcript');
+			body.classList.toggle('d-none');
+			if (body.classList.contains('d-none')) {
+				icon.classList.replace('fa-chevron-up', 'fa-chevron-down');
+			} else {
+				icon.classList.replace('fa-chevron-down', 'fa-chevron-up');
+			}
+		}
+				// ========== 粘贴转写 → 载入到只读转写区 ==========
+		document.getElementById('pasteLoadBtn').addEventListener('click', function() {
+			const raw = document.getElementById('pasteTranscriptInput').value.trim();
+			if (!raw) {
+				alert('请先粘贴转写原文');
+				return;
+			}
+
+			// 写入只读转写框
+			const transcriptText = document.getElementById('transcriptText');
+			transcriptText.value = raw;
+
+			// 同时写隐藏域（提交时后端会读 TencentTranscriptText 或 CleanContent）
+			document.getElementById('hidTranscriptText').value = raw;
+			document.getElementById('hidCleanContent').value = raw;
+
+			// 显示转写面板 + AI 生成按钮
+			document.getElementById('transcriptPanel').classList.remove('d-none');
+			document.getElementById('aiGeneratePanel').classList.remove('d-none');
+
+			// 会议内容区清空，等待 AI 生成
+			editor.value = '';
+			updatePreview();
+
+			alert('转写原文已载入，可以点击「AI 生成会议纪要」按钮生成正式会议纪要');
+		});
+		// ========== AI 生成会议纪要 ==========
+		async function generateMeetingFromTranscript() {
+			const transcriptText = document.getElementById('transcriptText').value;
+			if (!transcriptText.trim()) {
+				alert('请先拉取腾讯会议转写文本');
+				return;
+			}
+
+			const btn = document.getElementById('btnGenerateMeeting');
+			btn.disabled = true;
+			btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> AI 正在生成会议纪要...';
+
+			try {
+				const token = document.querySelector('input[name="__RequestVerificationToken"]').value;
+				const projectId = primaryProjectIdInput.value;
+
+				if (!projectId) {
+					alert('请先选择项目');
+					btn.disabled = false;
+					btn.innerHTML = '<i class="bi bi-magic me-1"></i>AI 生成会议纪要';
+					return;
+				}
+
+				const res = await fetch(`?handler=GenerateMeetingFromTranscript`, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						'RequestVerificationToken': token
+					},
+					body: JSON.stringify({
+						transcript: transcriptText,
+						projectId: parseInt(projectId)
+					})
+				});
+
+				const json = await res.json();
+				btn.disabled = false;
+				btn.innerHTML = '<i class="bi bi-magic me-1"></i>AI 生成会议纪要';
+
+				if (!json.success) {
+					alert(json.message || 'AI 生成失败');
+					return;
+				}
+
+				editor.value = json.content;
+				updatePreview();
+
+				if (!document.getElementById('hidTranscriptText').value) {
+					document.getElementById('hidTranscriptText').value = transcriptText;
+				}
+
+				alert('会议纪要已生成，请检查内容后保存');
+			} catch (err) {
+				btn.disabled = false;
+				btn.innerHTML = '<i class="bi bi-magic me-1"></i>AI 生成会议纪要';
+				alert('AI 生成失败：' + err.message);
+			}
+		}
+
+		// ========== 表单验证 ==========
+		function validateForm() {
+			const selectedIds = getSelectedProjectIds();
+			const content = editor.value.trim();
+			const meetingDate = document.getElementById('meetingDate').value;
+			const meetingTitle = document.getElementById('meetingTitle').value.trim();
+			const transcriptText = document.getElementById('transcriptText').value;
+
+			if (selectedIds.length === 0) { alert('请至少选择一个项目'); return false; }
+			if (!meetingTitle) { alert('会议标题不能为空'); document.getElementById('meetingTitle').focus(); return false; }
+			if (!content && !transcriptText.trim()) {
+				alert('会议内容不能为空'); editor.focus(); return false;
+			}
+			if (!meetingDate) { alert('请选择会议日期'); return false; }
+
+			syncProjectHiddenFields();
+			return true;
+		}
+
+		// ========== 页面加载 ==========
+		window.addEventListener('load', () => {
+			updatePreview();
+			const today = ToDoTime.todayInBeijing();
+			document.getElementById('meetingDate').value = today;
+			document.getElementById('meetingDate').setAttribute('max', today);
+
+			// 初始化一次（会触发标题实时生成 + 简报加载）
+			syncProjectHiddenFields();
+		});
+
+		// 日期变化时更新标题
+		document.getElementById('meetingDate').addEventListener('change', function() {
+			// 日期变了，允许覆盖上次自动生成的值
+			lastAutoTitle = '';
+			tryAutoUpdateTitle();
+		});
+
+		editor.addEventListener('input', updatePreview);
+	</script>
+}

@@ -1,0 +1,117 @@
+.ai-generation-status {
+    min-width: 280px;
+    padding: 12px 14px;
+    border: 1px solid #dbe6f5;
+    border-radius: 8px;
+    background: #f7faff;
+    color: #40516b;
+    text-align: left;
+}
+
+.ai-generation-status-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 0.875rem;
+}
+
+.ai-generation-status-head > span {
+    display: inline-flex;
+    align-items: center;
+}
+
+.ai-spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    margin-right: 7px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: ai-spin 0.8s linear infinite;
+    vertical-align: -2px;
+}
+
+.ai-progress-track {
+    height: 6px;
+    margin: 12px 0;
+    overflow: hidden;
+    background: #e4edf8;
+    border-radius: 99px;
+}
+
+.ai-progress-track i {
+    display: block;
+    height: 100%;
+    background: #258cfb;
+    border-radius: inherit;
+    transition: width 0.45s ease;
+}
+
+.ai-progress-steps {
+    display: grid;
+    gap: 6px;
+}
+
+.ai-progress-step {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #8a96a8;
+    font-size: 0.75rem;
+}
+
+.ai-progress-step span {
+    display: grid;
+    width: 18px;
+    height: 18px;
+    place-items: center;
+    border: 1px solid #cfd9e7;
+    border-radius: 50%;
+    font-size: 0.65rem;
+}
+
+.ai-progress-step em {
+    font-style: normal;
+}
+
+.ai-progress-step.active {
+    color: #1d5fa7;
+}
+
+.ai-progress-step.active span {
+    border-color: #258cfb;
+    color: #258cfb;
+    box-shadow: 0 0 0 3px rgba(37, 140, 251, 0.12);
+}
+
+.ai-progress-step.done {
+    color: #198754;
+}
+
+.ai-progress-step.done span {
+    border-color: #198754;
+    color: #198754;
+}
+
+.ai-generation-note {
+    display: block;
+    margin-top: 10px;
+    color: #7b8798;
+    line-height: 1.5;
+}
+
+.ai-busy {
+    cursor: wait !important;
+    opacity: 0.78;
+    pointer-events: none;
+}
+
+@keyframes ai-spin {
+    to { transform: rotate(360deg); }
+}
+
+@media (max-width: 576px) {
+    .ai-generation-status { min-width: 0; width: 100%; }
+}

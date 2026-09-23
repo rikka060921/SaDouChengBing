@@ -1,0 +1,206 @@
+@page "{id:int}"
+@model ToDo.Razor.Pages.Agents.WorkItems.DetailsModel
+@using ToDo.Entities
+@{
+    ViewData["Title"] = $"Agent 交付 #{Model.WorkItem.Id}";
+    Layout = "/Pages/Shared/_Layout.cshtml";
+}
+
+<div class="container py-4">
+    @if (TempData["ErrorMessage"] != null)
+    {
+        <div class="alert alert-danger">@TempData["ErrorMessage"]</div>
+    }
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+        <div>
+            <h2 class="mb-1">Agent 交付凭证</h2>
+            <div class="text-muted">工作项 #@Model.WorkItem.Id · @(Model.WorkItem.AgentDefinition?.Name ?? $"Agent #{Model.WorkItem.AgentDefinitionId}") · Agent v@(Model.Receipt?.AgentVersion ?? Model.WorkItem.AiSession?.AgentVersion)</div>
+        </div>
+        <div class="d-flex gap-2">
+            <a asp-page="/Tasks/Details" asp-route-id="@Model.WorkItem.TaskId" class="btn btn-outline-primary">返回任务</a>
+            @if (Model.WorkItem.AiSessionId.HasValue)
+            {
+                <a asp-page="/AiSessions/Details" asp-route-id="@Model.WorkItem.AiSessionId" class="btn btn-outline-secondary">执行 Session</a>
+            }
+            @if (Model.Receipt != null)
+            {
+                var acceptanceRunning = Model.AcceptanceRecommendations.Any(item => item.Status == AgentAcceptanceRecommendationStatus.Pending);
+                @if (acceptanceRunning)
+                {
+                    <button type="button" class="btn btn-outline-secondary" disabled>验收分析进行中</button>
+                }
+                else
+                {
+                    <form method="post" asp-page-handler="RunAcceptance" asp-route-id="@Model.WorkItem.Id"
+                          onsubmit="return confirm('启动独立交付验收 Agent？它只给建议，不会替你通过或驳回。');">
+                        <button type="submit" class="btn btn-outline-success">Agent 独立验收建议</button>
+                    </form>
+                }
+            }
+        </div>
+    </div>
+
+    @if (Model.Receipt == null)
+    {
+        <div class="alert alert-info">该工作项尚未产生正式交付。执行结束后会生成交付凭证，并标明自动验收或需要人工处理的原因。</div>
+    }
+    else
+    {
+        var receipt = Model.Receipt;
+        <div class="row g-3 mb-3">
+            <div class="col-md-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="small text-muted">验收状态</div><div class="fs-5 fw-semibold">@DetailsModel.GetAcceptanceLabel(receipt.AcceptanceStatus)</div></div></div></div>
+            <div class="col-md-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="small text-muted">证据质量</div><div class="fs-5 fw-semibold">@(receipt.EvidenceQuality == AgentEvidenceQuality.Strong ? "强证据" : "基础证据")</div></div></div></div>
+            <div class="col-md-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="small text-muted">系统证据</div><div class="fs-5 fw-semibold">@Model.Evidence.Count 项</div></div></div></div>
+            <div class="col-md-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="small text-muted">工具影响</div><div class="fs-5 fw-semibold">@Model.ToolEffects.Count 项</div></div></div></div>
+        </div>
+
+        <div class="card shadow-sm mb-3">
+            <div class="card-header fw-semibold">交付结论</div>
+            <div class="card-body" style="white-space:pre-wrap">@receipt.OutcomeSummary</div>
+        </div>
+
+        <div class="row g-3 mb-3">
+            <div class="col-lg-6">
+                <div class="card shadow-sm h-100">
+                    <div class="card-header fw-semibold">系统生成证据</div>
+                    <div class="card-body">
+                        <div class="small text-muted mb-3">以下内容来自业务数据库与执行审计，不来自模型自述。</div>
+                        <div class="list-group list-group-flush">
+                            @foreach (var evidence in Model.Evidence)
+                            {
+                                <div class="list-group-item px-0"><div class="fw-semibold">@evidence.Label</div><div class="small text-muted">@evidence.Type · @evidence.Source · @evidence.Reference</div></div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="card shadow-sm h-100">
+                    <div class="card-header fw-semibold">工具调用影响</div>
+                    <div class="card-body">
+                        @if (Model.ToolEffects.Any())
+                        {
+                            @foreach (var effect in Model.ToolEffects)
+                            {
+                                <div class="border-bottom pb-2 mb-2">
+                                    <div><code>@effect.ToolName</code> <span class="badge bg-secondary">@effect.Status</span></div>
+                                    <div class="small mt-1">@effect.Effect</div>
+                                    <div class="small text-muted">风险 @effect.RiskLevel · 审核模式 @effect.ReviewMode · 调用 #@effect.ToolCallId</div>
+                                </div>
+                            }
+                        }
+                        else
+                        {
+                            <div class="text-muted">本次交付没有业务工具副作用。</div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm mb-3">
+            <div class="card-header fw-semibold">校验与完整性</div>
+            <div class="card-body">
+                <p><strong>自动校验：</strong>@receipt.ValidationSummary</p>
+                <p><strong>风险提示：</strong>@receipt.RiskSummary</p>
+                <p><strong>完整性校验：</strong><span class="badge bg-@(Model.ReceiptHashValid ? "success" : "danger")">@(Model.ReceiptHashValid ? "哈希一致" : "内容与哈希不一致")</span></p>
+                <p>
+                    <strong>服务端签名：</strong>
+                    @if (receipt.SignatureKeyId == "legacy-hash-only")
+                    {
+                        <span class="badge bg-secondary">历史哈希 · 无服务签名</span>
+                    }
+                    else if (receipt.SignatureKeyId == "unsigned-development")
+                    {
+                        <span class="badge bg-warning text-dark">开发环境未签名</span>
+                    }
+                    else
+                    {
+                        <span class="badge bg-@(Model.ReceiptSignatureValid ? "success" : "danger")">@(Model.ReceiptSignatureValid ? $"签名有效 · {receipt.SignatureKeyId}" : "签名缺失或异常")</span>
+                    }
+                </p>
+                <div class="small text-muted">生成时间：@receipt.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</div>
+                <div class="small text-muted text-break font-monospace">SHA-256：@receipt.ContentHash</div>
+                @if (receipt.ReviewedAt.HasValue)
+                {
+                    <hr />
+                    <div><strong>审核：</strong>@(receipt.AcceptanceStatus == AgentDeliveryAcceptanceStatus.AutomaticallyAccepted ? "系统自动检查" : receipt.ReviewedByUser?.RealName ?? receipt.ReviewedByUser?.UserName ?? $"用户 #{receipt.ReviewedByUserId}")</div>
+                    <div><strong>审核时间：</strong>@receipt.ReviewedAt.Value.ToString("yyyy-MM-dd HH:mm:ss")</div>
+                    <div><strong>审核意见：</strong>@receipt.ReviewComment</div>
+                }
+                else if (!string.IsNullOrWhiteSpace(receipt.ReviewComment))
+                {
+                    <div class="alert alert-warning small mt-3">需要你处理：@receipt.ReviewComment</div>
+                }
+            </div>
+        </div>
+
+        @if (Model.AcceptanceRecommendations.Any())
+        {
+            <div class="card shadow-sm mb-3">
+                <div class="card-header fw-semibold">独立验收建议</div>
+                <div class="card-body">
+                    @foreach (var recommendation in Model.AcceptanceRecommendations)
+                    {
+                        var recommendationClass = recommendation.Status == AgentAcceptanceRecommendationStatus.Failed
+                            ? "danger"
+                            : recommendation.Verdict == AgentAcceptanceVerdict.RecommendAccept
+                                ? "success"
+                                : recommendation.Verdict == AgentAcceptanceVerdict.RecommendReject ? "danger" : "warning text-dark";
+                        <div class="border-bottom pb-3 mb-3">
+                            <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
+                                <div>
+                                    @if (recommendation.Status == AgentAcceptanceRecommendationStatus.Pending)
+                                    {
+                                        <span class="badge bg-info text-dark">分析中</span>
+                                    }
+                                    else if (recommendation.Status == AgentAcceptanceRecommendationStatus.Failed)
+                                    {
+                                        <span class="badge bg-danger">分析失败</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-@recommendationClass">@DetailsModel.GetRecommendationLabel(recommendation.Verdict)</span>
+                                        <span class="small text-muted ms-2">置信度 @(recommendation.Confidence * 100).ToString("0")%</span>
+                                    }
+                                </div>
+                                <a asp-page="/AiSessions/Details" asp-route-id="@recommendation.AiSessionId" class="small">查看分析 Session</a>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(recommendation.ErrorMessage))
+                            {
+                                <div class="text-danger">@recommendation.ErrorMessage</div>
+                            }
+                            else if (recommendation.Status == AgentAcceptanceRecommendationStatus.Completed)
+                            {
+                                <div class="mb-2" style="white-space:pre-wrap">@recommendation.Summary</div>
+                                <div class="row g-3 small">
+                                    <div class="col-md-6"><strong>证据覆盖</strong><ul class="mb-0">@foreach (var item in DetailsModel.ParseRecommendationItems(recommendation.EvidenceCoverageJson)) { <li>@item</li> }</ul></div>
+                                    <div class="col-md-6"><strong>缺失项</strong><ul class="mb-0">@foreach (var item in DetailsModel.ParseRecommendationItems(recommendation.MissingItemsJson)) { <li>@item</li> }</ul></div>
+                                    <div class="col-md-6"><strong>风险</strong><ul class="mb-0">@foreach (var item in DetailsModel.ParseRecommendationItems(recommendation.RisksJson)) { <li>@item</li> }</ul></div>
+                                    <div class="col-md-6"><strong>人工复核</strong><ul class="mb-0">@foreach (var item in DetailsModel.ParseRecommendationItems(recommendation.HumanReviewQuestionsJson)) { <li>@item</li> }</ul></div>
+                                </div>
+                            }
+                        </div>
+                    }
+                    <div class="small text-muted">独立验收只提供建议，正式通过或驳回仍由任务审核人决定。</div>
+                </div>
+            </div>
+        }
+
+        @if (Model.PerformanceSignals.Any())
+        {
+            <div class="card shadow-sm">
+                <div class="card-header fw-semibold">表现反馈轨迹</div>
+                <div class="card-body">
+                    @foreach (var signal in Model.PerformanceSignals)
+                    {
+                        <div class="d-flex flex-wrap justify-content-between border-bottom py-2 gap-2">
+                            <div><span class="fw-semibold">@DetailsModel.GetSignalLabel(signal.EventType)</span><div class="small text-muted">@signal.Reason</div></div>
+                            <div class="text-end"><span class="badge bg-@(signal.ScoreDelta >= 0 ? "success" : "danger")">@signal.ScoreDelta.ToString("+0.##;-0.##;0")</span><div class="small text-muted">@signal.CreatedAt.ToString("MM-dd HH:mm")</div></div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    }
+</div>

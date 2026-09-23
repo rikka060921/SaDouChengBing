@@ -1,0 +1,34 @@
+@page
+@using Microsoft.AspNetCore.Mvc.Rendering
+@model ToDo.Razor.Pages.RedBlue.IndexModel
+@{
+    ViewData["Title"] = "红蓝对抗";
+    Layout = "/Pages/Shared/_Layout.cshtml";
+}
+<div class="container py-3"><div class="d-flex justify-content-between align-items-center mb-3"><div><h2 class="mb-1">红蓝对抗</h2><div class="text-muted">主持人读取当前项目任务与资料，红方提出方案，蓝方审查风险，裁判形成决策</div></div><a href="/Agents/Index" class="btn btn-outline-secondary">Agent 中心</a></div>
+<div asp-validation-summary="All" class="text-danger"></div>
+<div class="card shadow-sm mb-4">
+    <div class="card-header">主持人设置</div>
+    <div class="card-body">
+        <form method="post" asp-page-handler="Create">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label asp-for="ProjectId" class="form-label">当前项目</label>
+                    <select asp-for="ProjectId" asp-items="Model.Projects.Select(item => new SelectListItem(item.Name, item.Id.ToString()))" class="form-select"
+                            onchange="window.location.href='?ProjectId=' + encodeURIComponent(this.value)">
+                        <option value="">请选择项目</option>
+                    </select>
+                    <div class="form-text">选择后自动读取项目并生成建议，可继续修改。</div>
+                </div>
+                <div class="col-md-4"><label asp-for="Topic" class="form-label">主题</label><input asp-for="Topic" class="form-control" /></div>
+                <div class="col-md-4"><label asp-for="Objective" class="form-label">决策目标</label><textarea asp-for="Objective" class="form-control" rows="2"></textarea></div>
+                <div class="col-md-2"><label asp-for="MaxRounds" class="form-label">轮数</label><input asp-for="MaxRounds" type="number" min="1" max="5" class="form-control" /></div>
+                <div class="col-md-2 d-grid"><button class="btn btn-primary" type="submit"><i class="bi bi-play-fill me-1"></i>创建对抗</button></div>
+            </div>
+        </form>
+    </div>
+</div>
+<div class="card shadow-sm"><div class="card-header">历史对抗</div><div class="table-responsive"><table class="table table-hover mb-0 align-middle"><thead><tr><th>主题</th><th>轮数</th><th>状态</th><th>胜方</th><th>创建时间</th><th></th></tr></thead><tbody>
+@foreach (var item in Model.Sessions) { <tr><td>@item.Topic</td><td>@item.CurrentRound/@item.MaxRounds</td><td>@item.Status</td><td>@item.Winner</td><td>@item.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td><td><a href="/RedBlue/Details?id=@item.Id" class="btn btn-sm btn-outline-primary">查看</a></td></tr> }
+@if (Model.Sessions.Count == 0) { <tr><td colspan="6" class="text-center text-muted py-4">暂无对抗记录</td></tr> }
+</tbody></table></div></div></div>

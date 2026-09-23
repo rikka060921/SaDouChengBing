@@ -1,0 +1,79 @@
+@page
+@model ToDo.Razor.Pages.Approvals.IndexModel
+@using ToDo.Domain
+@using ToDo.Entities
+@{
+    ViewData["Title"] = "审批中心";
+}
+
+<div class="container py-3">
+    <div class="d-flex justify-content-between align-items-start mb-4">
+        <div><h1 class="page-heading">审批中心</h1><div class="page-subtitle">Agent 与自动化产生的敏感写入，只有人工确认后才会执行。</div></div>
+        <span class="badge bg-warning text-dark">@Model.Items.Count(item => item.Status == ApprovalRequestStatus.Pending) 项待处理</span>
+    </div>
+    @if (Model.RequestId.HasValue) { <a asp-page="Index" class="btn btn-link mb-3">查看全部审批记录</a> }
+    @if (TempData["SuccessMessage"] != null) { <div class="alert alert-success">@TempData["SuccessMessage"]</div> }
+    @if (TempData["ErrorMessage"] != null) { <div class="alert alert-danger">@TempData["ErrorMessage"]</div> }
+
+    <div class="work-section">
+        @if (Model.Items.Count == 0)
+        {
+            <div class="empty-state">暂无审批请求</div>
+        }
+        else
+        {
+            <div class="list-group list-group-flush">
+            @foreach (var item in Model.Items)
+            {
+                var statusText = item.Status switch { ApprovalRequestStatus.Pending => "待审批", ApprovalRequestStatus.Approved => "已通过", ApprovalRequestStatus.Rejected => "已驳回", _ => "执行失败" };
+                var statusClass = item.Status switch { ApprovalRequestStatus.Pending => "bg-warning text-dark", ApprovalRequestStatus.Approved => "bg-success", ApprovalRequestStatus.Rejected => "bg-secondary", _ => "bg-danger" };
+                <article id="approval-@item.Id" class="list-group-item p-3 p-lg-4">
+                    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+                        <div class="flex-grow-1">
+                            <div class="fw-semibold">@item.Summary</div>
+                            <div class="small text-muted mt-1">@(item.Project?.Name ?? "系统") · @(item.RequestedBy?.RealName ?? item.RequestedBy?.UserName) · @item.RequestedAt.ToString("MM-dd HH:mm")</div>
+                            <div class="d-flex flex-wrap gap-2 align-items-center mt-2">
+                                <span class="badge @(item.RiskLevel == AgentRiskLevel.High ? "bg-danger" : item.RiskLevel == AgentRiskLevel.Medium ? "bg-warning text-dark" : "bg-info text-dark")">@(item.RiskLevel == AgentRiskLevel.High ? "高风险" : item.RiskLevel == AgentRiskLevel.Medium ? "中风险" : "低风险")</span>
+                                <span class="small text-muted">@(item.ReviewMode == AgentToolReviewMode.AiReview ? "AI 自动审核" : item.ReviewMode == AgentToolReviewMode.HumanApproval ? "人工审批" : "直接执行")</span>
+                                @if (item.SignatureKeyId == "legacy-hash-only" || item.PayloadHash == ApprovalRequestService.LegacyPayloadHash) { <span class="badge bg-secondary">历史申请 · 需重新发起</span> }
+                                else if (item.SignatureKeyId == "unsigned-development") { <span class="badge bg-warning text-dark">开发环境未签名</span> }
+                                else { <span class="badge @(Model.IsAuthentic(item) ? "bg-success" : "bg-danger")">@(Model.IsAuthentic(item) ? "签名有效" : "签名异常")</span> }
+                            </div>
+                            <div class="technical-id mt-2">@item.SourceType · @item.ActionType</div>
+                            @if (!string.IsNullOrWhiteSpace(item.ExecutionResult)) { <div class="small mt-2">@item.ExecutionResult</div> }
+                        </div>
+                        <span class="badge @statusClass">@statusText</span>
+                    </div>
+                    @if (item.Status == ApprovalRequestStatus.Pending && Model.ApprovableProjectIds.Contains(item.ProjectId))
+                    {
+                        <form method="post" class="d-flex gap-2 flex-wrap mt-3 pt-3 border-top">
+                            <input type="hidden" name="id" value="@item.Id" />
+                            <input type="text" name="reviewComment" class="form-control form-control-sm flex-grow-1" style="min-width:220px" placeholder="审批意见（驳回时建议填写）" />
+                            @if (Model.ApprovableRequestIds.Contains(item.Id))
+                            {
+                                <button asp-page-handler="Approve" class="btn btn-sm btn-primary" onclick="return confirm('确认执行该敏感写入吗？')">通过并执行</button>
+                            }
+                            else
+                            {
+                                <span class="small text-warning align-self-center">高风险申请需由另一位审批人通过</span>
+                            }
+                            <button asp-page-handler="Reject" class="btn btn-sm btn-outline-danger">驳回</button>
+                        </form>
+                    }
+                    else if (item.Status == ApprovalRequestStatus.Pending)
+                    {
+                        <div class="small text-muted mt-3 pt-3 border-top">等待项目负责人、项目管理员或系统管理员处理</div>
+                    }
+                    else
+                    {
+                        <div class="small text-muted mt-3 pt-3 border-top">
+                            由 @(item.ReviewedBy?.RealName ?? item.ReviewedBy?.UserName) 于 @item.ReviewedAt?.ToString("yyyy-MM-dd HH:mm") 处理
+                            @if (!string.IsNullOrWhiteSpace(item.ReviewComment)) { <span> · @item.ReviewComment</span> }
+                        </div>
+                    }
+                </article>
+            }
+            </div>
+        }
+    </div>
+</div>

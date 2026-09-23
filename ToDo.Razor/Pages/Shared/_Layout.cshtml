@@ -1,0 +1,111 @@
+﻿@using Microsoft.AspNetCore.Identity
+@using ToDo.Entities
+@inject SignInManager<ApplicationUser> SignInManager
+@inject UserManager<ApplicationUser> UserManager
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - 任务管理系统</title>
+    <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/ai-generation.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/responsive.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/app-shell.css" asp-append-version="true" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+</head>
+<body>
+    @if (SignInManager.IsSignedIn(User))
+    {
+        var currentPage = ViewContext.RouteData.Values["page"]?.ToString() ?? string.Empty;
+        var currentUser = await UserManager.GetUserAsync(User);
+        var isSystemAdmin = currentUser != null && await UserManager.IsInRoleAsync(currentUser, "systemAdmin");
+        <header class="app-topbar">
+            <div class="app-topbar-inner">
+                <button class="app-menu-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#appSidebar"
+                        aria-controls="appSidebar" aria-expanded="false" aria-label="展开导航菜单">
+                    <i class="bi bi-list"></i>
+                </button>
+                <a class="app-brand app-brand-mobile" asp-page="/Projects/Index">
+                    <span class="app-brand-mark">豆</span><span>撒豆成兵</span>
+                </a>
+                <div class="app-topbar-spacer"></div>
+                <a class="app-topbar-icon" asp-page="/Notifications/Index" title="消息中心" aria-label="消息中心">
+                    <i class="bi bi-bell"></i>
+                </a>
+                <div class="dropdown">
+                    <a href="#" class="app-user dropdown-toggle" id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                        <span class="app-avatar">@(currentUser?.RealName?.FirstOrDefault() ?? currentUser?.UserName?.FirstOrDefault() ?? '用')</span>
+                        <span class="app-user-name">@(currentUser?.RealName ?? currentUser?.UserName)</span>
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm" aria-labelledby="userDropdown">
+                        <li><a class="dropdown-item" asp-page="/Account/Profile"><i class="bi bi-person me-2"></i>个人中心</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <form asp-area="Identity" asp-page="/Account/Logout" method="post">
+                                <button type="submit" class="dropdown-item"><i class="bi bi-box-arrow-right me-2"></i>安全退出</button>
+                            </form>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </header>
+        <div class="app-frame">
+            <aside id="appSidebar" class="app-sidebar collapse d-lg-block">
+                <a class="app-brand" asp-page="/Projects/Index">
+                    <span class="app-brand-mark">豆</span><span>撒豆成兵</span>
+                </a>
+                <nav class="app-nav" aria-label="主导航">
+                    <div class="app-nav-label">工作台</div>
+                    <a class="app-nav-link @(currentPage.StartsWith("/ActionCenter", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/ActionCenter/Index"><i class="bi bi-inbox"></i><span>待我处理</span></a>
+                    <a class="app-nav-link @(currentPage.StartsWith("/Projects", StringComparison.OrdinalIgnoreCase) || currentPage.StartsWith("/TaskGroups", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/Projects/Index"><i class="bi bi-grid-1x2"></i><span>项目管理</span></a>
+                    <a class="app-nav-link @(currentPage.StartsWith("/Tasks", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/Tasks/Index"><i class="bi bi-check2-square"></i><span>任务看板</span></a>
+                    <a class="app-nav-link @(currentPage.StartsWith("/MeetingMinutes", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/MeetingMinutes/Index"><i class="bi bi-calendar3"></i><span>会议纪要</span></a>
+                    <a class="app-nav-link @(currentPage.StartsWith("/Reports", StringComparison.OrdinalIgnoreCase) || currentPage.StartsWith("/DailySummary", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/Reports/Index"><i class="bi bi-bar-chart"></i><span>日报与报告</span></a>
+                    <a class="app-nav-link @(currentPage.StartsWith("/Notifications", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/Notifications/Index"><i class="bi bi-bell"></i><span>消息中心</span></a>
+                    <a class="app-nav-link @(currentPage.StartsWith("/Approvals", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/Approvals/Index"><i class="bi bi-check2-square"></i><span>审批中心</span></a>
+
+                    <div class="app-nav-label">智能协作</div>
+                    <a class="app-nav-link @((currentPage.StartsWith("/Agents", StringComparison.OrdinalIgnoreCase) && !currentPage.StartsWith("/Agents/WorkItems", StringComparison.OrdinalIgnoreCase)) || currentPage.StartsWith("/AiSessions", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/Agents/Index"><i class="bi bi-robot"></i><span>Agent中心</span></a>
+                    <a class="app-nav-link @(currentPage.StartsWith("/RedBlue", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/RedBlue/Index"><i class="bi bi-shield-shaded"></i><span>红蓝对抗</span></a>
+
+                    <div class="app-nav-label">系统</div>
+                    @if (isSystemAdmin)
+                    {
+                        <a class="app-nav-link @(currentPage.StartsWith("/Users", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/Users/Index"><i class="bi bi-people"></i><span>用户管理</span></a>
+                        <a class="app-nav-link @(currentPage.StartsWith("/ScheduledJobs", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/ScheduledJobs/Index"><i class="bi bi-clock-history"></i><span>定时任务</span></a>
+                        <a class="app-nav-link @(currentPage.StartsWith("/Agents/WorkItems", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/Agents/WorkItems/Index"><i class="bi bi-cpu"></i><span>Agent执行</span></a>
+                        <a class="app-nav-link @(currentPage.StartsWith("/EventBus", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/EventBus/Index"><i class="bi bi-diagram-3"></i><span>事件自动化</span></a>
+                        <a class="app-nav-link @(currentPage.StartsWith("/Integrations", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/Integrations/Index"><i class="bi bi-plug"></i><span>外部接口</span></a>
+                        <a class="app-nav-link @(currentPage.StartsWith("/DataGovernance", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/DataGovernance/Index"><i class="bi bi-database-check"></i><span>数据治理</span></a>
+                        <a class="app-nav-link @(currentPage.StartsWith("/SystemHealth", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/SystemHealth/Index"><i class="bi bi-heart-pulse"></i><span>系统健康</span></a>
+                    }
+                    <a class="app-nav-link @(currentPage.StartsWith("/OperationLogs", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/OperationLogs/Index"><i class="bi bi-journal-text"></i><span>操作日志</span></a>
+                </nav>
+                <div class="app-sidebar-footer">内部协作工作台</div>
+            </aside>
+            <div class="app-content">
+                <main role="main" class="app-main">
+                    @RenderBody()
+                </main>
+            </div>
+        </div>
+        @RenderSection("Styles", required: false)
+    }
+    else
+    {
+        <main role="main" class="app-public-main">
+            @RenderBody()
+        </main>
+    }
+
+    <script src="~/lib/jquery/dist/jquery.min.js" asp-append-version="true"></script>
+    <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js" asp-append-version="true"></script>
+    <script src="~/js/site.js" asp-append-version="true"></script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

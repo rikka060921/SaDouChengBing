@@ -1,0 +1,40 @@
+@page "{id:int?}"
+@model ToDo.Razor.Pages.Agents.Manage.EditModel
+@using ToDo.Domain
+@using ToDo.Entities
+@{
+    ViewData["Title"] = "编辑 Agent";
+}
+<div class="container py-4" style="max-width:900px">
+    <a asp-page="./Index" class="small text-decoration-none">← Agent 管理</a>
+    <h1 class="h3 mt-3">编辑工作要求</h1>
+    <p class="text-muted">说明它负责什么、怎样交付。模型、工具权限和已有项目授权会原样保留。</p>
+    @if (Model.Agent.LifecycleStatus == AgentLifecycleStatus.Archived)
+    {
+        <div class="alert alert-secondary">这个 Agent 已归档，历史记录保留，不再修改或接收任务。</div>
+    }
+    else
+    {
+        <form method="post" class="card shadow-sm border-0">
+            <div class="card-body p-4">
+                <input asp-for="Id" type="hidden" /><input asp-for="ExpectedVersion" type="hidden" />
+                <div asp-validation-summary="All" class="text-danger" role="alert"></div>
+                @if (!ViewData.ModelState.IsValid)
+                {
+                    <p class="small">请先复制需要保留的输入，再<a asp-page="./Edit" asp-route-id="@Model.Id">重新打开最新配置</a>。</p>
+                }
+                <div class="mb-4"><label asp-for="Input.Name" class="form-label">名称</label><input asp-for="Input.Name" class="form-control" maxlength="120" required /></div>
+                <div class="mb-4"><label asp-for="Input.Description" class="form-label">用途说明</label><textarea asp-for="Input.Description" class="form-control" rows="2" maxlength="1000" required></textarea><div class="form-text">显示给团队成员，简短说明适合交给它的工作。</div></div>
+                <div class="mb-4"><label asp-for="Input.Instructions" class="form-label">工作要求</label><textarea asp-for="Input.Instructions" class="form-control" rows="8" maxlength="20000" required></textarea><div class="form-text">这里的要求会用于 AI 执行。可说明成果、依据与注意事项，不需要填写模型参数或技术标签。</div></div>
+                <div class="border-top pt-3 mb-4">
+                    <h2 class="h6">当前能力与操作范围</h2>
+                    <p class="small text-muted">@string.Join("、", AgentBusinessSummary.Capabilities(Model.Agent))</p>
+                    @if (AgentBusinessSummary.Actions(Model.Agent).Count == 0) { <p class="small mb-2">仅提供分析和建议，没有启用业务操作工具。</p> }
+                    else { <ul class="small ps-3">@foreach (var action in AgentBusinessSummary.Actions(Model.Agent)) { <li>@action</li> }</ul> }
+                    <p class="small text-muted mb-0">修改工作要求不会自动增加能力或授权。需要不同用途时，可新建对应助手；项目资料仍须在项目内授权。</p>
+                </div>
+                <div class="d-flex justify-content-between align-items-center gap-3"><a asp-page="./Index" class="text-muted">取消</a><button type="submit" class="btn btn-primary px-4">保存工作要求</button></div>
+            </div>
+        </form>
+    }
+</div>

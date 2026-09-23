@@ -1,0 +1,183 @@
+body {
+    overflow-x: hidden;
+}
+
+main,
+.app-shell,
+.app-main,
+.card,
+.card-body,
+.list-group,
+.list-group-item {
+    min-width: 0;
+}
+
+img,
+svg,
+canvas,
+video {
+    max-width: 100%;
+}
+
+pre,
+code,
+.text-break {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+pre {
+    max-width: 100%;
+    overflow-x: auto;
+    white-space: pre-wrap;
+}
+
+.form-control,
+.form-select {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.navbar-brand {
+    white-space: nowrap;
+}
+
+.navbar-collapse {
+    min-width: 0;
+}
+
+.navbar-nav .nav-link {
+    white-space: nowrap;
+}
+
+.table-responsive {
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 1199.98px) {
+    .navbar-collapse {
+        padding-top: .75rem;
+    }
+
+    .navbar-nav {
+        max-height: min(65vh, 420px);
+        overflow-y: auto;
+    }
+
+    .navbar-nav .nav-link {
+        padding-top: .55rem;
+        padding-bottom: .55rem;
+    }
+
+    .navbar .dropdown {
+        width: 100%;
+    }
+
+    .navbar .dropdown-toggle {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .navbar .dropdown-menu {
+        position: static;
+        float: none;
+        width: 100%;
+        margin-top: .5rem;
+        box-shadow: none !important;
+    }
+}
+
+@media (max-width: 767.98px) {
+    body {
+        margin-bottom: 24px;
+    }
+
+    .app-shell {
+        padding-left: .75rem;
+        padding-right: .75rem;
+    }
+
+    main .display-5 {
+        font-size: clamp(1.65rem, 7vw, 2rem);
+        line-height: 1.2;
+        overflow-wrap: anywhere;
+    }
+
+    main .d-flex.justify-content-between.align-items-center {
+        flex-wrap: wrap;
+        gap: .75rem;
+    }
+
+    main .d-flex.justify-content-between.align-items-center > .btn-group,
+    main .d-flex.justify-content-between.align-items-center > .btn,
+    main .d-flex.justify-content-between.align-items-center > form {
+        width: 100%;
+    }
+
+    main .d-flex.justify-content-between.align-items-center > .btn-group > .btn {
+        flex: 1 1 auto;
+    }
+
+    .btn-group {
+        flex-wrap: wrap;
+        gap: .25rem;
+    }
+
+    .btn-group > .btn {
+        border-radius: .25rem !important;
+    }
+
+    .card-header,
+    .card-body {
+        padding-left: .875rem;
+        padding-right: .875rem;
+    }
+
+    .table-responsive {
+        margin-left: -.25rem;
+        margin-right: -.25rem;
+        width: calc(100% + .5rem);
+    }
+
+    .table-responsive > .table {
+        min-width: 40rem;
+    }
+
+    .pagination {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+}
+
+@media (max-width: 575.98px) {
+    .navbar .container {
+        padding-left: .75rem;
+        padding-right: .75rem;
+    }
+
+    .navbar-brand {
+        max-width: calc(100% - 3.5rem);
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    main .row {
+        --bs-gutter-x: .75rem;
+    }
+
+    .btn {
+        max-width: 100%;
+        overflow-wrap: anywhere;
+        white-space: normal;
+    }
+
+    .list-group-item,
+    .alert {
+        overflow-wrap: anywhere;
+    }
+
+    .table-responsive > .table {
+        font-size: .875rem;
+    }
+}

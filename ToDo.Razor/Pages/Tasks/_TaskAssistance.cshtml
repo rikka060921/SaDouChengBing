@@ -1,0 +1,87 @@
+@using ToDo.Entities
+@model ToDo.Razor.Pages.Tasks.DetailsModel
+@{
+    var assistance = Model.MyTaskAssistance;
+    var isActive = assistance != null && ToDo.Razor.Pages.Tasks.DetailsModel.IsAssistanceActive(assistance.Status);
+    var statusLabel = assistance == null ? "选择一种帮助，随时开始" : ToDo.Razor.Pages.Tasks.DetailsModel.GetAssistanceStatusLabel(assistance.Status);
+    var error = ToDo.Razor.Pages.Tasks.DetailsModel.GetAssistanceError(assistance);
+    var result = assistance?.Status == AgentRunJobStatus.Completed ? assistance.ResultSummary ?? string.Empty : string.Empty;
+    var hasText = !string.IsNullOrWhiteSpace(result);
+    var isLong = result.Length > 1200;
+    var preview = isLong ? result[..Math.Min(280, result.Length)] + "…" : string.Empty;
+}
+@if (Model.CanUseTaskAssistance || assistance != null)
+{
+    <section id="task-assistance" class="task-assist" aria-labelledby="task-assist-heading"
+             data-status-url="@Url.Page("/Tasks/Details", "AssistanceStatus", new { id = Model.TaskDetail.Id })"
+             data-has-active="@(isActive ? "true" : "false")"
+             data-can-request="@(Model.CanUseTaskAssistance ? "true" : "false")"
+             data-job-id="@assistance?.Id" data-status="@assistance?.Status">
+        <div class="task-assist-heading-row">
+            <div>
+                <p class="task-assist-eyebrow"><span aria-hidden="true">✦</span> 任务内的 AI 帮助</p>
+                <h2 id="task-assist-heading" class="task-assist-heading">先帮你理清，再由你决定</h2>
+            </div>
+            <span class="task-assist-private">仅自己可见</span>
+        </div>
+        <p id="task-assist-scope" class="task-assist-scope">根据你有权查看的当前任务、项目背景与评论提供建议，不进行联网搜索、不修改任务，也不会自动发布评论。任务负责人保持不变。</p>
+
+        <form method="post" asp-page-handler="Assist" asp-route-id="@Model.TaskDetail.Id" asp-antiforgery="true"
+              class="task-assist-form" aria-describedby="task-assist-scope" data-assist-form>
+            <input type="hidden" name="requestId" value="@Model.AssistanceRequestId.ToString("D")" data-assist-request-id />
+            <input type="hidden" name="purpose" value="" disabled data-assist-submit-purpose />
+            <div class="task-assist-actions">
+                <button type="submit" name="purpose" value="next_steps" class="task-assist-action" disabled="@(isActive || !Model.CanUseTaskAssistance)">
+                    <span class="task-assist-action-mark" aria-hidden="true">01</span>
+                    <span><span class="task-assist-action-title">梳理下一步</span><span class="task-assist-action-description">从哪里开始，先做哪几件事</span></span>
+                </button>
+                <button type="submit" name="purpose" value="risk_check" class="task-assist-action" disabled="@(isActive || !Model.CanUseTaskAssistance)">
+                    <span class="task-assist-action-mark" aria-hidden="true">02</span>
+                    <span><span class="task-assist-action-title">检查遗漏与风险</span><span class="task-assist-action-description">找出待确认的信息与可能的阻碍</span></span>
+                </button>
+                <button type="submit" name="purpose" value="progress_update" class="task-assist-action" disabled="@(isActive || !Model.CanUseTaskAssistance)">
+                    <span class="task-assist-action-mark" aria-hidden="true">03</span>
+                    <span><span class="task-assist-action-title">整理进展</span><span class="task-assist-action-description">把已有信息整理成进展草稿</span></span>
+                </button>
+            </div>
+        </form>
+
+        <div class="task-assist-status-row">
+            <p class="task-assist-status" role="status" aria-live="polite" aria-atomic="true">
+                <span class="task-assist-status-dot" aria-hidden="true"></span>
+                <span data-assist-status-label>@statusLabel</span>
+            </p>
+            <span class="task-assist-updated" data-assist-updated hidden="@(assistance == null)">@(assistance == null ? "" : $"更新于 {assistance.UpdatedAt:MM-dd HH:mm}")</span>
+        </div>
+        <p class="task-assist-working-note" data-assist-working-note hidden="@(!isActive)">可以继续查看任务，建议准备好后会显示在这里，无需重复点击。</p>
+        <p class="task-assist-working-note" data-assist-unavailable hidden="@Model.CanUseTaskAssistance">当前任务不再支持发起新的协助，已有建议仍可查看。</p>
+        <p class="task-assist-error" data-assist-error hidden="@(string.IsNullOrWhiteSpace(error))">@error</p>
+
+        <div class="task-assist-connection" role="status" aria-live="polite" hidden data-assist-connection>
+            <span data-assist-connection-message></span>
+            <button type="button" class="task-assist-text-button" data-assist-refresh>重新检查</button>
+        </div>
+
+        <div class="task-assist-result" data-assist-result hidden="@(!hasText)">
+            <div class="task-assist-result-heading">
+                <h3>给你的参考建议</h3>
+                <button type="button" class="task-assist-copy" data-assist-copy>复制结果</button>
+            </div>
+            <p class="task-assist-result-note">这是辅助建议，不代表任务已完成；请结合实际情况使用。</p>
+            <pre class="task-assist-result-text" data-assist-short-result hidden="@isLong">@(isLong ? "" : result)</pre>
+            <p class="task-assist-preview" data-assist-preview hidden="@(!isLong)">@preview</p>
+            <details class="task-assist-result-details" data-assist-result-details hidden="@(!isLong)">
+                <summary>展开完整建议</summary>
+                <pre class="task-assist-result-text" data-assist-long-result>@(isLong ? result : "")</pre>
+            </details>
+            <p class="task-assist-copy-feedback" role="status" aria-live="polite" data-assist-copy-feedback></p>
+        </div>
+
+        <div class="task-assist-footer" data-assist-footer hidden="@(assistance == null)">
+            <a class="task-assist-session-link" href="@(assistance == null ? null : Url.Page("/AiSessions/Details", new { id = assistance.AiSessionId }))"
+               data-assist-session-link>查看本次对话 <span aria-hidden="true">↗</span></a>
+            <span>不会出现在任务评论中</span>
+        </div>
+        <noscript><p class="task-assist-working-note">关闭脚本时不会自动更新。提交后可稍后手动刷新页面查看建议。</p></noscript>
+    </section>
+}

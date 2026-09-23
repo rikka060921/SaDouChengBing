@@ -1,0 +1,402 @@
+﻿@page
+@using ToDo.Entities
+@using System.Text.Json
+@model ToDo.Razor.Pages.OperationLogs.IndexModel
+
+@{
+    ViewData["Title"] = "操作日志";
+    var maxDate = AppTime.Today.ToString("yyyy-MM-dd");
+    string darkRowColor = "#f2f2f2";
+    string lightRowColor = "#ffffff";
+}
+
+<style>
+    .custom-table-header {
+        background-color: #007bff !important;
+        color: white !important;
+    }
+
+    .content-preview {
+        max-width: 200px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        cursor: help;
+    }
+
+    .badge {
+        font-weight: 500;
+        padding: 0.35em 0.65em;
+    }
+
+    .empty-table {
+        border: 1px solid #dee2e6;
+        border-radius: 0.375rem;
+    }
+
+    .pagination-container {
+        margin-top: 20px;
+    }
+</style>
+
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="display-5 fw-bold">操作日志</h1>
+    </div>
+
+    <!-- 筛选卡片 -->
+    <div class="card mb-4 p-3">
+        <form method="get">
+            <input type="hidden" asp-for="Parameters.TaskId" />
+            @if (Model.Parameters.TaskId.HasValue)
+            {
+                <div class="alert alert-info py-2 mb-3 d-flex justify-content-between align-items-center">
+                    <span>当前仅显示任务 #@Model.Parameters.TaskId 的操作记录</span>
+                    <a asp-page="Index" class="btn btn-sm btn-outline-secondary">查看全部日志</a>
+                </div>
+            }
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">操作人员</label>
+                    <select asp-for="Parameters.UserName" class="form-select">
+                        @foreach (var user in Model.UserOptions)
+                        {
+                            <option value="@user.Value" selected="@user.Selected">@user.Text</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">项目名称</label>
+                    <select asp-for="Parameters.ProjectName" class="form-select">
+                        @foreach (var project in Model.ProjectOptions)
+                        {
+                            <option value="@project.Value" selected="@project.Selected">@project.Text</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">操作对象</label>
+                    <select asp-for="Parameters.OperationTarget" class="form-select"
+                            asp-items="Html.GetEnumSelectList<OperationTarget>()">
+                        <option value="">全部</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">操作类型</label>
+                    <select asp-for="Parameters.OperationType" class="form-select">
+                        <option value="">全部</option>
+                        <option value="创建">创建</option>
+                        <option value="更新">更新</option>
+                        <option value="删除">删除</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">开始日期</label>
+                    <input asp-for="Parameters.StartDate" type="date" class="form-control" max="@maxDate">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">结束日期</label>
+                    <input asp-for="Parameters.EndDate" type="date" class="form-control" max="@maxDate">
+                </div>
+                <div class="col-md-4 d-flex align-items-end">
+                    <button type="submit" class="btn btn-outline-primary w-100">筛选</button>
+                    <a asp-page="Index" class="btn btn-outline-secondary ms-2 w-100">重置</a>
+                </div>
+            </div>
+            <input type="hidden" asp-for="Parameters.PageIndex" value="1" />
+        </form>
+    </div>
+    <!-- 表格始终显示，包括表头 -->
+    <div class="table-responsive empty-table">
+        <table class="table table-hover mb-0">
+            <thead class="custom-table-header">
+                <tr>
+                    <th>序号</th>
+                    <th>操作人员</th>
+                    <th>项目名称</th>
+                    <th>任务名称</th>
+                    <th>操作状态</th>
+                    <th>操作对象</th>
+                    <th>操作类型</th>
+                    <th>时间</th>
+                    <th>操作内容</th>
+                    <th>详情</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Model.ChangeLogs.Any())
+                {
+                    <!-- 有数据时显示数据行 -->
+                    var baseIndex = (Model.ChangeLogs.PageIndex - 1) * Model.ChangeLogs.PageSize;
+
+                    foreach (var (log, index) in Model.ChangeLogs.Select((log, index) => (log, index)))
+                    {
+                        var operationContent = GetOperationContent(log);
+                        var operationContentFull = GetOperationContentFull(log);
+                        var rowStyle = (index % 2 == 0) ? $"background-color: {darkRowColor};" : $"background-color: {lightRowColor};";
+
+                        <tr style="@rowStyle">
+                            <td class="text-center">@(baseIndex + index + 1)</td>
+                            <td>@log.OperatedByRealName</td>
+                            <td>@(string.IsNullOrEmpty(log.ProjectName) ? "-" : log.ProjectName)</td>
+                            <td>@(string.IsNullOrEmpty(log.TaskName) ? "-" : log.TaskName)</td>
+                            <td>
+                                <span class="badge @(log.OperationStatus == OperationStatus.成功 ? "bg-success" : "bg-danger")">
+                                    @log.OperationStatus
+                                </span>
+                            </td>
+                            <td>@log.OperationTarget</td>
+                            <td>
+                                <span class="badge @GetOperationTypeBadge(log.OperationType)">
+                                    @log.OperationType
+                                </span>
+                            </td>
+                            <td>@AppTime.ToBeijingTime(log.OperatedAt).ToString("yyyy-MM-dd HH:mm")</td>
+                            <td class="content-preview" title="@operationContentFull">@operationContent</td>
+                            <td>
+                                <a asp-page="./Details"
+                                   asp-route-id="@log.Id"
+                                   asp-route-Parameters.UserName="@Model.Parameters.UserName"
+                                   asp-route-Parameters.ProjectName="@Model.Parameters.ProjectName"
+                                   asp-route-Parameters.OperationTarget="@Model.Parameters.OperationTarget"
+                                   asp-route-Parameters.OperationType="@Model.Parameters.OperationType"
+                                   asp-route-Parameters.StartDate="@Model.Parameters.StartDate?.ToString("yyyy-MM-dd")"
+                                   asp-route-Parameters.EndDate="@Model.Parameters.EndDate?.ToString("yyyy-MM-dd")"
+                                   asp-route-Parameters.PageIndex="@Model.Parameters.PageIndex"
+                                   asp-route-Parameters.TaskId="@Model.Parameters.TaskId"
+                                   class="btn btn-sm btn-info">详情</a>
+                            </td>
+                        </tr>
+                    }
+                }
+                else
+                {
+                    <!-- 无数据时显示提示行 -->
+                    <tr>
+                        <td colspan="10" class="text-center py-4">
+                            <div class="alert alert-info text-center py-3 mb-0">
+                                <i class="bi bi-folder-open text-muted display-4"></i>
+                                <h4 class="mt-3">暂无符合条件的操作日志</h4>
+                                <p class="mb-0">@Html.Raw("您可以点击上方筛选按钮调整查询条件")</p>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <!-- 分页控件 - 只在有数据时显示 -->
+    @if (Model.ChangeLogs.Any())
+    {
+        <nav aria-label="分页导航" class="pagination-container">
+            <ul class="pagination justify-content-center">
+                <!-- 首页按钮 -->
+                <li class="page-item @(Model.ChangeLogs.PageIndex == 1 ? "disabled" : "")">
+                    <a class="page-link"
+                       asp-route-Parameters.PageIndex="1"
+                       asp-route-Parameters.TaskId="@Model.Parameters.TaskId"
+                       asp-route-Parameters.UserName="@Model.Parameters.UserName"
+                       asp-route-Parameters.ProjectName="@Model.Parameters.ProjectName"
+                       asp-route-Parameters.OperationTarget="@Model.Parameters.OperationTarget"
+                       asp-route-Parameters.OperationType="@Model.Parameters.OperationType"
+                       asp-route-Parameters.StartDate="@Model.Parameters.StartDate?.ToString("yyyy-MM-dd")"
+                       asp-route-Parameters.EndDate="@Model.Parameters.EndDate?.ToString("yyyy-MM-dd")"
+                       aria-label="首页">
+                        <span aria-hidden="true">&laquo;</span>
+                    </a>
+                </li>
+
+                <!-- 上一页按钮 -->
+                <li class="page-item @(Model.ChangeLogs.PageIndex == 1 ? "disabled" : "")">
+                    <a class="page-link"
+                       asp-route-Parameters.PageIndex="@(Model.ChangeLogs.PageIndex - 1)"
+                       asp-route-Parameters.TaskId="@Model.Parameters.TaskId"
+                       asp-route-Parameters.UserName="@Model.Parameters.UserName"
+                       asp-route-Parameters.ProjectName="@Model.Parameters.ProjectName"
+                       asp-route-Parameters.OperationTarget="@Model.Parameters.OperationTarget"
+                       asp-route-Parameters.OperationType="@Model.Parameters.OperationType"
+                       asp-route-Parameters.StartDate="@Model.Parameters.StartDate?.ToString("yyyy-MM-dd")"
+                       asp-route-Parameters.EndDate="@Model.Parameters.EndDate?.ToString("yyyy-MM-dd")"
+                       aria-label="上一页">
+                        <span aria-hidden="true">&lsaquo;</span>
+                    </a>
+                </li>
+
+                <!-- 当前页/总页数 -->
+                <li class="page-item active" aria-current="page">
+                    <span class="page-link">
+                        第 @Model.ChangeLogs.PageIndex 页 / 共 @Model.ChangeLogs.TotalPages 页
+                    </span>
+                </li>
+
+                <!-- 下一页按钮 -->
+                <li class="page-item @(Model.ChangeLogs.PageIndex >= Model.ChangeLogs.TotalPages ? "disabled" : "")">
+                    <a class="page-link"
+                       asp-route-Parameters.PageIndex="@(Model.ChangeLogs.PageIndex + 1)"
+                       asp-route-Parameters.TaskId="@Model.Parameters.TaskId"
+                       asp-route-Parameters.UserName="@Model.Parameters.UserName"
+                       asp-route-Parameters.ProjectName="@Model.Parameters.ProjectName"
+                       asp-route-Parameters.OperationTarget="@Model.Parameters.OperationTarget"
+                       asp-route-Parameters.OperationType="@Model.Parameters.OperationType"
+                       asp-route-Parameters.StartDate="@Model.Parameters.StartDate?.ToString("yyyy-MM-dd")"
+                       asp-route-Parameters.EndDate="@Model.Parameters.EndDate?.ToString("yyyy-MM-dd")"
+                       aria-label="下一页">
+                        <span aria-hidden="true">&rsaquo;</span>
+                    </a>
+                </li>
+
+                <!-- 末页按钮 -->
+                <li class="page-item @(Model.ChangeLogs.PageIndex >= Model.ChangeLogs.TotalPages ? "disabled" : "")">
+                    <a class="page-link"
+                       asp-route-Parameters.PageIndex="@Model.ChangeLogs.TotalPages"
+                       asp-route-Parameters.TaskId="@Model.Parameters.TaskId"
+                       asp-route-Parameters.UserName="@Model.Parameters.UserName"
+                       asp-route-Parameters.ProjectName="@Model.Parameters.ProjectName"
+                       asp-route-Parameters.OperationTarget="@Model.Parameters.OperationTarget"
+                       asp-route-Parameters.OperationType="@Model.Parameters.OperationType"
+                       asp-route-Parameters.StartDate="@Model.Parameters.StartDate?.ToString("yyyy-MM-dd")"
+                       asp-route-Parameters.EndDate="@Model.Parameters.EndDate?.ToString("yyyy-MM-dd")"
+                       aria-label="末页">
+                        <span aria-hidden="true">&raquo;</span>
+                    </a>
+                </li>
+            </ul>
+        </nav>
+    }
+</div>
+
+@functions {
+    string GetOperationTypeBadge(OperationType type)
+    {
+        return type switch
+        {
+            OperationType.创建 => "bg-success",
+            OperationType.更新 => "bg-primary",
+            OperationType.删除 => "bg-danger",
+            OperationType.启用 => "bg-info",
+
+            _ => "bg-secondary"
+        };
+    }
+
+    string FormatContentPreview(string? content)
+    {
+        if (string.IsNullOrEmpty(content))
+        {
+            return "-";
+        }
+
+        try
+        {
+            var jsonDoc = JsonDocument.Parse(content);
+            var jsonText = JsonSerializer.Serialize(jsonDoc.RootElement);
+            return jsonText.Length > 6 ? jsonText.Substring(0, 6) + "..." : jsonText;
+        }
+        catch
+        {
+            return content.Length > 6 ? content.Substring(0, 6) + "..." : content;
+        }
+    }
+
+    string FormatContentFull(string? content)
+    {
+        if (string.IsNullOrEmpty(content))
+        {
+            return "无内容";
+        }
+
+        try
+        {
+            var jsonDoc = JsonDocument.Parse(content);
+            return JsonSerializer.Serialize(jsonDoc.RootElement, new JsonSerializerOptions
+                {
+                    WriteIndented = true,
+                    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+                });
+        }
+        catch
+        {
+            return content;
+        }
+    }
+
+    string GetOperationContent(ChangeLog log)
+    {
+        if (log.OperationType == OperationType.创建)
+        {
+            return $"新建: {FormatContentPreview(log.AfterContent)}";
+        }
+        else if (log.OperationType == OperationType.更新)
+        {
+            return $"更新: {FormatContentPreview(log.BeforeContent)} → {FormatContentPreview(log.AfterContent)}";
+        }
+        else if (log.OperationType == OperationType.删除)
+        {
+            return $"删除: {FormatContentPreview(log.BeforeContent)}";
+        }
+        else
+        {
+            return $"{log.OperationType}: {FormatContentPreview(log.AfterContent)}";
+        }
+    }
+
+    string GetOperationContentFull(ChangeLog log)
+    {
+        if (log.OperationType == OperationType.创建)
+        {
+            return $"新建内容:\n{FormatContentFull(log.AfterContent)}";
+        }
+        else if (log.OperationType == OperationType.更新)
+        {
+            return $"更新前:\n{FormatContentFull(log.BeforeContent)}\n\n更新后:\n{FormatContentFull(log.AfterContent)}";
+        }
+        else if (log.OperationType == OperationType.删除)
+        {
+            return $"删除内容:\n{FormatContentFull(log.BeforeContent)}";
+        }
+        else
+        {
+            return $"{log.OperationType}内容:\n{FormatContentFull(log.AfterContent)}";
+        }
+    }
+}
+
+@section Scripts {
+    <script>
+        $(function() {
+            // 设置日期选择器的最大值为今天
+            $('input[type="date"]').attr('max', ToDoTime.todayInBeijing());
+
+            // 日期验证
+            $('form').submit(function() {
+                const startDateVal = $('#Parameters_StartDate').val();
+                const endDateVal = $('#Parameters_EndDate').val();
+                const today = ToDoTime.todayInBeijing();
+
+                if (startDateVal) {
+                    if (startDateVal > today) {
+                        alert('开始日期不能晚于今天');
+                        return false;
+                    }
+                }
+
+                if (endDateVal) {
+                    if (endDateVal > today) {
+                        alert('结束日期不能晚于今天');
+                        return false;
+                    }
+                }
+
+                if (startDateVal && endDateVal) {
+                    if (endDateVal < startDateVal) {
+                        alert('结束日期不能早于开始日期');
+                        return false;
+                    }
+                }
+
+                return true;
+            });
+        });
+    </script>
+}

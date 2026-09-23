@@ -1,0 +1,14 @@
+@model IEnumerable<ToDo.Domain.MeetingBriefingTask>
+<div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>任务</th><th>执行主体</th><th>优先级</th><th>截止时间</th><th>状态</th><th></th></tr></thead><tbody>
+@foreach (var task in Model)
+{
+    <tr>
+        <td><div class="fw-semibold">@task.Title</div>@if (task.IsSubTask) { <small class="text-muted">子任务 · @task.ParentTaskTitle</small> }</td>
+        <td><span class="badge @(task.AssigneeType == "Agent" ? "bg-info text-dark" : "bg-light text-dark")">@task.AssigneeType</span> @task.Assignee</td>
+        <td>@task.Priority</td>
+        <td>@task.Deadline</td>
+        <td><span class="badge bg-light text-dark">@task.Status</span></td>
+        <td><a class="btn btn-sm btn-outline-primary" asp-page="/Tasks/Details" asp-route-id="@task.Id">查看</a></td>
+    </tr>
+}
+</tbody></table></div>

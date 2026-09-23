@@ -1,0 +1,63 @@
+﻿@page
+@model ToDo.Razor.Pages.Users.DeleteModel
+@{
+    ViewData["Title"] = "删除用户确认";
+    Layout = "/Pages/Shared/_Layout.cshtml";
+}
+
+<div class="container mt-4">
+    <div class="card border-danger">
+        <div class="card-header bg-danger text-white">
+            <h3>删除用户确认</h3>
+        </div>
+        <div class="card-body">
+            <h4 class="text-danger">您确定要删除以下用户吗？此操作不可恢复！</h4>
+            <hr />
+            
+            <div class="row">
+                <div class="col-md-6">
+                    <dl class="row">
+                        <dt class="col-sm-4">用户名:</dt>
+                        <dd class="col-sm-8">@Model.UserToDelete.UserName</dd>
+                        
+                        <dt class="col-sm-4">真实姓名:</dt>
+                        <dd class="col-sm-8">@Model.UserToDelete.RealName</dd>
+                        
+                        <dt class="col-sm-4">电子邮箱:</dt>
+                        <dd class="col-sm-8">@Model.UserToDelete.Email</dd>
+                    </dl>
+                </div>
+                <div class="col-md-6">
+                    <dl class="row">
+                        <dt class="col-sm-4">角色:</dt>
+                        <dd class="col-sm-8">@Model.UserToDelete.Role</dd>
+                        
+                        <dt class="col-sm-4">状态:</dt>
+                        <dd class="col-sm-8">@Model.UserToDelete.Status</dd>
+                        
+                        <dt class="col-sm-4">注册时间:</dt>
+                        <dd class="col-sm-8">@Model.UserToDelete.CreatedAt.ToString("yyyy-MM-dd")</dd>
+                    </dl>
+                </div>
+            </div>
+            
+            @if (!string.IsNullOrEmpty(Model.UserToDelete.AvatarUrl))
+            {
+                <div class="text-center mt-3">
+                    <img src="@Model.UserToDelete.AvatarUrl" class="img-thumbnail" style="max-width: 150px;" alt="用户头像">
+                </div>
+            }
+        </div>
+        <div class="card-footer">
+            <form method="post">
+                <input type="hidden" asp-for="UserToDelete.Id" />
+                <button type="submit" class="btn btn-danger">
+                    <i class="bi bi-trash-fill"></i> 确认删除
+                </button>
+                <a asp-page="./Index" class="btn btn-secondary">
+                    <i class="bi bi-x-circle"></i> 取消
+                </a>
+            </form>
+        </div>
+    </div>
+</div>

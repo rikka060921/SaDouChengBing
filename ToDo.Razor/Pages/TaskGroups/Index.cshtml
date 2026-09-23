@@ -1,0 +1,170 @@
+﻿@page "{projectid:int}"
+@model ToDo.Razor.Pages.TaskGroups.IndexModel
+@{
+	ViewData["Title"] = "任务组列表";
+}
+
+@if (TempData["Message"] != null)
+{
+	<div class="alert alert-success">
+		@TempData["Message"]
+	</div>
+}
+
+<!--  新增：添加样式限制，用于处理过长的文本  -->
+<style>
+	.text-ellipsis {
+		white-space: nowrap; /*  禁止文本换行  */
+		overflow: hidden; /*  隐藏超出容器的内容  */
+		text-overflow: ellipsis; /*  用省略号 (...) 代替被隐藏的内容  */
+		max-width: 300px; /*  可选：设置一个最大宽度，防止列变得过宽  */
+	}
+</style>
+@* <div class="mb-4">
+	<h1 class="display-5 fw-bold">@ViewData["Title"]</h1>
+	@if (Model.ProjectRole)
+	{
+		<p>
+			<a class="btn btn-success" asp-page="Edit" asp-route-id="0" asp-route-projectId="@Model.CurrentProjectId">创建新任务组</a>
+		</p>
+	}
+</div> *@
+<div class="mb-4 d-flex justify-content-between align-items-center">
+	<!-- 左侧标题 -->
+	<h1 class="display-5 fw-bold">@ViewData["Title"]</h1>
+
+	<!-- 右侧按钮（只有管理员可见）-->
+	@if (Model.ProjectRole)
+	{
+		<a class="btn btn-success" asp-page="Edit" asp-route-id="0" asp-route-projectId="@Model.CurrentProjectId">
+			创建新任务组
+		</a>
+	}
+</div>
+
+<p>当前项目ID: @Model.CurrentProjectId</p>
+<p>任务组数量: @Model.TaskGroups.Count</p>
+
+<div>
+	<a asp-page="/Projects/Details" asp-route-id="@Model.CurrentProjectId" class="btn btn-outline-secondary">
+		<i class="bi bi-arrow-left me-1"></i>返回项目详情页
+	</a>
+	<a asp-page="/Projects/Index" asp-route-id="@Model.CurrentProjectId" class="btn btn-outline-secondary">
+		<i class="bi bi-arrow-left me-1"></i>返回项目列表页
+	</a>
+</div>
+
+@if (Model.ProjectRole)
+{
+	<form method="get">
+		<label>
+			<input type="checkbox" asp-for="ShowDeleted" onchange="this.form.submit()" />
+			显示已删除
+		</label>
+		<input type="hidden" name="projectId" value="@Model.CurrentProjectId" />
+		<input type="hidden" name="id" value="@Model.Id" />
+	</form>
+}
+<div class="table-responsive">
+	<div class="table-responsive">
+		<table class="table table-hover table-striped" style="table-layout: fixed;">
+			<thead class="bg-primary text-white">
+				<tr>
+					<th>任务组编号</th>
+					<th>名称</th>
+					<th>所属项目</th>
+					<th>更新时间</th>
+					<th>操作</th>
+				</tr>
+			</thead>
+			<tbody>
+				
+				@foreach (var group in Model.TaskGroups)
+				{
+					var rowClass = group.IsDeleted ? "text-muted fst-italic" : "";
+					<tr class="@rowClass">
+						<td>
+							@group.Id
+							@if (group.IsDeleted)
+							{
+								<span class="badge bg-secondary ms-2">已删除</span>
+							}
+						</td>
+						<td class="text-ellipsis" title="@group.Name">@group.Name</td>
+
+						@* <td>@group.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</td> *@
+						<td>@(group.Project?.Name ?? "未知项目")</td> <!-- 显示项目名称 -->
+						<td>@group.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
+						<td>
+							@if (Model.ProjectRole)
+							{
+								@* 已删除的显示恢复按钮 *@
+								@if (group.IsDeleted)
+								{
+									<button class="btn btn-sm btn-success" onclick="restoreTaskGroup(@group.Id)">恢复</button>
+								}
+							}
+							@if(Model.ProjectRole)
+							{
+								<form method="post" asp-page-handler="DeleteGroup" asp-route-projectid="@Model.CurrentProjectId" asp-route-id="@group.Id" onsubmit="return confirm('确定要删除这个任务组吗？');" style="display:inline;">
+									<button type="submit" class="btn btn-sm btn-danger">删除</button>
+								</form>
+								<a class="btn btn-sm btn-info" asp-page="Edit" asp-route-id="@group.Id" asp-route-projectId="@Model.CurrentProjectId">编辑</a>
+							}
+							else
+							{
+								<form method="post" asp-page-handler="DeleteGroup" asp-route-projectid="@Model.CurrentProjectId" asp-route-id="@group.Id" onsubmit="return confirm('确定要删除这个任务组吗？');" style="display:inline;">
+									<button type="submit" class="btn btn-sm btn-secondary" disabled>删除</button>
+								</form>
+								<a class="btn btn-sm btn-secondary disabled" asp-page="Edit" asp-route-id="@group.Id" asp-route-projectId="@Model.CurrentProjectId">编辑</a>
+							}
+							@if (!group.IsDeleted)
+							{
+								@* <a asp-page="Details" asp-route-id="@group.Id">查看详情</a> *@
+								<a asp-page="Details" asp-route-id="@group.Id" class="btn btn-sm btn-primary">
+									详情
+								</a>
+							}
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	</div>
+</div>
+
+@if (!Model.TaskGroups.Any())
+{
+	<div class="alert alert-info text-center py-5">
+		<i class="bi bi-folder-open text-muted display-4"></i>
+		<h4 class="mt-3">暂无分组</h4>
+		<p>@Html.Raw("您可以点击上方\"创建新任务分组\"按钮开始管理您的分组。")</p>
+	</div>
+}
+
+@section Scripts {
+	<script>
+		const token = '@Model.RequestVerificationToken';
+
+		function restoreTaskGroup(id) {
+		  if (!confirm("确认恢复该任务组吗？")) return;
+
+		  fetch(`?handler=Restore&id=${id}`, {
+			method: 'POST',
+			headers: {
+			  'RequestVerificationToken': token
+			}
+		  })
+		  .then(res => res.json())
+		  .then(data => {
+			if (data.success) {
+			  alert(data.message);
+			  location.reload();
+			} else {
+			  alert("恢复失败：" + (data.message || ""));
+			}
+		  });
+		}
+
+	</script>
+}

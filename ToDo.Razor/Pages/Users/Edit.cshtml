@@ -1,0 +1,143 @@
+﻿@page
+@model ToDo.Razor.Pages.Users.EditModel
+@using ToDo.Entities
+@{
+    ViewData["Title"] = "编辑用户资料";
+    Layout = "/Pages/Shared/_Layout.cshtml";
+}
+
+<div class="container">
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <h2>编辑用户资料</h2>
+        </div>
+    </div>
+
+    @if (TempData["SuccessMessage"] != null)
+    {
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            @TempData["SuccessMessage"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+
+    <div class="row">
+        <!-- 基本信息 -->
+        <div class="col-md-8">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">基本信息</h5>
+                </div>
+                <div class="card-body">
+                    <form method="post">
+                        <input type="hidden" asp-for="UserEditDto.Id" />
+                        
+                        <div class="mb-3">
+                            <label asp-for="UserEditDto.UserName" class="form-label">用户名</label>
+                            <input asp-for="UserEditDto.UserName" class="form-control" readonly />
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label asp-for="UserEditDto.RealName" class="form-label">真实姓名</label>
+                            <input asp-for="UserEditDto.RealName" class="form-control" />
+                            <span asp-validation-for="UserEditDto.RealName" class="text-danger"></span>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label asp-for="UserEditDto.Email" class="form-label">邮箱</label>
+                            <input asp-for="UserEditDto.Email" class="form-control" />
+                            <span asp-validation-for="UserEditDto.Email" class="text-danger"></span>
+                        </div>
+
+                        <div class="mb-3">
+                            <label asp-for="UserEditDto.PhoneNumber" class="form-label">电话号码</label>
+                            <input asp-for="UserEditDto.PhoneNumber" class="form-control" />
+                            <span asp-validation-for="UserEditDto.PhoneNumber" class="text-danger"></span>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label asp-for="UserEditDto.Gender" class="form-label">性别</label>
+                            <select asp-for="UserEditDto.Gender" asp-items="Html.GetEnumSelectList<Gender>()" class="form-select"></select>
+                        </div>
+                        
+                        <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                            <a asp-page="./Index" class="btn btn-secondary me-md-2">返回列表</a>
+                            <button type="submit" class="btn btn-primary">保存更改</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 右侧信息栏 -->
+        <div class="col-md-4">
+            <!-- 角色信息 -->
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">角色信息</h5>
+                </div>
+                <div class="card-body">
+                    <!-- Edit.cshtml -->
+<div class="mb-3">
+    <label class="form-label">角色</label>
+    <div>
+        @foreach (var role in Model.FinalRoles.Distinct())
+        {
+            <span class="badge bg-primary me-1">@role</span>
+        }
+        @if (!Model.FinalRoles.Any())
+        {
+            <span class="text-muted">无</span>
+        }
+    </div>
+</div>
+                </div>
+            </div>
+            
+           <!-- 创建的项目卡片 -->
+<div class="card shadow-sm">
+    <div class="card-header bg-success text-white">
+        <h5 class="mb-0">创建的项目</h5>
+    </div>
+    <div class="card-body p-0">
+        <div class="d-flex flex-column" style="max-height: 300px; overflow-y: auto;">
+            <div class="p-3 border-bottom">
+                <p class="mb-0 fw-bold">共创建了 <span class="text-primary">@Model.CreatedProjects.Count</span> 个项目</p>
+            </div>
+
+            @if (Model.CreatedProjects.Count > 0)
+            {
+                <div class="list-group list-group-flush">
+                    @foreach (var project in Model.CreatedProjects)
+                    {
+                        <div class="list-group-item border-0 px-3 py-2">
+                            <div class="d-flex w-100 justify-content-between align-items-center">
+                                <span class="text-truncate" style="max-width: 70%;">@project.Name</span>
+                                <small class="text-muted text-nowrap">@AppTime.ToBeijingTime(project.CreatedAt).ToString("yyyy-MM-dd")</small>
+                            </div>
+                            @if (!string.IsNullOrEmpty(project.Description))
+                            {
+                                <small class="text-muted d-block text-truncate mt-1" style="max-width: 100%;">
+                                    @project.Description
+                                </small>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="p-3 text-center text-muted">
+                    该用户尚未创建任何项目
+                </div>
+            }
+        </div>
+    </div>
+</div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

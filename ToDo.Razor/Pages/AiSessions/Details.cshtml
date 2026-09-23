@@ -1,0 +1,123 @@
+@page
+@model ToDo.Razor.Pages.AiSessions.DetailsModel
+@using ToDo.Entities
+@{
+    ViewData["Title"] = "AI Session 详情";
+    Layout = "/Pages/Shared/_Layout.cshtml";
+    var statusText = Model.Item.Status switch
+    {
+        AiSessionStatus.Running => "执行中",
+        AiSessionStatus.WaitingHuman => "已回复，可继续提问",
+        AiSessionStatus.Succeeded => "已结束",
+        AiSessionStatus.Cancelled => "已取消",
+        _ => "失败"
+    };
+    var statusClass = Model.Item.Status switch
+    {
+        AiSessionStatus.Running => "bg-primary",
+        AiSessionStatus.WaitingHuman => "bg-success",
+        AiSessionStatus.Succeeded => "bg-success",
+        AiSessionStatus.Cancelled => "bg-secondary",
+        _ => "bg-danger"
+    };
+}
+
+<div class="container py-3">
+    <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+        <div>
+            <div class="d-flex align-items-center gap-2 flex-wrap"><h2 class="mb-0">@Model.Item.AgentKey</h2><span class="badge @statusClass">@statusText</span></div>
+            <div class="text-muted small mt-1">@Model.Item.SessionKey · Agent v@(Model.Item.AgentVersion) · @Model.Item.TurnCount 轮 · 最近活动 @Model.Item.LastActivityAt.ToString("yyyy-MM-dd HH:mm:ss")</div>
+        </div>
+        <div class="d-flex gap-2">
+            <a asp-page="/AiSessions/Index" class="btn btn-outline-secondary">返回列表</a>
+            @if (Model.Item.Status is not (AiSessionStatus.Succeeded or AiSessionStatus.Cancelled))
+            {
+                <form method="post" asp-page-handler="Close" asp-route-id="@Model.Item.Id"><button class="btn btn-outline-danger" disabled="@(Model.Item.Status == AiSessionStatus.Running)" onclick="return confirm('确认结束这个 Session 吗？')">结束</button></form>
+            }
+        </div>
+    </div>
+
+    @if (TempData["SuccessMessage"] != null) { <div class="alert alert-success">@TempData["SuccessMessage"]</div> }
+    @if (TempData["ErrorMessage"] != null) { <div class="alert alert-danger">@TempData["ErrorMessage"]</div> }
+    <div asp-validation-summary="All" class="alert alert-danger" style="display:@(ViewData.ModelState.IsValid ? "none" : "block")"></div>
+    @if (!string.IsNullOrWhiteSpace(Model.Item.ErrorMessage)) { <div class="alert alert-danger"><strong>执行失败：</strong>@Model.Item.ErrorMessage</div> }
+    @if (Model.CurrentRunJob != null)
+    {
+        var job = Model.CurrentRunJob;
+            var jobStatusText = job.Status switch { AgentRunJobStatus.Pending => "等待执行", AgentRunJobStatus.Running => "执行中", AgentRunJobStatus.WaitingApproval => "等待审批", AgentRunJobStatus.Retrying => "等待重试", AgentRunJobStatus.Completed => "已完成", AgentRunJobStatus.Cancelled => "已取消", _ => "失败" };
+            <div class="alert @(job.Status == AgentRunJobStatus.Failed ? "alert-danger" : job.Status == AgentRunJobStatus.WaitingApproval ? "alert-warning" : job.Status == AgentRunJobStatus.Completed ? "alert-success" : "alert-info") d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <div><strong>后台运行 #@job.Id：</strong>@jobStatusText · 尝试 @job.AttemptCount/@job.MaxAttempts · 步骤 @job.StepCount/@job.MaxSteps@if (!string.IsNullOrWhiteSpace(job.ErrorMessage)) { <span> · @job.ErrorMessage</span> }</div>
+            @if (job.Status is AgentRunJobStatus.Pending or AgentRunJobStatus.Retrying)
+            {
+                <form method="post" asp-page-handler="CancelRun" asp-route-id="@Model.Item.Id"><input type="hidden" name="jobId" value="@job.Id" /><button class="btn btn-sm btn-outline-danger">取消排队</button></form>
+            }
+            @if (job.WaitingApprovalRequestId.HasValue) { <a asp-page="/Approvals/Index" class="btn btn-sm btn-outline-warning">处理人工审批 #@job.WaitingApprovalRequestId</a> }
+        </div>
+    }
+
+    <div class="d-flex gap-2 flex-wrap mb-3">
+        @if (Model.Item.ProjectId.HasValue) { <a asp-page="/Projects/Details" asp-route-id="@Model.Item.ProjectId" class="btn btn-sm btn-outline-secondary">项目 #@Model.Item.ProjectId</a> }
+        @if (Model.Item.TaskId.HasValue) { <a asp-page="/Tasks/Details" asp-route-id="@Model.Item.TaskId" class="btn btn-sm btn-outline-secondary">任务 #@Model.Item.TaskId</a> }
+        <a asp-page="/Approvals/Index" class="btn btn-sm btn-outline-secondary">审批中心</a>
+    </div>
+
+    <div class="row g-2 mb-3">
+        <div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body py-2"><div class="small text-muted">模型</div><div class="fw-semibold text-truncate">@(string.IsNullOrWhiteSpace(Model.Item.ModelName) ? "全局默认" : Model.Item.ModelName)</div></div></div></div>
+        <div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body py-2"><div class="small text-muted">Token</div><div class="fw-semibold">@((Model.Item.InputTokens ?? 0) + (Model.Item.OutputTokens ?? 0))</div><div class="small text-muted">输入 @(Model.Item.InputTokens?.ToString() ?? "未知") / 输出 @(Model.Item.OutputTokens?.ToString() ?? "未知")</div></div></div></div>
+        <div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body py-2"><div class="small text-muted">模型耗时</div><div class="fw-semibold">@TimeSpan.FromMilliseconds(Model.Item.DurationMilliseconds).TotalSeconds.ToString("0.0") 秒</div></div></div></div>
+        <div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body py-2"><div class="small text-muted">估算费用</div><div class="fw-semibold">@(Model.Item.EstimatedCost.HasValue ? Model.Item.EstimatedCost.Value.ToString("0.000000") : "未配置单价")</div></div></div></div>
+    </div>
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-header">对话</div>
+        <div class="card-body p-0">
+            @foreach (var message in Model.Item.Messages)
+            {
+                var roleText = message.Role switch { AiSessionMessageRole.User => "用户", AiSessionMessageRole.Assistant => "Agent", AiSessionMessageRole.Tool => $"工具 · {message.ToolName}", _ => "系统" };
+                var toneClass = message.Role switch { AiSessionMessageRole.User => "border-primary", AiSessionMessageRole.Assistant => "border-success", AiSessionMessageRole.Tool => "border-warning", _ => "border-secondary" };
+                <div class="px-3 py-3 border-bottom border-start border-3 @toneClass">
+                    <div class="small text-muted mb-1">@roleText · @message.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</div>
+                    <div style="white-space:pre-wrap">@message.Content</div>
+                </div>
+            }
+            @if (Model.Item.Messages.Count == 0) { <div class="text-center text-muted py-4">暂无消息</div> }
+        </div>
+    </div>
+
+    @if (Model.Item.Status is not (AiSessionStatus.Succeeded or AiSessionStatus.Cancelled))
+    {
+        <div class="card shadow-sm mb-3"><div class="card-header">继续对话</div><div class="card-body">
+            <form method="post" asp-page-handler="Continue" asp-route-id="@Model.Item.Id" id="sessionContinueForm">
+                <textarea asp-for="ContinuePrompt" class="form-control mb-2" rows="4" placeholder="输入下一条指令" disabled="@(Model.Item.Status == AiSessionStatus.Running)"></textarea>
+                <button class="btn btn-primary" id="sessionContinueSubmit" disabled="@(Model.Item.Status == AiSessionStatus.Running)">发送</button>
+                <div id="sessionContinueProgress" class="ai-generation-status d-none mt-3" aria-live="polite"></div>
+            </form>
+        </div></div>
+    }
+
+    <div class="card shadow-sm">
+        <div class="card-header">工具调用</div>
+        <div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th>工具</th><th>状态</th><th>参数</th><th>结果</th><th>时间</th></tr></thead><tbody>
+        @foreach (var call in Model.Item.ToolCalls)
+        {
+            var toolStatusText = call.Status switch { AgentToolCallStatus.Proposed => "已提议", AgentToolCallStatus.PendingApproval => "待审批", AgentToolCallStatus.Executed => "已执行", AgentToolCallStatus.Rejected => "已驳回", _ => "失败" };
+            var toolStatusClass = call.Status switch { AgentToolCallStatus.PendingApproval => "bg-warning text-dark", AgentToolCallStatus.Executed => "bg-success", AgentToolCallStatus.Rejected => "bg-secondary", AgentToolCallStatus.Failed => "bg-danger", _ => "bg-info text-dark" };
+            var riskText = call.RiskLevel switch { AgentRiskLevel.Low => "低风险", AgentRiskLevel.Medium => "中风险", _ => "高风险" };
+            var reviewText = call.ReviewMode switch { AgentToolReviewMode.Direct => "直接执行", AgentToolReviewMode.AiReview => "AI 自动审核", _ => "人工审批" };
+            <tr><td><div class="fw-semibold">@call.ToolName</div><div class="small text-muted">@riskText · @reviewText</div>@if (!string.IsNullOrWhiteSpace(call.ReviewReason)) { <div class="small text-muted">@call.ReviewReason</div> }</td><td><span class="badge @toolStatusClass">@toolStatusText</span>@if (call.ApprovalRequestId.HasValue) { <div><a asp-page="/Approvals/Index" class="small">审核 #@call.ApprovalRequestId</a></div> }</td><td><pre class="small mb-0 text-wrap" style="max-width:360px">@call.ArgumentsJson</pre></td><td><pre class="small mb-0 text-wrap" style="max-width:360px">@call.ResultJson</pre></td><td class="small text-muted">@call.CreatedAt.ToString("MM-dd HH:mm:ss")</td></tr>
+        }
+        @if (Model.Item.ToolCalls.Count == 0) { <tr><td colspan="5" class="text-center text-muted py-4">暂无工具调用</td></tr> }
+        </tbody></table></div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        AiGeneration.bindForm('#sessionContinueForm', '#sessionContinueSubmit', '#sessionContinueProgress', ['校验会话', '加入后台队列', '保存运行任务'], '正在加入后台队列...');
+    </script>
+}
+
+@if (Model.CurrentRunJob?.Status is AgentRunJobStatus.Pending or AgentRunJobStatus.Running or AgentRunJobStatus.Retrying)
+{
+    <script>setTimeout(() => location.reload(), 3000);</script>
+}

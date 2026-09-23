@@ -1,0 +1,333 @@
+@page "{ProjectId:int?}"
+@model ToDo.Razor.Pages.Projects.MeetingPreparationModel
+@using ToDo.Entities
+@{
+    ViewData["Title"] = Model.DraftId > 0 ? "编辑会前准备" : "会前准备";
+    ViewData["ProjectId"] = Model.ProjectId;
+    ViewData["ProjectSection"] = "preparation";
+}
+
+<partial name="_ProjectNav" view-data="ViewData" />
+
+@if (!string.IsNullOrWhiteSpace(Model.LoadError))
+{
+    <div class="alert alert-danger">@Model.LoadError</div>
+}
+
+<div class="container mt-4" style="min-height:70vh;">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <div>
+            <div class="app-eyebrow">MEETING PREP</div>
+            <h1 class="h2 mb-2">@(Model.DraftId > 0 ? "编辑会前准备草稿" : "会前准备")</h1>
+            <p class="text-muted mb-0">勾选需要讨论的项目和任务，保存后可反复修改，开会前随时编辑。</p>
+        </div>
+        <a href="/Projects/MeetingPreparationList?filterProjectId=@Model.ProjectId" class="btn btn-outline-secondary">
+            <i class="bi bi-list-ul me-1"></i>草稿列表
+        </a>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header"><h5 class="mb-0"><span class="text-danger">*</span> 草稿标题</h5></div>
+        <div class="card-body">
+            <input type="text" id="draftTitle" class="form-control form-control-lg"
+                   value="@Model.DraftTitle" placeholder="请输入会前准备草稿标题"
+                   @(Model.IsReadOnly ? "readonly" : "") />
+            <input type="hidden" id="draftId" value="@(Model.CurrentDraftId ?? 0)" />
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">选择项目 <span class="text-muted small">（勾选后下方任务列表实时刷新，支持跨项目）</span></h5>
+        </div>
+        <div class="card-body">
+            <div class="d-flex flex-wrap gap-3">
+                @foreach (var project in Model.AvailableProjects)
+                {
+                    var isChecked = Model.SelectedProjectIds.Contains(project.Id);
+                    <div class="form-check form-check-inline">
+                        <input type="checkbox" class="form-check-input project-checkbox"
+                               id="project-@project.Id" value="@project.Id"
+                               @(isChecked ? "checked" : "")
+                               @(Model.IsReadOnly ? "disabled" : "") />
+                        <label class="form-check-label" for="project-@project.Id">@project.Name</label>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center cursor-pointer"
+             data-bs-toggle="collapse" data-bs-target="#taskListCollapse" aria-expanded="false">
+            <h5 class="mb-0">任务列表 <span class="text-muted small">（仅展示未开始、进行中、待审核、逾期任务）</span></h5>
+            <div class="d-flex gap-2 align-items-center">
+                <span class="text-muted small" id="taskCount">@Model.CurrentTasks.Count 条</span>
+                <i class="bi bi-chevron-down"></i>
+            </div>
+        </div>
+        <div class="collapse" id="taskListCollapse">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover w-100 mb-0" id="taskTable">
+                        <thead>
+                            <tr>
+                                <th style="width:48px;">@if (!Model.IsReadOnly) { <text><input type="checkbox" id="toggleAllTasks" /></text> }</th>
+                                <th>任务标题</th>
+                                <th>所属项目</th>
+                                <th>状态</th>
+                                <th>优先级</th>
+                                <th>截止时间</th>
+                                <th>责任人</th>
+                            </tr>
+                        </thead>
+                        <tbody id="taskTableBody">
+                            @if (Model.CurrentTasks.Count == 0)
+                            {
+                                <tr><td colspan="7" class="text-center text-muted py-4">请勾选项目查看任务</td></tr>
+                            }
+                            else
+                            {
+                                @foreach (var task in Model.CurrentTasks)
+                                {
+                                    var isChecked = Model.SelectedTaskIds.Contains(task.Id);
+                                var rowClass = task.IsOverdue ? "table-danger" : task.IsNearDeadline ? "table-warning" : "";
+                                <tr class="@rowClass" data-task-id="@task.Id">
+                                    <td>@if (!Model.IsReadOnly) { <text><input type="checkbox" class="form-check-input task-checkbox" value="@task.Id" @(isChecked ? "checked" : "") /></text> }</td>
+                                    <td>@task.Title</td>
+                                    <td class="text-muted small">@task.ProjectName</td>
+                                    <td>
+                                        <span class="badge @(task.Status == ToDo.Entities.TaskStatus.PendingConfirmation ? "bg-warning text-dark" : task.Status == ToDo.Entities.TaskStatus.InProgress ? "bg-primary" : "bg-secondary")">@task.StatusText</span>
+                                        @Html.Raw(task.IsOverdue ? "<span class=\"badge bg-danger ms-1\">逾期</span>" : task.IsNearDeadline ? "<span class=\"badge bg-warning text-dark ms-1\">临近</span>" : "")
+                                    </td>
+                                        <td class="small">@task.Priority</td>
+                                        <td class="small">@(task.DeadlineAt?.ToString("yyyy-MM-dd") ?? "-")</td>
+                                        <td class="small">@task.AssigneeName</td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (!Model.IsReadOnly)
+                {
+                    <div class="px-3 pb-3">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="btnSelectAllTasks">
+                            <i class="bi bi-check2-all me-1"></i>全选
+                        </button>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center cursor-pointer"
+             data-bs-toggle="collapse" data-bs-target="#completedCollapse" aria-expanded="false">
+            <h5 class="mb-0">上次会议至今已完成任务 <span class="text-muted small">（按项目分组，点击展开）</span></h5>
+            <div class="d-flex gap-2 align-items-center">
+                <span class="text-muted small" id="completedCountTotal">@Model.RecentlyCompletedByProject.Values.Sum(v => v.Count) 项</span>
+                <i class="bi bi-chevron-down"></i>
+            </div>
+        </div>
+        <div class="collapse" id="completedCollapse">
+            <div class="card-body" id="completedProjectsContainer">
+                @if (Model.SelectedProjectIds.Count == 0)
+                {
+                    <p class="text-muted mb-0 text-center py-3">请先勾选项目</p>
+                }
+                else
+                {
+                    foreach (var pid in Model.SelectedProjectIds)
+                    {
+                        var projectName = Model.AvailableProjects.FirstOrDefault(p => p.Id == pid)?.Name ?? $"项目#{pid}";
+                        var items = Model.RecentlyCompletedByProject.TryGetValue(pid, out var list) ? list : new List<ToDo.Razor.Pages.Projects.MeetingPreparationModel.MeetingPrepTaskRow>();
+                        var collapseId = $"completed-{pid}";
+                        <div class="border-bottom">
+                            <button type="button" class="w-100 text-start d-flex justify-content-between align-items-center px-3 py-2 border-0 bg-transparent cursor-pointer"
+                                    data-bs-toggle="collapse" data-bs-target="#@collapseId" aria-expanded="false" aria-controls="@collapseId">
+                                <span class="text-dark"><i class="bi bi-chevron-down me-1 text-muted"></i><strong>@projectName</strong></span>
+                                <span class="badge @(items.Count > 0 ? "bg-success" : "bg-secondary")">@items.Count 项</span>
+                            </button>
+                            <div class="collapse" id="@collapseId">
+                                @if (items.Count == 0)
+                                {
+                                    <p class="text-muted small mb-0 px-3 pb-3">上次会议至今暂无任务完成。</p>
+                                }
+                                else
+                                {
+                                    <ul class="list-group list-group-flush mb-3">
+                                        @foreach (var t in items)
+                                        {
+                                            <li class="list-group-item py-2 small">
+                                                <span class="badge bg-success me-1">已完成</span>
+                                                @t.Title
+                                                <span class="text-muted mx-2">·</span>
+                                                <span class="text-muted">@t.AssigneeName</span>
+                                                <span class="text-muted mx-2">·</span>
+                                                <span class="text-muted">@(t.DeadlineAt?.ToString("yyyy-MM-dd") ?? "无截止")</span>
+                                            </li>
+                                        }
+                                    </ul>
+                                }
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+
+    @if (!Model.IsReadOnly)
+    {
+        <div class="d-flex gap-2 flex-wrap justify-content-end mb-4">
+            <button type="button" class="btn btn-primary btn-lg" id="btnSaveDraft">
+                <i class="bi bi-save me-1"></i>保存草稿
+            </button>
+        </div>
+    }
+    else
+    {
+        <div class="alert alert-info">此草稿已定稿，不可修改。</div>
+    }
+</div>
+
+<input type="hidden" id="antiforgeryToken" value="@Model.AntiforgeryToken" />
+
+<script>
+    (function() {
+        const token = document.getElementById('antiforgeryToken').value;
+        const isReadOnly = @Json.Serialize(Model.IsReadOnly);
+
+        // 勾选项目 → AJAX刷新任务
+        async function refreshTasks() {
+            if (isReadOnly) return;
+            const checked = Array.from(document.querySelectorAll('.project-checkbox:checked')).map(cb => parseInt(cb.value));
+            if (checked.length === 0) {
+                document.getElementById('taskTableBody').innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">请勾选项目查看任务</td></tr>';
+                document.getElementById('taskCount').textContent = '0 条';
+                renderCompletedByProject(null, []);
+                return;
+            }
+            const qs = checked.map(id => `projectIds=${id}`).join('&');
+            try {
+                const resp = await fetch(`?handler=FilteredTasks&${qs}`, { headers: { 'Accept': 'application/json' } });
+                const data = await resp.json();
+                if (!data.success) { alert(data.message || '加载任务失败'); return; }
+                const selectedTaskIds = new Set(Array.from(document.querySelectorAll('.task-checkbox:checked')).map(cb => parseInt(cb.value)));
+                const tbody = document.getElementById('taskTableBody');
+                if (!data.tasks || data.tasks.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">所选项目暂无待处理任务</td></tr>';
+                } else {
+                    tbody.innerHTML = data.tasks.map(t => {
+                        const checked = selectedTaskIds.has(t.id) ? 'checked' : '';
+                        let rowClass = '';
+                        let extraBadge = '';
+                        if (t.isOverdue) { rowClass = 'table-danger'; extraBadge = '<span class="badge bg-danger ms-1">逾期</span>'; }
+                        else if (t.isNearDeadline) { rowClass = 'table-warning'; extraBadge = '<span class="badge bg-warning text-dark ms-1">临近</span>'; }
+                        const statusBadge = t.status === 'PendingConfirmation'
+                            ? '<span class="badge bg-warning text-dark">待审核</span>'
+                            : t.status === 'InProgress'
+                                ? '<span class="badge bg-primary">进行中</span>'
+                                : '<span class="badge bg-secondary">未开始</span>';
+                        return `<tr class="${rowClass}" data-task-id="${t.id}">
+                            <td><input type="checkbox" class="form-check-input task-checkbox" value="${t.id}" ${checked} /></td>
+                            <td>${escapeHtml(t.title)}</td>
+                            <td class="text-muted small">${escapeHtml(t.projectName)}</td>
+                            <td>${statusBadge}${extraBadge}</td>
+                            <td class="small">${t.priority}</td>
+                            <td class="small">${t.deadline || '-'}</td>
+                            <td class="small">${escapeHtml(t.assigneeName)}</td>
+                        </tr>`;
+                    }).join('');
+                }
+                document.getElementById('taskCount').textContent = (data.tasks?.length || 0) + ' 条';
+                renderCompletedByProject(data.recentlyCompletedByProject, checked);
+            } catch (e) { alert('加载任务失败，请重试'); }
+        }
+
+        // 渲染"上次会议至今已完成任务"按项目分组的折叠区
+        function renderCompletedByProject(completedByProject, selectedIds) {
+            const container = document.getElementById('completedProjectsContainer');
+            const totalEl = document.getElementById('completedCountTotal');
+            if (!completedByProject || Object.keys(completedByProject).length === 0) {
+                container.innerHTML = '<p class="text-muted mb-0 text-center py-3">请先勾选项目</p>';
+                totalEl.textContent = '0 项';
+                return;
+            }
+            // 项目名查找：从当前页面复选框提取（避免再查一次）
+            const projectNameMap = {};
+            document.querySelectorAll('.project-checkbox').forEach(cb => {
+                projectNameMap[parseInt(cb.value)] = cb.parentElement?.querySelector('label')?.textContent?.trim() || `项目#${cb.value}`;
+            });
+
+            const ids = selectedIds || Object.keys(completedByProject).map(k => parseInt(k));
+            let total = 0;
+            const htmlPieces = [];
+            ids.forEach(pid => {
+                const arr = completedByProject[pid] || [];
+                total += arr.length;
+                const name = projectNameMap[pid] || `项目#${pid}`;
+                const collapseId = `completed-${pid}`;
+                const itemsHtml = arr.length === 0
+                    ? '<p class="text-muted small mb-0 px-3 pb-3">上次会议至今暂无任务完成。</p>'
+                    : '<ul class="list-group list-group-flush mb-3">' + arr.map(t => `
+                        <li class="list-group-item py-2 small">
+                            <span class="badge bg-success me-1">已完成</span>
+                            ${escapeHtml(t.title)}
+                            <span class="text-muted mx-2">·</span>
+                            <span class="text-muted">${escapeHtml(t.assigneeName)}</span>
+                            <span class="text-muted mx-2">·</span>
+                            <span class="text-muted">${t.deadline || '无截止'}</span>
+                        </li>`).join('') + '</ul>';
+                htmlPieces.push(`
+                    <div class="border-bottom">
+                        <button type="button" class="w-100 text-start d-flex justify-content-between align-items-center px-3 py-2 border-0 bg-transparent cursor-pointer"
+                                data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="false" aria-controls="${collapseId}">
+                            <span class="text-dark"><i class="bi bi-chevron-down me-1 text-muted"></i><strong>${escapeHtml(name)}</strong></span>
+                            <span class="badge ${arr.length > 0 ? 'bg-success' : 'bg-secondary'}">${arr.length} 项</span>
+                        </button>
+                        <div class="collapse" id="${collapseId}">
+                            ${itemsHtml}
+                        </div>
+                    </div>`);
+            });
+            container.innerHTML = htmlPieces.join('');
+            totalEl.textContent = total + ' 项';
+        }
+
+        function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+        if (!isReadOnly) {
+            document.querySelectorAll('.project-checkbox').forEach(cb => cb.addEventListener('change', refreshTasks));
+            document.getElementById('btnSelectAllTasks')?.addEventListener('click', function() {
+                document.querySelectorAll('.task-checkbox').forEach(cb => cb.checked = true);
+            });
+            document.getElementById('toggleAllTasks')?.addEventListener('change', function() {
+                document.querySelectorAll('.task-checkbox').forEach(cb => cb.checked = this.checked);
+            });
+            document.getElementById('btnSaveDraft').addEventListener('click', async function() {
+                const title = document.getElementById('draftTitle').value.trim();
+                if (!title) { alert('草稿标题不能为空'); return; }
+                const projectIds = Array.from(document.querySelectorAll('.project-checkbox:checked')).map(cb => parseInt(cb.value));
+                if (projectIds.length === 0) { alert('请至少选择一个项目'); return; }
+                const taskIds = Array.from(document.querySelectorAll('.task-checkbox:checked')).map(cb => parseInt(cb.value));
+                const draftId = parseInt(document.getElementById('draftId').value) || 0;
+                this.disabled = true;
+                this.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>保存中…';
+                try {
+                    const resp = await fetch('?handler=Save', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': token },
+                        body: JSON.stringify({ draftId, title, projectIds, taskIds })
+                    });
+                    const data = await resp.json();
+                    if (!resp.ok || !data.success) { alert(data.message || '保存失败'); return; }
+                    window.location.href = '/Projects/MeetingPreparationList';
+                } catch (e) { alert('保存失败，请重试'); }
+                this.disabled = false;
+                this.innerHTML = '<i class="bi bi-save me-1"></i>保存草稿';
+            });
+        }
+    })();
+</script>

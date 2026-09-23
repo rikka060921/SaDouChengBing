@@ -1,0 +1,81 @@
+@page
+@model ToDo.Razor.Pages.Notifications.IndexModel
+@{
+    ViewData["Title"] = "消息中心";
+}
+
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 fw-bold mb-1">消息中心</h1>
+            <div class="text-muted small">默认只看待关注消息；普通进展静默存入全部记录。已读不代表处理完成。</div>
+            <a asp-page="/ActionCenter/Index" class="small">去待我处理，查看当前仍需采取行动的事项</a>
+        </div>
+        <div class="d-flex gap-2">
+            <div class="btn-group" role="group" aria-label="消息筛选">
+                <a asp-page="Index" asp-route-UnreadOnly="true" class="btn btn-sm @(Model.UnreadOnly ? "btn-secondary" : "btn-outline-secondary")">待关注</a>
+                <a asp-page="Index" asp-route-UnreadOnly="false" class="btn btn-sm @(Model.UnreadOnly ? "btn-outline-secondary" : "btn-secondary")">全部记录</a>
+            </div>
+            <form method="post" asp-page-handler="MarkAllRead">
+                <input type="hidden" asp-for="UnreadOnly" />
+                <button type="submit" class="btn btn-sm btn-outline-primary" title="将所有消息标为已读">
+                    <i class="bi bi-check2-all me-1"></i>全部已读
+                </button>
+            </form>
+        </div>
+    </div>
+
+    @if (!Model.Items.Any())
+    {
+        <div class="alert alert-info text-center">@(Model.UnreadOnly ? "没有新的待关注消息；已读消息和普通进展可在全部记录中查看。" : "暂无通知记录")</div>
+    }
+    else
+    {
+        <div class="list-group shadow-sm">
+            @foreach (var item in Model.Items)
+            {
+                var badgeClass = item.Type switch
+                {
+                    "Urgent" or "TaskOverdue" or "TaskBlocked" => "bg-danger",
+                    "Reminder" or "TaskDueSoon" or "TaskNeedsDefinition" => "bg-warning text-dark",
+                    "Approval" or "Review" => "bg-info text-dark",
+                    "Success" => "bg-success",
+                    _ => "bg-secondary"
+                };
+                var typeText = item.Type switch
+                {
+                    "Urgent" or "TaskOverdue" or "TaskBlocked" => "需要处理",
+                    "Reminder" or "TaskDueSoon" => "到期提醒",
+                    "TaskNeedsDefinition" => "补充条件",
+                    "Approval" => "待审批",
+                    "Review" => "待审核",
+                    "Success" => "已完成",
+                    _ => "事件通知"
+                };
+                <div class="list-group-item @(item.IsRead ? "" : "list-group-item-primary")">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <div class="d-flex align-items-center gap-2 mb-1"><h5 class="mb-0">@item.Title</h5><span class="badge @badgeClass">@typeText</span></div>
+                            <p class="mb-1">@item.Content</p>
+                            <small class="text-muted">@item.CreatedAt.ToString("yyyy-MM-dd HH:mm")</small>
+                        </div>
+                        @if (!item.IsRead)
+                        {
+                            <form method="post" asp-page-handler="Read" asp-route-id="@item.Id">
+                                <button type="submit" class="btn btn-sm btn-outline-secondary">标为已读</button>
+                            </form>
+                        }
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(item.Link))
+                    {
+                        <form method="post" asp-page-handler="Open" class="mt-2">
+                            <input type="hidden" name="id" value="@item.Id" />
+                            <input type="hidden" name="link" value="@item.Link" />
+                            <button type="submit" class="btn btn-sm btn-link px-0">查看关联内容</button>
+                        </form>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>

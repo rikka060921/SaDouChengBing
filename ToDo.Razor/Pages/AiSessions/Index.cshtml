@@ -1,0 +1,77 @@
+@page
+@model ToDo.Razor.Pages.AiSessions.IndexModel
+@using ToDo.Entities
+@{
+    ViewData["Title"] = "AI Session";
+    Layout = "/Pages/Shared/_Layout.cshtml";
+}
+
+<div class="container py-3">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div>
+            <h2 class="mb-1">AI Session</h2>
+            <div class="text-muted small">多轮对话、工具执行和交付证据记录</div>
+        </div>
+        <div class="d-flex gap-2">
+            <form method="get">
+                <input type="hidden" name="IncludeArchived" value="@(!Model.IncludeArchived)" />
+                <button type="submit" class="btn btn-outline-secondary">
+                    @(Model.IncludeArchived ? "隐藏归档" : "查看归档")
+                </button>
+            </form>
+            <a href="/Agents/Index" class="btn btn-outline-secondary">返回 Agent 中心</a>
+        </div>
+    </div>
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead>
+                    <tr><th>Session</th><th>Agent</th><th>状态</th><th>轮次</th><th>最近活动</th><th>错误</th><th></th></tr>
+                </thead>
+                <tbody>
+                @foreach (var session in Model.Sessions)
+                {
+                    var statusText = session.Status switch
+                    {
+                        AiSessionStatus.Running => "执行中",
+                        AiSessionStatus.WaitingHuman => "已回复，可继续提问",
+                        AiSessionStatus.Succeeded => "已结束",
+                        AiSessionStatus.Cancelled => "已取消",
+                        _ => "失败"
+                    };
+                    var statusClass = session.Status switch
+                    {
+                        AiSessionStatus.Running => "bg-primary",
+                        AiSessionStatus.WaitingHuman => "bg-success",
+                        AiSessionStatus.Succeeded => "bg-success",
+                        AiSessionStatus.Cancelled => "bg-secondary",
+                        _ => "bg-danger"
+                    };
+                    <tr>
+                        <td>
+                            <div class="fw-semibold">@session.SessionKey[..Math.Min(12, session.SessionKey.Length)]</div>
+                            <div class="small text-muted">
+                                @session.StartedAt.ToString("yyyy-MM-dd HH:mm")
+                                @if (session.ArchivedAt.HasValue)
+                                {
+                                    <span class="badge bg-light text-dark border ms-1">已归档</span>
+                                }
+                            </div>
+                        </td>
+                        <td>@session.AgentKey</td>
+                        <td><span class="badge @statusClass">@statusText</span></td>
+                        <td>@session.TurnCount</td>
+                        <td>@session.LastActivityAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td class="text-danger small">@session.ErrorMessage</td>
+                        <td><a asp-page="/AiSessions/Details" asp-route-id="@session.Id" class="btn btn-sm btn-outline-primary">查看</a></td>
+                    </tr>
+                }
+                @if (Model.Sessions.Count == 0)
+                {
+                    <tr><td colspan="7" class="text-center text-muted py-4">暂无 AI Session</td></tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

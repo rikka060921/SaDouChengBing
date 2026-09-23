@@ -1,0 +1,29 @@
+@page
+@model ToDo.Razor.Pages.MeetingMinutes.SupervisionModel
+@using ToDo.Entities
+@{
+    ViewData["Title"] = "会议督办中心";
+}
+
+<div class="container py-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4"><div><h1 class="h2 mb-1">会议督办中心</h1><div class="text-muted">把会议承诺变成有责任人、有检查点、可升级的执行闭环。</div></div><form method="post" asp-page-handler="Run"><input type="hidden" name="projectId" value="@Model.ProjectId" /><button class="btn btn-outline-primary">立即检查</button></form></div>
+    @if (TempData["SuccessMessage"] != null) { <div class="alert alert-success">@TempData["SuccessMessage"]</div> }
+
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body"><div class="small text-muted">需关注</div><div class="h3 mb-0">@Model.AttentionCount</div></div></div></div>
+        <div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body"><div class="small text-muted">已逾期</div><div class="h3 mb-0 text-danger">@Model.OverdueCount</div></div></div></div>
+        <div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body"><div class="small text-muted">执行受阻</div><div class="h3 mb-0 text-warning">@Model.BlockedCount</div></div></div></div>
+        <div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body"><div class="small text-muted">待关联任务</div><div class="h3 mb-0">@Model.UnlinkedCount</div></div></div></div>
+    </div>
+
+    <form method="get" class="card card-body mb-3"><div class="row g-3 align-items-end"><div class="col-md-4"><label class="form-label">项目</label><select asp-for="ProjectId" class="form-select"><option value="">全部项目</option>@foreach (var project in Model.Projects) { <option value="@project.Id">@project.Name</option> }</select></div><div class="col-md-3"><label class="form-label">状态</label><select asp-for="Status" asp-items="Html.GetEnumSelectList<MeetingActionSupervisionStatus>()" class="form-select"><option value="">全部状态</option></select></div><div class="col-md-2"><label class="form-label">升级级别</label><select asp-for="EscalationLevel" class="form-select"><option value="">全部</option><option value="1">L1</option><option value="2">L2</option><option value="3">L3</option></select></div><div class="col-md-2 form-check ms-2"><input asp-for="IncludeCompleted" class="form-check-input" /><label asp-for="IncludeCompleted" class="form-check-label">包含已结束</label></div><div class="col-md-1"><button class="btn btn-primary w-100">筛选</button></div></div></form>
+
+    <div class="card shadow-sm"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th>状态</th><th>行动项</th><th>负责人/截止</th><th>督办结论</th><th>下一检查</th><th>操作</th></tr></thead><tbody>
+    @foreach (var item in Model.Items)
+    {
+        var isSnoozed = item.SnoozedUntil.HasValue && item.SnoozedUntil > AppTime.Now;
+        <tr><td><span class="badge bg-@(item.EscalationLevel >= 2 ? "danger" : item.SupervisionStatus == MeetingActionSupervisionStatus.OnTrack ? "success" : "warning text-dark")">L@item.EscalationLevel @SupervisionModel.StatusLabel(item.SupervisionStatus)</span>@if (isSnoozed) { <div class="small text-muted mt-1">已接手</div> }</td><td><div class="fw-semibold">@item.Title</div><div class="small text-muted">@item.MeetingMinutes?.Project?.Name · <a asp-page="/MeetingMinutes/Details" asp-route-id="@item.MeetingMinutesId">@item.MeetingMinutes?.MeetingTitle</a>@if (item.MatchedTaskId.HasValue) { <span> · </span><a asp-page="/Tasks/Details" asp-route-id="@item.MatchedTaskId">任务 #@item.MatchedTaskId</a> }</div></td><td><div>@(item.Assignee?.RealName ?? item.AssigneeText ?? item.MatchedTask?.Assignee?.RealName ?? "未指定")</div><div class="small text-muted">@((item.MatchedTask?.EndTime ?? item.Deadline)?.ToString("yyyy-MM-dd HH:mm") ?? "未设置")</div></td><td class="small" style="min-width:260px">@item.SupervisionMessage@if (!string.IsNullOrWhiteSpace(item.SupervisionResolutionNote)) { <div class="text-primary mt-1">处理说明：@item.SupervisionResolutionNote</div> }</td><td class="small">@(item.NextCheckpointAt?.ToString("yyyy-MM-dd HH:mm") ?? "未设置")</td><td><form method="post" asp-page-handler="Acknowledge" class="d-flex flex-column gap-1" style="min-width:210px"><input type="hidden" name="id" value="@item.Id" /><input type="datetime-local" name="nextCheckpointAt" class="form-control form-control-sm" value="@((item.NextCheckpointAt ?? AppTime.Now.AddHours(24)).ToString("yyyy-MM-ddTHH:mm"))" /><input type="text" name="resolutionNote" class="form-control form-control-sm" placeholder="处理说明" value="@item.SupervisionResolutionNote" /><button class="btn btn-sm btn-outline-primary">接手并设置检查点</button></form></td></tr>
+    }
+    @if (!Model.Items.Any()) { <tr><td colspan="6" class="text-center text-muted py-5">当前筛选下没有督办事项</td></tr> }
+    </tbody></table></div></div>
+</div>

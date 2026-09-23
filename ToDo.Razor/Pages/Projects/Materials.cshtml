@@ -1,0 +1,832 @@
+@page
+@model ToDo.Razor.Pages.Projects.MaterialsModel
+@using ToDo.Entities
+@{
+    ViewData["Title"] = "项目资料";
+    Layout = "/Pages/Shared/_Layout.cshtml";
+}
+<div class="container py-3">
+@{ ViewData["ProjectId"] = Model.ProjectId; ViewData["ProjectSection"] = "materials"; }
+<partial name="_ProjectNav" view-data="ViewData" />
+<div class="d-flex justify-content-between align-items-center mb-3"><div><h2 class="mb-1">项目资料</h2><div class="text-muted">@Model.ProjectName</div></div><a href="/Projects/Details/@Model.ProjectId" class="btn btn-outline-secondary">返回项目</a></div>
+@if (TempData["SuccessMessage"] != null) { <div class="alert alert-success">@TempData["SuccessMessage"]</div> }
+@if (TempData["ErrorMessage"] != null) { <div class="alert alert-danger">@TempData["ErrorMessage"]</div> }
+<div asp-validation-summary="All" class="text-danger"></div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-header">上传新资料</div>
+    <div class="card-body">
+        <form method="post" enctype="multipart/form-data" asp-page-handler="Upload" id="uploadForm">
+            <input type="hidden" asp-for="ProjectId" />
+            <div class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <label asp-for="UploadFile" class="form-label">文件</label>
+                    <input asp-for="UploadFile" type="file" class="form-control" id="uploadFileInput" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">资料分类</label>
+                    <div class="d-flex gap-2">
+                        <select asp-for="UploadCategory" class="form-select" id="presetCategorySelect">
+                            <option value="">-- 预设 --</option>
+                            @foreach (var category in Enum.GetValues<ProjectDocumentCategory>())
+                            {
+                                <option value="@category">@category.GetDisplayName()</option>
+                            }
+                        </select>
+                        <select asp-for="UploadCategoryId" class="form-select" id="customCategorySelect">
+                            <option value="">-- 自定义 --</option>
+                            @foreach (var cat in Model.ProjectCategories)
+                            {
+                                <option value="@cat.Id">@cat.Name</option>
+                            }
+                        </select>
+                        <input asp-for="UploadCustomCategory" type="text" class="form-control"
+                               placeholder="新分类" maxlength="50" id="newCategoryInput" />
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <label asp-for="Description" class="form-label">版本说明</label>
+                    <input asp-for="Description" class="form-control" />
+                </div>
+                <div class="col-md-3 d-grid">
+                    <button type="submit" class="btn btn-primary" onclick="return validateUploadForm()">上传资料</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="d-flex justify-content-between align-items-center mb-2">
+    <h5 class="mb-0">资料版本</h5>
+    <form method="get" class="d-flex gap-2 align-items-center">
+        <input type="hidden" asp-for="ProjectId" />
+        <select name="categoryFilter" class="form-select form-select-sm" id="categoryFilterSelect">
+            <option value="">全部分类</option>
+            <optgroup label="预设分类">
+                @foreach (var category in Enum.GetValues<ProjectDocumentCategory>())
+                {
+                    <option value="@category" selected="@(Model.PresetCategoryFilter == category)">@category.GetDisplayName()</option>
+                }
+            </optgroup>
+            @if (Model.ProjectCategories.Any())
+            {
+                <optgroup label="自定义分类">
+                    @foreach (var cat in Model.ProjectCategories)
+                    {
+                        <option value="@cat.Id" selected="@(Model.CategoryFilterId == cat.Id)">@cat.Name</option>
+                    }
+                </optgroup>
+            }
+        </select>
+        <button class="btn btn-sm btn-outline-primary">筛选</button>
+    </form>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+            <thead>
+                <tr>
+                    <th>文件名</th>
+                    <th>分类</th>
+                    <th>版本</th>
+                    <th>大小</th>
+                    <th>状态</th>
+                    <th>说明</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in Model.Documents)
+                {
+                    <tr>
+                        <td><a href="#" onclick="showDocumentContent(@item.Id, '@item.FileName'); return false;" class="text-decoration-none">@item.FileName</a></td>
+                        <td>
+                            @if (Model.CanManageAgentPermissions)
+                            {
+                                <form method="post" asp-page-handler="ChangeCategory" class="d-flex gap-1">
+                                    <input type="hidden" name="ProjectId" value="@Model.ProjectId" />
+                                    <input type="hidden" name="id" value="@item.Id" />
+                                    <select name="category" class="form-select form-select-sm" onchange="this.form.submit()">
+                                        <option value="">-- 选择分类 --</option>
+                                        <optgroup label="预设分类">
+                                            @foreach (var category in Enum.GetValues<ProjectDocumentCategory>())
+                                            {
+                                                <option value="@category" selected="@(item.CategoryId == null && category == item.Category)">@category.GetDisplayName()</option>
+                                            }
+                                        </optgroup>
+                                        @if (Model.ProjectCategories.Any())
+                                        {
+                                            <optgroup label="自定义分类">
+                                                @foreach (var cat in Model.ProjectCategories)
+                                                {
+                                                    <option value="@cat.Id" selected="@(item.CategoryId == cat.Id)">@cat.Name</option>
+                                                }
+                                            </optgroup>
+                                        }
+                                    </select>
+                                </form>
+                            }
+                            else
+                            {
+                                @if (item.CategoryName != null)
+                                {
+                                    @item.CategoryName
+                                }
+                                else
+                                {
+                                    @item.Category.GetDisplayName()
+                                }
+                            }
+                        </td>
+                        <td>v@item.VersionNumber</td>
+                        <td>@string.Format("{0:N1} KB", item.FileSize / 1024.0)</td>
+                        <td>
+                            @if (item.ConflictDetected)
+                            {
+                                <span class="badge bg-warning text-dark me-1">内容冲突</span>
+                            }
+                            @if (item.IsCurrent)
+                            {
+                                <span class="badge bg-success">当前版本</span>
+                            }
+                            @switch (item.IndexStatus)
+                            {
+                                case ProjectDocumentIndexStatus.Pending:
+                                    <span class="badge bg-secondary">待索引</span>
+                                    break;
+                                case ProjectDocumentIndexStatus.Processing:
+                                    <span class="badge bg-info text-dark">索引中</span>
+                                    break;
+                                case ProjectDocumentIndexStatus.Ready:
+                                    <span class="badge bg-primary" title="已提取 @item.ExtractedCharacterCount 个字符">可检索</span>
+                                    break;
+                                case ProjectDocumentIndexStatus.Failed:
+                                    <span class="badge bg-danger" title="@item.IndexError">索引失败</span>
+                                    break;
+                                case ProjectDocumentIndexStatus.Unsupported:
+                                    <span class="badge bg-dark" title="@item.IndexError">暂不支持</span>
+                                    break;
+                            }
+                        </td>
+                        <td class="text-truncate" style="max-width: 150px;" title="@item.Description">@item.Description</td>
+                        <td>
+                            <div class="d-flex gap-1">
+                                <a class="btn btn-sm btn-outline-primary" href="/Projects/Materials?handler=Download&amp;projectId=@Model.ProjectId&amp;id=@item.Id">下载</a>
+                                @if (Model.DocumentWritePermissions.ContainsKey(item.Id) && Model.DocumentWritePermissions[item.Id])
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-warning" onclick="showAiReviseModal(@item.Id, '@item.FileName')">AI修改</button>
+                                }
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="showVersionHistory(@item.Id, '@item.FileName')">历史版本</button>
+                                @if (item.IsCurrent && item.IndexStatus is ProjectDocumentIndexStatus.Failed or ProjectDocumentIndexStatus.Unsupported)
+                                {
+                                    <form method="post" asp-page-handler="Reindex" class="d-inline">
+                                        <input type="hidden" name="projectId" value="@Model.ProjectId" />
+                                        <input type="hidden" name="documentId" value="@item.Id" />
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">重建索引</button>
+                                    </form>
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                }
+                @if (Model.Documents.Count == 0)
+                {
+                    <tr>
+                        <td colspan="7" class="text-center text-muted py-4">暂无项目资料</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- 历史版本弹窗 -->
+<div class="modal fade" id="versionHistoryModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">历史版本 - <span id="historyFileName"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="versionHistoryList" class="list-group">
+                    <div class="text-center text-muted py-3">加载中...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- AI修改弹窗 -->
+<div class="modal fade" id="aiReviseModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">AI修改 - <span id="aiReviseFileName"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small">请输入修改要求，AI将根据您的要求进行修改</p>
+                <textarea id="aiReviseRequirement" class="form-control" rows="4" placeholder="例如：请优化文档结构，补充缺失的内容..."></textarea>
+                <input type="hidden" id="aiReviseDocumentId" />
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="submitAiRevise()">提交修改</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 文档内容查看弹窗 -->
+<div class="modal fade" id="documentContentModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">文档内容 - <span id="contentFileName"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="documentContent" class="bg-light p-3 rounded" style="max-height: 400px; overflow-y: auto; white-space: pre-wrap; font-family: monospace;"></div>
+            </div>
+            <div class="modal-footer">
+                <a id="documentDownloadLink" href="#" class="btn btn-outline-secondary">下载</a>
+                <button type="button" id="btnAiReviseFromModal" class="btn btn-outline-warning" data-bs-dismiss="modal">AI修改</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 草稿对比查看弹窗 -->
+<div class="modal fade" id="draftCompareModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">草稿对比 - <span id="draftCompareFileName"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <strong>修改说明：</strong><span id="draftChangeDescription"></span>
+                    <span class="ms-3 text-muted">Agent：<span id="draftAgentName"></span></span>
+                    <span class="ms-3 text-muted">创建时间：<span id="draftCreatedTime"></span></span>
+                </div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>原始内容</h6>
+                        <div id="draftOriginalContent" class="bg-light p-3 rounded" style="max-height: 400px; overflow-y: auto; white-space: pre-wrap; font-family: monospace;"></div>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>AI修改后内容</h6>
+                        <div id="draftRevisedContent" class="bg-light p-3 rounded" style="max-height: 400px; overflow-y: auto; white-space: pre-wrap; font-family: monospace;"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- AI草稿审核列表 -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header">
+        <ul class="nav nav-tabs" id="draftTabs" role="tablist">
+            <li class="nav-item">
+                <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#pendingDrafts" type="button">
+                    待审核 <span class="badge bg-warning text-dark ms-1">@Model.PendingDrafts.Count</span>
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" data-bs-toggle="tab" data-bs-target="#processedDrafts" type="button">
+                    已处理
+                </button>
+            </li>
+        </ul>
+    </div>
+    <div class="card-body">
+        <div class="tab-content">
+            <div class="tab-pane fade show active" id="pendingDrafts">
+                @if (Model.PendingDrafts.Count > 0)
+                {
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead>
+                                <tr>
+                                    <th>文件名</th>
+                                    <th>Agent</th>
+                                    <th>修改说明</th>
+                                    <th>创建时间</th>
+                                    <th>有效期</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var draft in Model.PendingDrafts)
+                                {
+                                    <tr>
+                                        <td><a href="#" onclick="showDraftContent(@draft.Id, '@draft.DraftFileName'); return false;" class="text-decoration-none">@draft.DraftFileName</a></td>
+                                        <td>@draft.AgentDisplayName</td>
+                                        <td>@draft.ChangeDescription</td>
+                                        <td>@draft.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                                        <td>@draft.ExpireTime.ToString("yyyy-MM-dd")</td>
+                                        <td>
+                                            <div class="d-flex gap-1">
+                                                <button type="button" class="btn btn-sm btn-outline-info" onclick="showDraftContent(@draft.Id, '@draft.DraftFileName')">查看对比</button>
+                                                <a href="/Projects/Materials?handler=DownloadDraft&projectId=@Model.ProjectId&draftId=@draft.Id" class="btn btn-sm btn-outline-secondary">下载</a>
+                                                <form method="post" asp-page-handler="AuditDraft" class="d-inline">
+                                                    <input type="hidden" name="projectId" value="@Model.ProjectId" />
+                                                    <input type="hidden" name="draftId" value="@draft.Id" />
+                                                    <input type="hidden" name="action" value="pass" />
+                                                    <button type="submit" class="btn btn-sm btn-success">通过</button>
+                                                </form>
+                                                <form method="post" asp-page-handler="AuditDraft" class="d-inline">
+                                                    <input type="hidden" name="projectId" value="@Model.ProjectId" />
+                                                    <input type="hidden" name="draftId" value="@draft.Id" />
+                                                    <input type="hidden" name="action" value="reject" />
+                                                    <button type="submit" class="btn btn-sm btn-danger">驳回</button>
+                                                </form>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                else
+                {
+                    <div class="text-center text-muted py-4">暂无待审核草稿</div>
+                }
+            </div>
+            <div class="tab-pane fade" id="processedDrafts">
+                @if (Model.ProcessedDrafts.Count > 0)
+                {
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead>
+                                <tr>
+                                    <th>文件名</th>
+                                    <th>Agent</th>
+                                    <th>修改说明</th>
+                                    <th>状态</th>
+                                    <th>审核时间</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var draft in Model.ProcessedDrafts)
+                                {
+                                    <tr>
+                                        <td><a href="#" onclick="showDraftContent(@draft.Id, '@draft.DraftFileName'); return false;" class="text-decoration-none">@draft.DraftFileName</a></td>
+                                        <td>@draft.AgentDisplayName</td>
+                                        <td>@draft.ChangeDescription</td>
+                                        <td>
+                                            @if (draft.AuditStatus == DraftAuditStatus.Pass)
+                                            {
+                                                <span class="badge bg-success">已通过</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-danger">已驳回</span>
+                                            }
+                                        </td>
+                                        <td>@draft.AuditTime?.ToString("yyyy-MM-dd HH:mm")</td>
+                                        <td>
+                                            <div class="d-flex gap-1">
+                                                <button type="button" class="btn btn-sm btn-outline-info" onclick="showDraftContent(@draft.Id, '@draft.DraftFileName')">查看对比</button>
+                                                <a href="/Projects/Materials?handler=DownloadDraft&projectId=@Model.ProjectId&draftId=@draft.Id" class="btn btn-sm btn-outline-secondary">下载</a>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                else
+                {
+                    <div class="text-center text-muted py-4">暂无已处理草稿</div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (Model.CanManageAgentPermissions)
+{
+    <div class="card shadow-sm mb-4">
+        <div class="card-header d-flex justify-content-between">
+            <span>Agent 分类资料权限</span>
+            <span class="small text-muted">未配置即拒绝；写入权限自动包含读取权限</span>
+        </div>
+        <div class="card-body">
+            <form method="post" asp-page-handler="SavePermission">
+                <input type="hidden" asp-for="ProjectId" />
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-3">
+                        <label asp-for="PermissionAgentKey" class="form-label">Agent</label>
+                        <select asp-for="PermissionAgentKey" class="form-select">
+                            <option value="">请选择</option>
+                            @foreach (var agent in Model.Agents.Where(item => item.IsEnabled))
+                            {
+                                <option value="@agent.AgentKey">@agent.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label asp-for="PermissionCategory" class="form-label">预设分类</label>
+                        <select asp-for="PermissionCategory" class="form-select" id="permPresetCategory">
+                            <option value="">-- 选择预设分类 --</option>
+                            @foreach (var category in Enum.GetValues<ProjectDocumentCategory>())
+                            {
+                                <option value="@category">@category.GetDisplayName()</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label asp-for="PermissionCustomCategoryId" class="form-label">自定义分类</label>
+                        <select asp-for="PermissionCustomCategoryId" class="form-select" id="permCustomCategory">
+                            <option value="">-- 选择自定义分类 --</option>
+                            @foreach (var cat in Model.ProjectCategories)
+                            {
+                                <option value="@cat.Id">@cat.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="form-check">
+                            <input asp-for="PermissionCanRead" class="form-check-input" />
+                            <label asp-for="PermissionCanRead" class="form-check-label">允许读取</label>
+                        </div>
+                        <div class="form-check">
+                            <input asp-for="PermissionCanWrite" class="form-check-input" />
+                            <label asp-for="PermissionCanWrite" class="form-check-label">允许申请写入</label>
+                        </div>
+                    </div>
+                    <div class="col-md-2 d-grid">
+                        <button class="btn btn-primary">保存权限</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-header">
+            权限列表
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Agent</th>
+                        <th>分类</th>
+                        <th>读取</th>
+                        <th>写入</th>
+                        <th>更新时间</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var (permission, agentDisplayName, categoryDisplayName) in Model.PermissionViewList)
+                    {
+                        <tr>
+                            <td>@agentDisplayName</td>
+                            <td>@categoryDisplayName</td>
+                            <td>@(permission.CanRead ? "允许" : "拒绝")</td>
+                            <td>@(permission.CanWrite ? "允许" : "拒绝")</td>
+                            <td>@permission.UpdatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                        </tr>
+                    }
+                    @if (Model.PermissionViewList.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="5" class="text-center text-muted py-3">尚未授权任何 Agent，当前全部默认拒绝</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+}
+
+
+<script>
+    // 预设分类名称列表
+    var presetCategoryNames = '@Model.PresetCategoryNames'.split(',');
+    
+    // 获取已存在的自定义分类名称
+    function getExistingCustomCategoryNames() {
+        var select = document.getElementById('customCategorySelect');
+        var names = [];
+        for (var i = 0; i < select.options.length; i++) {
+            if (select.options[i].value) {
+                names.push(select.options[i].text);
+            }
+        }
+        return names;
+    }
+
+    function validateUploadForm() {
+        var presetCategory = document.getElementById('presetCategorySelect').value;
+        var customCategory = document.getElementById('customCategorySelect').value;
+        var newCategory = document.getElementById('newCategoryInput').value.trim();
+        var fileInput = document.getElementById('uploadFileInput').files;
+
+        if (fileInput.length === 0) {
+            alert('请先选择要上传的文件');
+            return false;
+        }
+
+        if (!presetCategory && !customCategory && !newCategory) {
+            alert('请选择预设分类、自定义分类，或输入新分类名');
+            return false;
+        }
+
+        var selectedCount = [presetCategory, customCategory, newCategory].filter(x => x).length;
+        if (selectedCount > 1) {
+            alert('只能选择一种分类方式，不能同时选择多种');
+            return false;
+        }
+
+        // 检查新分类名是否重复
+        if (newCategory) {
+            var existingNames = getExistingCustomCategoryNames();
+            
+            // 检查是否与预设分类重复
+            if (presetCategoryNames.indexOf(newCategory) !== -1) {
+                alert('该分类名「' + newCategory + '」已存在于预设分类中，请选择预设分类或使用其他名称');
+                return false;
+            }
+            
+            // 检查是否与已有自定义分类重复
+            if (existingNames.indexOf(newCategory) !== -1) {
+                alert('该分类名「' + newCategory + '」已存在，请选择已有分类或使用其他名称');
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    var presetSelect = document.getElementById('presetCategorySelect');
+    var customSelect = document.getElementById('customCategorySelect');
+    var newInput = document.getElementById('newCategoryInput');
+
+    presetSelect.addEventListener('change', function() {
+        if (this.value) {
+            customSelect.value = '';
+            newInput.value = '';
+        }
+    });
+
+    customSelect.addEventListener('change', function() {
+        if (this.value) {
+            presetSelect.value = '';
+            newInput.value = '';
+        }
+    });
+
+    newInput.addEventListener('input', function() {
+        if (this.value.trim()) {
+            presetSelect.value = '';
+            customSelect.value = '';
+        }
+    });
+
+    // Agent权限配置：预设分类和自定义分类互斥
+    var permPresetSelect = document.getElementById('permPresetCategory');
+    var permCustomSelect = document.getElementById('permCustomCategory');
+
+    if (permPresetSelect && permCustomSelect) {
+        permPresetSelect.addEventListener('change', function() {
+            if (this.value) {
+                permCustomSelect.value = '';
+            }
+        });
+
+        permCustomSelect.addEventListener('change', function() {
+            if (this.value) {
+                permPresetSelect.value = '';
+            }
+        });
+    }
+
+    // 历史版本相关
+    var projectId = @Model.ProjectId;
+
+    function showVersionHistory(documentId, fileName) {
+        document.getElementById('historyFileName').textContent = fileName;
+        var list = document.getElementById('versionHistoryList');
+        list.innerHTML = '<div class="text-center text-muted py-3">加载中...</div>';
+        
+        var modal = new bootstrap.Modal(document.getElementById('versionHistoryModal'));
+        modal.show();
+
+        fetch('/Projects/Materials?handler=VersionHistory&projectId=' + projectId + '&documentId=' + documentId)
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
+                if (data.success && data.data.length > 0) {
+                    renderVersionHistory(data.data, documentId);
+                } else {
+                    list.innerHTML = '<div class="text-center text-muted py-3">暂无历史版本</div>';
+                }
+            })
+            .catch(function() {
+                list.innerHTML = '<div class="text-center text-muted py-3">加载失败，请重试</div>';
+            });
+    }
+
+    function renderVersionHistory(history, currentDocumentId) {
+        var list = document.getElementById('versionHistoryList');
+        var html = '';
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, function(character) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character];
+            });
+        }
+
+        history.forEach(function(item) {
+            var sizeStr = (item.fileSize / 1024).toFixed(1) + ' KB';
+            var encodedFileName = encodeURIComponent(item.fileName || '').replace(/'/g, '%27');
+            html += '<div class="list-group-item d-flex justify-content-between align-items-center">';
+            html += '<div>';
+            html += '<strong>v' + escapeHtml(item.versionNumber) + '</strong>';
+            html += '<span class="badge bg-secondary ms-2">历史版本</span>';
+            html += '<span class="text-muted ms-2">' + escapeHtml(sizeStr) + '</span>';
+            html += '<br><small class="text-muted">' + escapeHtml(item.uploadedAt) + '</small>';
+            if (item.description) {
+                html += '<br><small class="text-muted">说明：' + escapeHtml(item.description) + '</small>';
+            }
+            html += '</div>';
+            html += '<div class="d-flex gap-1">';
+            html += '<button type="button" class="btn btn-sm btn-outline-info" onclick="viewHistoryContent(' + Number(item.id) + ', decodeURIComponent(\'' + encodedFileName + '\'))">查看内容</button>';
+            html += '<a class="btn btn-sm btn-outline-primary" href="/Projects/Materials?handler=Download&projectId=' + projectId + '&id=' + item.id + '">下载</a>';
+            if (item.id !== currentDocumentId) {
+                html += '<button type="button" class="btn btn-sm btn-warning" onclick="rollbackVersion(' + item.id + ')">回滚到此版本</button>';
+            }
+            html += '</div>';
+            html += '</div>';
+        });
+
+        list.innerHTML = html;
+    }
+
+    // 查看历史版本内容
+    function viewHistoryContent(documentId, fileName) {
+        document.getElementById('contentFileName').textContent = fileName;
+        document.getElementById('documentContent').textContent = '加载中...';
+        document.getElementById('documentDownloadLink').href = '/Projects/Materials?handler=Download&projectId=' + projectId + '&id=' + documentId;
+        
+        var modal = new bootstrap.Modal(document.getElementById('documentContentModal'));
+        modal.show();
+
+        fetch('/Projects/Materials?handler=DocumentContent&projectId=' + projectId + '&documentId=' + documentId)
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    document.getElementById('documentContent').textContent = data.content || '文档内容为空';
+                } else {
+                    document.getElementById('documentContent').textContent = data.error || '加载失败';
+                }
+            })
+            .catch(function() {
+                document.getElementById('documentContent').textContent = '加载失败，请重试';
+            });
+    }
+
+    function rollbackVersion(versionId) {
+        if (!confirm('确定要回滚到此版本吗？回滚后该版本将成为当前版本。')) {
+            return;
+        }
+
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/Projects/Materials?handler=Rollback&projectId=' + projectId + '&versionId=' + versionId;
+        
+        var tokenInput = document.querySelector('input[name="__RequestVerificationToken"]');
+        if (tokenInput) {
+            var token = document.createElement('input');
+            token.type = 'hidden';
+            token.name = '__RequestVerificationToken';
+            token.value = tokenInput.value;
+            form.appendChild(token);
+        }
+        
+        document.body.appendChild(form);
+        form.submit();
+    }
+
+    // AI修改相关
+    function showAiReviseModal(documentId, fileName) {
+        document.getElementById('aiReviseDocumentId').value = documentId;
+        document.getElementById('aiReviseFileName').textContent = fileName;
+        document.getElementById('aiReviseRequirement').value = '';
+        
+        var modal = new bootstrap.Modal(document.getElementById('aiReviseModal'));
+        modal.show();
+    }
+
+    function submitAiRevise() {
+        var documentId = document.getElementById('aiReviseDocumentId').value;
+        var requirement = document.getElementById('aiReviseRequirement').value.trim();
+        
+        if (!requirement) {
+            alert('请输入修改要求');
+            return;
+        }
+
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/Projects/Materials?handler=AiRevise&projectId=' + projectId + '&documentId=' + documentId;
+        
+        var tokenInput = document.querySelector('input[name="__RequestVerificationToken"]');
+        if (tokenInput) {
+            var token = document.createElement('input');
+            token.type = 'hidden';
+            token.name = '__RequestVerificationToken';
+            token.value = tokenInput.value;
+            form.appendChild(token);
+        }
+
+        var requirementInput = document.createElement('input');
+        requirementInput.type = 'hidden';
+        requirementInput.name = 'requirement';
+        requirementInput.value = requirement;
+        form.appendChild(requirementInput);
+        
+        document.body.appendChild(form);
+        form.submit();
+    }
+
+    // 文档内容查看
+    function showDocumentContent(documentId, fileName) {
+        document.getElementById('contentFileName').textContent = fileName;
+        document.getElementById('documentContent').textContent = '加载中...';
+        
+        // 设置下载链接
+        document.getElementById('documentDownloadLink').href = '/Projects/Materials?handler=Download&projectId=' + projectId + '&id=' + documentId;
+        
+        // 存储documentId用于AI修改
+        document.getElementById('documentContentModal').dataset.documentId = documentId;
+        
+        var modal = new bootstrap.Modal(document.getElementById('documentContentModal'));
+        modal.show();
+
+        fetch('/Projects/Materials?handler=DocumentContent&projectId=' + projectId + '&documentId=' + documentId)
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    document.getElementById('documentContent').textContent = data.content || '（无内容）';
+                } else {
+                    document.getElementById('documentContent').textContent = data.error || '加载失败';
+                }
+            })
+            .catch(function() {
+                document.getElementById('documentContent').textContent = '加载失败，请重试';
+            });
+    }
+    
+    // 文档查看弹窗中的AI修改按钮
+    document.getElementById('btnAiReviseFromModal').addEventListener('click', function() {
+        var documentId = document.getElementById('documentContentModal').dataset.documentId;
+        if (documentId) {
+            showAiReviseModal(parseInt(documentId));
+        }
+    });
+
+    // 草稿对比查看
+    function showDraftContent(draftId, fileName) {
+        document.getElementById('draftCompareFileName').textContent = fileName;
+        document.getElementById('draftOriginalContent').textContent = '加载中...';
+        document.getElementById('draftRevisedContent').textContent = '加载中...';
+        
+        var modal = new bootstrap.Modal(document.getElementById('draftCompareModal'));
+        modal.show();
+
+        fetch('/Projects/Materials?handler=DraftContent&projectId=' + projectId + '&draftId=' + draftId)
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
+                if (data.error) {
+                    document.getElementById('draftOriginalContent').textContent = data.error;
+                    document.getElementById('draftRevisedContent').textContent = data.error;
+                } else {
+                    document.getElementById('draftOriginalContent').textContent = data.originalContent || '（无内容）';
+                    document.getElementById('draftRevisedContent').textContent = data.revisedContent || '（无内容）';
+                    document.getElementById('draftChangeDescription').textContent = data.changeDescription || '（无说明）';
+                    document.getElementById('draftAgentName').textContent = data.agentDisplayName || '未知';
+                    document.getElementById('draftCreatedTime').textContent = data.createdAt || '';
+                }
+            })
+            .catch(function() {
+                document.getElementById('draftOriginalContent').textContent = '加载失败，请重试';
+                document.getElementById('draftRevisedContent').textContent = '加载失败，请重试';
+            });
+    }
+</script>
+</div>

@@ -1,0 +1,177 @@
+@page "{id:int}"
+@model ToDo.Razor.Pages.Agents.Manage.TestModel
+@using ToDo.Domain
+@using ToDo.Entities
+@{
+    ViewData["Title"] = "Agent 隔离测试";
+    Layout = "/Pages/Shared/_Layout.cshtml";
+}
+
+<div class="container py-3">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div>
+            <div class="small text-muted">可选诊断 · 不执行业务工具</div>
+            <h2 class="mb-1">@Model.Agent.Name</h2>
+            <div class="text-muted">v@Model.Agent.Version · @Model.Agent.AgentKey</div>
+        </div>
+        <div class="d-flex gap-2">
+            <a asp-page="./Edit" asp-route-id="@Model.Agent.Id" class="btn btn-outline-primary">返回编辑</a>
+            <a asp-page="./Index" class="btn btn-outline-secondary">返回列表</a>
+        </div>
+    </div>
+
+    @if (TempData["SuccessMessage"] != null)
+    {
+        <div class="alert alert-success">@TempData["SuccessMessage"]</div>
+    }
+    @if (TempData["ErrorMessage"] != null)
+    {
+        <div class="alert alert-danger">@TempData["ErrorMessage"]</div>
+    }
+
+    <div class="row g-3 mb-3">
+        <div class="col-lg-8">
+            <div class="card shadow-sm h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>隔离测试台</span>
+                    <span class="badge bg-info text-dark">业务工具已全部关闭</span>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-light border small">
+                        测试会按正式权限读取所选上下文，但不会开放任务、项目、报告等写入工具，也不会执行模型输出中的动作协议。
+                    </div>
+                    <form method="post" asp-page-handler="Run" asp-route-id="@Model.Agent.Id">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label asp-for="ProjectId" class="form-label">测试项目 @(Model.Agent.RequiresProject ? "（必选）" : "（可选）")</label>
+                                <select asp-for="ProjectId" class="form-select" id="test-project">
+                                    <option value="">不关联项目</option>
+                                    @foreach (var project in Model.ProjectOptions)
+                                    {
+                                        <option value="@project.Id">@project.Label</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="TaskId" class="form-label">测试任务 @(Model.Agent.RequiresTask ? "（必选）" : "（可选）")</label>
+                                <select asp-for="TaskId" class="form-select" id="test-task">
+                                    <option value="">不关联任务</option>
+                                    @foreach (var task in Model.TaskOptions)
+                                    {
+                                        <option value="@task.Id" data-project-id="@task.ProjectId">@task.Label</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-12">
+                                <label asp-for="Prompt" class="form-label">测试任务</label>
+                                <textarea asp-for="Prompt" class="form-control" rows="6"></textarea>
+                            </div>
+                            <div class="col-12 d-flex justify-content-end">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-shield-check me-1"></i>运行隔离测试
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-header">发布门禁</div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <div class="small text-muted">生命周期</div>
+                        <span class="badge bg-secondary">@Model.Agent.LifecycleStatus.GetDisplayName()</span>
+                    </div>
+                    <div class="mb-3">
+                        <div class="small text-muted">最近测试</div>
+                        <span class="badge @(Model.Agent.LastTestStatus == AgentTestRunStatus.Passed ? "bg-success" : Model.Agent.LastTestStatus == AgentTestRunStatus.Failed ? "bg-danger" : "bg-secondary")">
+                            @Model.Agent.LastTestStatus.GetDisplayName()
+                        </span>
+                        @if (Model.Agent.LastTestAt.HasValue)
+                        {
+                            <div class="small text-muted mt-1">@Model.Agent.LastTestAt.Value.ToString("yyyy-MM-dd HH:mm")</div>
+                        }
+                    </div>
+                    <div class="alert alert-light border small">测试仅检查输出质量，不作为启用条件，也不会修改当前启用状态。实际业务操作仍受权限和审批控制。</div>
+                    <a asp-page="./Edit" asp-route-id="@Model.Agent.Id" class="btn btn-outline-primary w-100">返回配置</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-header">交付要求</div>
+        <div class="card-body">
+            @if (Model.Agent.AcceptanceContract == null)
+            {
+                <div class="text-muted">尚未配置。</div>
+            }
+            else
+            {
+                <div class="row g-3 small">
+                    <div class="col-md-6"><div class="text-muted">目标</div><div>@Model.Agent.AcceptanceContract.Objective</div></div>
+                    <div class="col-md-6"><div class="text-muted">成功标准</div><div>@Model.Agent.AcceptanceContract.SuccessCriteria</div></div>
+                    <div class="col-md-6"><div class="text-muted">必须输出</div><div>@Model.Agent.AcceptanceContract.RequiredOutput</div></div>
+                    <div class="col-md-6"><div class="text-muted">禁止行为</div><div>@Model.Agent.AcceptanceContract.ProhibitedActions</div></div>
+                    <div class="col-md-6"><div class="text-muted">必须命中</div><pre class="mb-0">@Model.Agent.AcceptanceContract.ExpectedOutputTerms</pre></div>
+                    <div class="col-md-6"><div class="text-muted">禁止出现</div><pre class="mb-0">@Model.Agent.AcceptanceContract.ForbiddenOutputTerms</pre></div>
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-header">最近测试记录</div>
+        <div class="table-responsive">
+            <table class="table align-middle mb-0">
+                <thead><tr><th>时间</th><th>版本</th><th>状态</th><th>自动校验</th><th>结果</th></tr></thead>
+                <tbody>
+                    @foreach (var run in Model.RecentRuns)
+                    {
+                        <tr>
+                            <td class="text-nowrap">@run.StartedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                            <td>v@run.AgentVersion</td>
+                            <td><span class="badge @(run.Status == AgentTestRunStatus.Passed ? "bg-success" : run.Status == AgentTestRunStatus.Failed ? "bg-danger" : "bg-secondary")">@run.Status.GetDisplayName()</span></td>
+                            <td class="small">@run.ValidationSummary</td>
+                            <td class="text-nowrap">
+                                @if (!string.IsNullOrWhiteSpace(run.ResultSummary))
+                                {
+                                    <details class="d-inline"><summary class="btn btn-sm btn-outline-secondary">查看输出</summary><pre class="small text-wrap mt-2" style="max-width:36rem;white-space:pre-wrap">@run.ResultSummary</pre></details>
+                                }
+                                @if (run.AiSessionId.HasValue)
+                                {
+                                    <a asp-page="/AiSessions/Details" asp-route-id="@run.AiSessionId" class="btn btn-sm btn-outline-primary">Session</a>
+                                }
+                            </td>
+                        </tr>
+                    }
+                    @if (Model.RecentRuns.Count == 0)
+                    {
+                        <tr><td colspan="5" class="text-center text-muted py-4">尚未运行隔离测试。</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (() => {
+            const project = document.getElementById('test-project');
+            const task = document.getElementById('test-task');
+            if (!project || !task) return;
+            project.addEventListener('change', () => {
+                const projectId = project.value;
+                for (const option of task.options) {
+                    if (!option.value) continue;
+                    option.hidden = !!projectId && option.dataset.projectId !== projectId;
+                }
+                const selected = task.options[task.selectedIndex];
+                if (selected?.hidden) task.value = '';
+            });
+        })();
+    </script>
+}

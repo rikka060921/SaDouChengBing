@@ -1,0 +1,255 @@
+@page "{id:int?}"
+@model ToDo.Razor.Pages.Agents.Manage.TechnicalModel
+@using ToDo.Entities
+@{
+    ViewData["Title"] = Model.Id.HasValue ? "编辑 Agent" : "新建 Agent";
+    Layout = "/Pages/Shared/_Layout.cshtml";
+}
+
+<div class="container py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h2 class="mb-1">@ViewData["Title"]</h2>
+            <div class="text-muted">维护人员技术配置。普通任务在后台规划和检查，高风险工具仍须人工审批；已有授权不会因简化页面而扩大。</div>
+        </div>
+        <a asp-page="./Index" class="btn btn-outline-secondary">返回列表</a>
+    </div>
+
+    @if (!Model.Id.HasValue)
+    {
+        <div class="card border-primary-subtle bg-primary-subtle mb-3">
+            <div class="card-body">
+                <div class="fw-semibold mb-2">选择安全模板</div>
+                <div class="row g-2">
+                    @foreach (var template in Model.Templates)
+                    {
+                        var selected = string.Equals(Model.Input.TemplateKey, template.Key, StringComparison.OrdinalIgnoreCase);
+                        <div class="col-lg-4">
+                            <a asp-page="./Edit" asp-route-template="@template.Key"
+                               class="d-block h-100 p-3 rounded border text-decoration-none @(selected ? "border-primary bg-white shadow-sm" : "border-secondary-subtle bg-white")">
+                                <div class="d-flex justify-content-between gap-2">
+                                    <span class="fw-semibold text-dark">@template.Name</span>
+                                    @if (selected) { <span class="badge bg-primary">已选择</span> }
+                                </div>
+                                <div class="small text-muted mt-1">@template.Summary</div>
+                            </a>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+
+    <div class="alert alert-light border small">联网搜索默认关闭。启用前需在服务器配置搜索密钥，并为此 Agent 开启 web.search 工具和能力标签。搜索词会发送给 Tavily，仅适用于公开资料调研；单个执行会话最多 3 次，每次最多 5 条结果。</div>
+    <form method="post">
+        <input asp-for="Id" type="hidden" />
+        <input asp-for="Input.TemplateKey" type="hidden" />
+        <div asp-validation-summary="All" class="text-danger mb-3"></div>
+
+        <div class="card shadow-sm mb-3">
+            <div class="card-header"><span class="badge bg-primary me-2">1</span>职责与边界</div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label asp-for="Input.Name" class="form-label">Agent 名称</label>
+                        <input asp-for="Input.Name" class="form-control" placeholder="例如：项目风险助手" />
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="Input.AgentKey" class="form-label">Agent Key</label>
+                        <input asp-for="Input.AgentKey" class="form-control" readonly="@Model.Id.HasValue"
+                               placeholder="例如：project-risk-agent" />
+                        <div class="form-text">只允许小写字母、数字和连字符；创建后不可修改。</div>
+                    </div>
+                    <div class="col-12">
+                        <label asp-for="Input.Description" class="form-label">用途说明</label>
+                        <textarea asp-for="Input.Description" class="form-control" rows="2" placeholder="向使用者说明这个 Agent 能做什么"></textarea>
+                    </div>
+                    <div class="col-12">
+                        <label asp-for="Input.SystemPrompt" class="form-label">系统提示词</label>
+                        <textarea asp-for="Input.SystemPrompt" class="form-control font-monospace" rows="8"
+                                  placeholder="定义角色、目标、边界、输出格式和不能做的事情"></textarea>
+                    </div>
+                    <div class="col-12">
+                        <label asp-for="CapabilityTags" class="form-label">能力标签</label>
+                        <textarea asp-for="CapabilityTags" class="form-control font-monospace" rows="3"
+                                  placeholder="每行一个，例如：task.read"></textarea>
+                        <div class="form-text">调度器按能力标签匹配任务。能力标签仅用于匹配，不等于工具权限。常用：task.read（任务分析）、document.read（资料整理）、daily-report（报告）、meeting-summary（纪要）、web.search（公开资料搜索）、project.document.write（编写资料）。未识别的用途不会强行派单。</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <details class="card shadow-sm mb-3">
+            <summary class="card-header">模型与执行参数（可选）</summary>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label asp-for="Input.ModelName" class="form-label">模型名称</label>
+                        <input asp-for="Input.ModelName" class="form-control" placeholder="留空使用全局默认模型" />
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <label asp-for="Input.Temperature" class="form-label">温度</label>
+                        <input asp-for="Input.Temperature" type="number" step="0.1" min="0" max="2" class="form-control" />
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <label asp-for="Input.MaxTokens" class="form-label">最大 Token</label>
+                        <input asp-for="Input.MaxTokens" type="number" min="256" max="32000" class="form-control" />
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <label asp-for="Input.MaxTurns" class="form-label">最大轮数</label>
+                        <input asp-for="Input.MaxTurns" type="number" min="1" max="100" class="form-control" />
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <label asp-for="Input.TimeoutSeconds" class="form-label">超时（秒）</label>
+                        <input asp-for="Input.TimeoutSeconds" type="number" min="10" max="600" class="form-control" />
+                    </div>
+                </div>
+            </div>
+        </details>
+
+        <details class="card shadow-sm mb-3">
+            <summary class="card-header">交付要求与可选测试</summary>
+            <div class="card-body">
+                <div class="alert alert-light border small">
+                    交付要求沿用所选模板，可按职责调整。隔离测试关闭业务工具，仅用于检查输出，不再作为启用前置步骤。
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label asp-for="ContractInput.Objective" class="form-label">目标</label>
+                        <textarea asp-for="ContractInput.Objective" class="form-control" rows="3"></textarea>
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="ContractInput.InputRequirements" class="form-label">输入要求</label>
+                        <textarea asp-for="ContractInput.InputRequirements" class="form-control" rows="3"></textarea>
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="ContractInput.RequiredOutput" class="form-label">必须输出</label>
+                        <textarea asp-for="ContractInput.RequiredOutput" class="form-control" rows="3"></textarea>
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="ContractInput.SuccessCriteria" class="form-label">成功标准</label>
+                        <textarea asp-for="ContractInput.SuccessCriteria" class="form-control" rows="3"></textarea>
+                    </div>
+                    <div class="col-12">
+                        <label asp-for="ContractInput.ProhibitedActions" class="form-label">禁止行为</label>
+                        <textarea asp-for="ContractInput.ProhibitedActions" class="form-control" rows="2"></textarea>
+                    </div>
+                    <div class="col-12">
+                        <label asp-for="ContractInput.TestPrompt" class="form-label">隔离测试任务</label>
+                        <textarea asp-for="ContractInput.TestPrompt" class="form-control" rows="4"></textarea>
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="ContractInput.ExpectedOutputTerms" class="form-label">必须出现的关键词</label>
+                        <textarea asp-for="ContractInput.ExpectedOutputTerms" class="form-control font-monospace" rows="3"></textarea>
+                        <div class="form-text">每行一个；测试输出必须全部包含。</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="ContractInput.ForbiddenOutputTerms" class="form-label">禁止出现的内容</label>
+                        <textarea asp-for="ContractInput.ForbiddenOutputTerms" class="form-control font-monospace" rows="3"></textarea>
+                        <div class="form-text">每行一个；常用于阻止旧式工具调用协议。</div>
+                    </div>
+                </div>
+            </div>
+        </details>
+
+        <div class="card shadow-sm mb-3">
+            <div class="card-header"><span class="badge bg-primary me-2">2</span>数据范围与调度</div>
+            <div class="card-body">
+                <p class="text-muted small">仅选择 Agent 真正需要的数据。项目资料仍受“Agent 分类读写权限”二次限制，未授权分类不会被读取。</p>
+                <div class="row g-2">
+                    @foreach (var source in Model.ContextSourceOptions)
+                    {
+                        <div class="col-sm-6 col-lg-4">
+                            <div class="form-check border rounded p-3 ps-5 h-100">
+                                <input class="form-check-input" type="checkbox" name="ContextSources" value="@source"
+                                       id="context-@source" checked="@Model.ContextSources.Contains(source)" />
+                                <label class="form-check-label" for="context-@source">@Model.GetContextLabel(source)</label>
+                            </div>
+                        </div>
+                    }
+                </div>
+                <hr />
+                <div class="d-flex flex-wrap gap-4">
+                    <div class="form-check form-switch">
+                        <input asp-for="Input.RequiresProject" class="form-check-input" />
+                        <label asp-for="Input.RequiresProject" class="form-check-label">运行时必须选择项目</label>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input asp-for="Input.RequiresTask" class="form-check-input" />
+                        <label asp-for="Input.RequiresTask" class="form-check-label">运行时必须选择任务</label>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input asp-for="Input.AutoCommentOnCompletion" class="form-check-input" />
+                        <label asp-for="Input.AutoCommentOnCompletion" class="form-check-label">完成后自动写入任务评论</label>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input asp-for="Input.CanReceiveTaskDispatch" class="form-check-input" />
+                        <label asp-for="Input.CanReceiveTaskDispatch" class="form-check-label">允许按职责自动接单</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm mb-3">
+            <div class="card-header"><span class="badge bg-primary me-2">3</span>工具权限与人工审批</div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0">
+                        <thead><tr><th>启用</th><th>工具</th><th>用途</th><th>执行策略</th></tr></thead>
+                        <tbody>
+                            @foreach (var tool in Model.ToolCatalog)
+                            {
+                                var reviewMode = Model.ApprovalTools.Contains(tool.ToolName)
+                                    ? AgentToolReviewMode.HumanApproval
+                                    : tool.MinimumReviewMode;
+                                <tr>
+                                    <td>
+                                        <input class="form-check-input" type="checkbox" name="EnabledTools" value="@tool.ToolName"
+                                               aria-label="启用 @tool.DisplayName" checked="@Model.EnabledTools.Contains(tool.ToolName)" />
+                                    </td>
+                                    <td>
+                                        <div class="fw-semibold">@tool.DisplayName</div>
+                                        <code>@tool.ToolName</code>
+                                    </td>
+                                    <td class="small">@tool.Description</td>
+                                    <td>
+                                        @if (tool.MinimumReviewMode == AgentToolReviewMode.HumanApproval)
+                                        {
+                                            <span class="badge bg-warning text-dark">强制人工审批</span>
+                                        }
+                                        else if (tool.SupportsApproval)
+                                        {
+                                            <div class="form-check form-switch">
+                                                <input class="form-check-input" type="checkbox" name="ApprovalTools" value="@tool.ToolName"
+                                                       id="approval-@tool.ToolName" checked="@(reviewMode == AgentToolReviewMode.HumanApproval)" />
+                                                <label class="form-check-label" for="approval-@tool.ToolName">提高为人工审批</label>
+                                            </div>
+                                        }
+                                        @if (reviewMode == AgentToolReviewMode.AiReview)
+                                        {
+                                            <span class="badge bg-info text-dark">默认 AI 审核</span>
+                                        }
+                                        else if (reviewMode == AgentToolReviewMode.Direct)
+                                        {
+                                            <span class="badge bg-success">默认直接执行</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="form-check form-switch mb-3">
+            <input asp-for="Input.IsEnabled" class="form-check-input" />
+            <label asp-for="Input.IsEnabled" class="form-check-label">启用此 Agent</label>
+            <div class="form-text">启用后，新任务使用本次保存的配置；关闭后停止接收新任务。</div>
+        </div>
+        <div class="d-flex justify-content-end gap-2 pb-4">
+            <a asp-page="./Index" class="btn btn-outline-secondary">取消</a>
+            <button type="submit" class="btn btn-primary">保存配置</button>
+        </div>
+    </form>
+</div>

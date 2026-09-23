@@ -1,0 +1,53 @@
+@page
+@model ToDo.Razor.Pages.RedBlue.DetailsModel
+@{
+    ViewData["Title"] = "红蓝对抗详情";
+    Layout = "/Pages/Shared/_Layout.cshtml";
+}
+<div class="container py-3">
+@if (TempData["SuccessMessage"] != null) { <div class="alert alert-success">@TempData["SuccessMessage"]</div> }
+@if (TempData["ErrorMessage"] != null) { <div class="alert alert-danger">@TempData["ErrorMessage"]</div> }
+@if (Model.Session != null)
+{
+    <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+        <div><h2 class="mb-1">@Model.Session.Topic</h2><div class="text-muted">@Model.Session.Objective</div></div>
+        <div class="d-flex gap-2">
+            <a href="/RedBlue/Index" class="btn btn-outline-secondary">返回列表</a>
+            <form method="post" asp-page-handler="Run" id="redBlueRunForm">
+                <input type="hidden" name="id" value="@Model.Session.Id" />
+                <button class="btn btn-primary" id="redBlueRunSubmit" type="submit" disabled="@(Model.Session.Status == ToDo.Entities.RedBlueSessionStatus.Running)">@(Model.Session.Status == ToDo.Entities.RedBlueSessionStatus.Completed ? "重新运行" : "运行多轮对抗")</button>
+            </form>
+            @if (Model.Session.Status == ToDo.Entities.RedBlueSessionStatus.Completed && Model.Session.ProjectId.HasValue)
+            {
+                <form method="post" asp-page-handler="RequestWriteback">
+                    <input type="hidden" name="id" value="@Model.Session.Id" />
+                    <button class="btn btn-outline-success" type="submit"><i class="bi bi-file-earmark-plus me-1"></i>申请写回项目资料</button>
+                </form>
+            }
+        </div>
+    </div>
+    <div id="redBlueRunProgress" class="ai-generation-status d-none ms-auto mb-3" aria-live="polite"></div>
+    <div class="row g-3 mb-3"><div class="col-md-3"><div class="card shadow-sm"><div class="card-body"><div class="text-muted">状态</div><strong>@Model.Session.Status</strong></div></div></div><div class="col-md-3"><div class="card shadow-sm"><div class="card-body"><div class="text-muted">轮数</div><strong>@Model.Session.CurrentRound / @Model.Session.MaxRounds</strong></div></div></div><div class="col-md-3"><div class="card shadow-sm"><div class="card-body"><div class="text-muted">胜方</div><strong>@(string.IsNullOrWhiteSpace(Model.Session.Winner) ? "待裁判" : Model.Session.Winner)</strong></div></div></div></div>
+    @if (!string.IsNullOrWhiteSpace(Model.Session.FinalDecision))
+    {
+        <div class="work-section mb-3"><div class="work-section-header"><h5 class="mb-0">最终决策</h5><span class="small text-muted">写回项目资料需人工审批</span></div><div class="work-summary" style="white-space:pre-wrap">@Model.Session.FinalDecision</div></div>
+    }
+    @foreach (var round in Model.Session.Rounds)
+    {
+        <div class="card shadow-sm mb-3"><div class="card-header d-flex justify-content-between"><strong>第 @round.RoundNumber 轮</strong><span class="badge bg-info text-dark">@round.Winner</span></div><div class="card-body"><h6 class="text-danger">红方方案</h6><p style="white-space:pre-wrap">@round.RedArgument</p><h6 class="text-primary">蓝方反驳</h6><p style="white-space:pre-wrap">@round.BlueArgument</p><h6>裁判决策</h6><p class="mb-0" style="white-space:pre-wrap">@round.JudgeDecision</p></div></div>
+    }
+    @if (Model.Session.Rounds.Count == 0) { <div class="alert alert-light border">尚未运行，请点击“运行多轮对抗”。</div> }
+}
+</div>
+
+@section Scripts {
+    <script>
+        AiGeneration.bindForm(
+            '#redBlueRunForm',
+            '#redBlueRunSubmit',
+            '#redBlueRunProgress',
+            ['读取决策目标', '生成红方方案', '生成蓝方反驳', '汇总裁判结论'],
+            '推演中...'
+        );
+    </script>
+}

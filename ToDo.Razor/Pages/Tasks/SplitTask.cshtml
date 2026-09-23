@@ -1,0 +1,517 @@
+﻿@page
+@using ToDo.Entities
+@model ToDo.Razor.Pages.Tasks.SplitTaskModel
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+
+@{
+    ViewData["Title"] = "AI智能任务拆分";
+    Layout = "_Layout";
+}
+
+<style>
+    .btn-slim {
+        max-width: 220px !important;
+        width: auto !important;
+        margin: 0 auto !important;
+        display: block !important;
+    }
+
+    .card-header {
+        background-color: #f5f7fa !important;
+        color: #333 !important;
+        border: 1px solid #dee2e6 !important;
+    }
+
+    .action-buttons {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        justify-content: flex-start;
+        flex-wrap: nowrap;
+    }
+
+        .action-buttons .btn {
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+    .table th:last-child,
+    .table td:last-child {
+        width: 120px !important;
+        min-width: 120px;
+    }
+
+    .is-invalid {
+        border: 1px solid #dc3545 !important;
+        background-color: #fff8f8 !important;
+    }
+</style>
+
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="display-5 fw-bold">AI智能任务拆分</h1>
+        <a asp-page="/Projects/Index" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> 返回项目列表
+        </a>
+    </div>
+
+    <div id="dynamicAlert" class="alert alert-danger alert-dismissible fade" role="alert" style="display: none;">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        <span id="alertMessage"></span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+
+    @if (TempData["Message"] != null)
+    {
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            @TempData["Message"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(Model.WarningMessage))
+    {
+        <div class="alert alert-warning" role="alert">@Model.WarningMessage</div>
+    }
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            @Model.ErrorMessage
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">AI任务拆分</h5>
+        </div>
+        <div class="card-body">
+            <form method="post" asp-page-handler="Split" id="splitForm">
+                <input type="hidden" name="ProjectId" value="@Model.ProjectId" />
+
+                <div class="mb-3">
+                    <label asp-for="InputText" class="form-label fw-bold">任务描述 <span class="text-danger">*</span></label>
+                    <textarea asp-for="InputText"
+                              class="form-control"
+                              rows="5"
+                              placeholder="请输入需要拆分的会议纪要"></textarea>
+                    <span asp-validation-for="InputText" class="text-danger"></span>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-slim" id="splitSubmit">
+                    <i class="bi bi-magic"></i> 执行AI拆分
+                </button>
+                <div id="splitProgress" class="ai-generation-status d-none mt-3" aria-live="polite"></div>
+            </form>
+        </div>
+    </div>
+
+    @if (Model.ShowResults && Model.ProjectTaskGroups.Any())
+    {
+        <form method="post" asp-page-handler="SaveAll" id="saveAllForm" onsubmit="return validateBeforeSave()">
+            <input type="hidden" name="ProjectId" value="@Model.ProjectId" />
+            <input type="hidden" asp-for="SubmissionId" />
+
+            @foreach (var group in Model.ProjectTaskGroups)
+            {
+                var projectId = group.Key;
+                var projectData = group.Value;
+                var tasks = projectData.Tasks;
+                if (!tasks.Any()) continue;
+
+                <div class="card mb-4">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0">@projectData.ProjectName</h6>
+                        @if (projectId != 0)
+                        {
+                            <span class="badge bg-info text-white">已识别项目，分组自动匹配</span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-warning text-dark">未识别项目，每条任务可单独选择</span>
+                        }
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-sm mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width:5%">#</th>
+                                        <th style="width:20%">任务名称 *</th>
+                                        <th style="width:25%">描述</th>
+                                        <th style="width:13%">截止时间</th>
+                                        <th style="width:10%">优先级</th>
+                                        <th style="width:15%">所属项目 *</th>
+                                        <th style="width:12%">分组</th>
+                                        <th style="width:12%">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @for (int i = 0; i < tasks.Count; i++)
+                                    {
+                                        var task = tasks[i];
+                                        var taskIndex = i;
+
+                                        <tr id="task-row-@projectId-@taskIndex" style="@(task.IsDeleted ? "display:none" : null)">
+                                            <td>@(i + 1)</td>
+                                            <td>
+                                                <input type="hidden" asp-for="ProjectTaskGroups[@projectId].Tasks[@taskIndex].IsDeleted" />
+                                                <input asp-for="ProjectTaskGroups[@projectId].Tasks[@taskIndex].Title" class="form-control form-control-sm task-title" />
+                                            </td>
+                                            <td>
+            <textarea asp-for="ProjectTaskGroups[@projectId].Tasks[@taskIndex].Description" class="form-control form-control-sm task-desc" rows="2"></textarea>
+                                            </td>
+                                            <td>
+                                                @{
+                                                    var deadlineValue = task.Deadline.HasValue ? task.Deadline.Value.ToString("yyyy-MM-ddTHH:mm") : "";
+                                                }
+                                                <input type="datetime-local"
+                                                       asp-for="ProjectTaskGroups[@projectId].Tasks[@taskIndex].Deadline"
+                                                       value="@deadlineValue"
+                                                       class="form-control form-control-sm deadline-input" />
+                                            </td>
+                                            <td>
+                                                <select asp-for="ProjectTaskGroups[@projectId].Tasks[@taskIndex].Priority" asp-items="Model.PriorityList" class="form-select form-select-sm task-priority"></select>
+                                            </td>
+                                            <td>
+                                                <select asp-for="ProjectTaskGroups[@projectId].Tasks[@taskIndex].ProjectId"
+                                                        class="form-select form-select-sm project-select-single"
+                                                        data-task-index="@taskIndex"
+                                                        data-group-key="@projectId">
+                                                    <option value="">请选择项目</option>
+                                                    @foreach (var p in Model.AllProjectList)
+                                                    {
+                                                        <option value="@p.Id" asp-selected="task.ProjectId == p.Id">@p.Name</option>
+                                                    }
+                                                </select>
+                                            </td>
+                                            <td>
+                                                @{
+                                                    var selectedGroupId = task.GroupId?.ToString() ?? "";
+                                                }
+                                                <select asp-for="ProjectTaskGroups[@projectId].Tasks[@taskIndex].GroupId"
+                                                        class="form-select form-select-sm group-select"
+                                                        data-task-index="@taskIndex"
+                                                        data-group-key="@projectId">
+                                                    @if (task.ProjectId > 0)
+                                                    {
+                                                        if (!string.IsNullOrEmpty(selectedGroupId))
+                                                        {
+                                                            <option value="@selectedGroupId" selected>已自动匹配分组</option>
+                                                        }
+                                                        <option value="">请选择分组</option>
+                                                    }
+                                                    else
+                                                    {
+                                                        <option value="">请先选择项目</option>
+                                                    }
+                                                </select>
+                                            </td>
+                                            <td>
+                                                <div class="action-buttons">
+                                                    <button type="button" class="btn btn-sm btn-primary" onclick="editTask('@projectId','@taskIndex')">编辑</button>
+                                                    <button type="button" class="btn btn-sm btn-danger" onclick="deleteTask('@projectId','@taskIndex')">删除</button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            <div class="mt-3">
+                <button type="submit" class="btn btn-success btn-slim">
+                    <i class="bi bi-check-circle"></i> 保存所有任务
+                </button>
+            </div>
+        </form>
+    }
+</div>
+
+<div class="modal fade" id="editTaskModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5>编辑任务</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editTaskProjectId" />
+                <input type="hidden" id="editTaskIndex" />
+                <div class="mb-3">
+                    <label class="form-label">任务名称 *</label>
+                    <input type="text" id="editTaskTitle" class="form-control" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">任务描述</label>
+                    <textarea id="editTaskDescription" class="form-control" rows="4"></textarea>
+                </div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <label class="form-label">截止时间</label>
+                        <input type="datetime-local" id="editTaskDeadline" class="form-control" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">优先级</label>
+                        <select id="editTaskPriority" class="form-select">
+                            <option value="Low">低</option>
+                            <option value="Medium">中</option>
+                            <option value="High">高</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">所属项目 *</label>
+                    <select id="editTaskProject" class="form-select">
+                        <option value="">请选择项目</option>
+                        @foreach (var p in Model.AllProjectList)
+                        {
+                            <option value="@p.Id">@p.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">分组</label>
+                    <select id="editTaskGroupId" class="form-select">
+                        <option value="">请先选择项目</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" id="saveTaskEditButton" class="btn btn-primary" onclick="saveTaskEdit()">确定</button>
+            </div>
+        </div>
+    </div>
+</div>
+@section Scripts {
+    @{
+        await Html.RenderPartialAsync("_ValidationScriptsPartial");
+    }
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+        let modalInstance = new bootstrap.Modal(document.getElementById('editTaskModal'));
+
+        $(function () {
+            const initialLoads = [];
+            $('.project-select-single').each(function () {
+                initialLoads.push(loadGroupsByProject($(this)));
+            });
+            $.when(...initialLoads).always(validateAndMarkEmptyFields);
+
+            $(document).on('change', '.project-select-single', function () {
+                loadGroupsByProject($(this));
+                // 改完项目后重新校验
+                validateAndMarkEmptyFields();
+            });
+
+            $(document).on('change', '.group-select', function () {
+                validateAndMarkEmptyFields();
+            });
+        });
+
+        // ==============================================
+        // 🔥 核心函数：一显示结果就自动标红（项目/分组为空）
+        // ==============================================
+        function validateAndMarkEmptyFields() {
+            let hasError = false;
+
+            // 清除所有红框
+            $('.task-title, .project-select-single, .group-select').removeClass('is-invalid');
+
+            $('.task-title').each(function () {
+                if ($(this).is(':visible') && !$(this).val().trim()) {
+                    $(this).addClass('is-invalid');
+                    hasError = true;
+                }
+            });
+
+            // 1. 项目没选 → 红
+            $('.project-select-single').each(function () {
+                if ($(this).is(':visible') && !$(this).val()) {
+                    $(this).addClass('is-invalid');
+                    hasError = true;
+                }
+            });
+
+            if (hasError) {
+                showAlert('⚠ AI拆分完成，请完善空缺的【任务名称】和【项目】');
+            }
+
+            return !hasError;
+        }
+
+        function loadGroupsByProject($projectSelect, preferredGroupId) {
+            let projectId = $projectSelect.val();
+            let taskIndex = $projectSelect.data('task-index');
+            let groupKey = $projectSelect.data('group-key');
+            let $groupSelect = $(`#task-row-${groupKey}-${taskIndex} .group-select`);
+
+            return loadGroupOptions($groupSelect, projectId, preferredGroupId);
+        }
+
+        function hasUnreadyGroups() {
+            return $('.group-select').filter(function () {
+                return $(this).is(':visible') && $(this).data('group-state') !== 'ready';
+            }).length > 0;
+        }
+
+        function syncSaveAvailability() {
+            const button = document.querySelector('#saveAllForm button[type="submit"]');
+            if (button && !$(button).data('submitting')) {
+                button.disabled = hasUnreadyGroups();
+                button.textContent = button.disabled ? '请等待分组加载完成' : '保存所有任务';
+            }
+            $('#saveTaskEditButton').prop('disabled', $('#editTaskGroupId').data('group-state') !== 'ready');
+        }
+
+        // 保留同项目的已选分组，并用请求序号隔离快速切换项目产生的过期响应。
+        function loadGroupOptions($group, projectId, preferredGroupId) {
+            const projectKey = String(projectId || '');
+            const previousProject = $group.data('group-project');
+            const savedGroupId = preferredGroupId ??
+                (previousProject === undefined || previousProject === projectKey ? $group.val() : '');
+            const requestId = ($group.data('group-request') || 0) + 1;
+            $group.data('group-request', requestId).data('group-project', projectKey);
+            $group.next('.group-load-retry').remove();
+
+            if (!projectId || projectId <= 0) {
+                $group.empty().append($('<option>').val('').text('请先选择项目'));
+                $group.data('group-state', 'ready').prop('disabled', false).attr('aria-busy', 'false');
+                syncSaveAvailability();
+                return $.Deferred().resolve().promise();
+            }
+
+            if (previousProject !== undefined && previousProject !== projectKey)
+                $group.empty().append($('<option>').val('').text('加载中...'));
+            $group.data('group-state', 'loading').prop('disabled', true).attr('aria-busy', 'true');
+            syncSaveAvailability();
+
+            function failed() {
+                if ($group.data('group-request') !== requestId) return;
+                $group.data('group-state', 'error').attr('aria-busy', 'false');
+                $('<button type="button" class="btn btn-sm btn-outline-danger group-load-retry mt-1">分组加载失败，点击重试</button>')
+                    .insertAfter($group).on('click', function () { loadGroupOptions($group, projectId, savedGroupId); });
+                syncSaveAvailability();
+                showAlert('分组加载失败，已保留原选择。请点击重试后再保存');
+            }
+
+            return $.getJSON(`?handler=GroupsByProject&projectId=${encodeURIComponent(projectId)}`, function (data) {
+                if ($group.data('group-request') !== requestId) return;
+                if (!Array.isArray(data) || data.some(item => !item || !Number.isInteger(item.id) || typeof item.name !== 'string')) {
+                    failed();
+                    return;
+                }
+                $group.empty().append($('<option>').val('').text('不分组'));
+                $.each(data, function (i, item) { $group.append($('<option>').val(item.id).text(item.name)); });
+                $group.val(savedGroupId || '');
+                if ($group.val() === null) {
+                    $group.val('');
+                    showAlert('原分组已不可用，请重新确认任务分组');
+                }
+                $group.data('group-state', 'ready').prop('disabled', false).attr('aria-busy', 'false');
+                syncSaveAvailability();
+                validateAndMarkEmptyFields();
+            }).fail(failed);
+        }
+
+        function editTask(pid, idx) {
+            document.getElementById('editTaskProjectId').value = pid;
+            document.getElementById('editTaskIndex').value = idx;
+            let row = document.getElementById(`task-row-${pid}-${idx}`);
+
+            document.getElementById('editTaskTitle').value = row.querySelector('.task-title').value;
+            document.getElementById('editTaskDescription').value = row.querySelector('.task-desc').value;
+            document.getElementById('editTaskDeadline').value = row.querySelector('.deadline-input').value;
+            document.getElementById('editTaskPriority').value = row.querySelector('.task-priority').value;
+
+            let $project = $(row).find('.project-select-single');
+            let projectVal = $project.val();
+            let groupVal = $(row).find('.group-select').val();
+            $('#editTaskProject').val(projectVal);
+            loadModalGroups(projectVal, groupVal);
+
+            modalInstance.show();
+        }
+
+        function loadModalGroups(projectId, preferredGroupId) {
+            return loadGroupOptions($('#editTaskGroupId'), projectId, preferredGroupId);
+        }
+
+        $('#editTaskProject').on('change', function () {
+            loadModalGroups($(this).val(), '');
+        });
+
+        function saveTaskEdit() {
+            if ($('#editTaskGroupId').data('group-state') !== 'ready') {
+                showAlert('请等待分组加载成功后再确定');
+                return;
+            }
+            let pid = document.getElementById('editTaskProjectId').value;
+            let idx = document.getElementById('editTaskIndex').value;
+            let row = document.getElementById(`task-row-${pid}-${idx}`);
+
+            row.querySelector('.task-title').value = document.getElementById('editTaskTitle').value;
+            row.querySelector('.task-desc').value = document.getElementById('editTaskDescription').value;
+            row.querySelector('.deadline-input').value = document.getElementById('editTaskDeadline').value;
+            row.querySelector('.task-priority').value = document.getElementById('editTaskPriority').value;
+
+            let projectVal = $('#editTaskProject').val();
+            let groupVal = $('#editTaskGroupId').val();
+            let $rowProject = $(row).find('.project-select-single').val(projectVal);
+            loadGroupsByProject($rowProject, groupVal).always(validateAndMarkEmptyFields);
+
+            modalInstance.hide();
+        }
+
+        function deleteTask(pid, idx) {
+            if (!confirm('确定删除？')) return;
+            let row = document.getElementById(`task-row-${pid}-${idx}`);
+            row.querySelector('input[name*="IsDeleted"]').value = 'true';
+            row.style.display = 'none';
+
+            validateAndMarkEmptyFields(); // 删除后重新校验
+            syncSaveAvailability();
+        }
+
+        function validateBeforeSave() {
+            if (hasUnreadyGroups()) {
+                showAlert('分组尚未加载成功，请等待或重试后再保存');
+                return false;
+            }
+            if (!validateAndMarkEmptyFields()) return false;
+            const button = document.querySelector('#saveAllForm button[type="submit"]');
+            if (button.disabled) return false;
+            $(button).data('submitting', true);
+            button.disabled = true;
+            button.textContent = '正在保存...';
+            return true;
+        }
+
+        window.addEventListener('pageshow', function () {
+            const button = document.querySelector('#saveAllForm button[type="submit"]');
+            if (button) { $(button).data('submitting', false); syncSaveAvailability(); }
+        });
+
+        function showAlert(msg) {
+            let alert = document.getElementById('dynamicAlert');
+            document.getElementById('alertMessage').innerText = msg;
+            alert.style.display = 'block';
+            alert.classList.add('show');
+            setTimeout(() => {
+                alert.classList.remove('show');
+            }, 4000);
+        }
+
+        AiGeneration.bindForm(
+            '#splitForm',
+            '#splitSubmit',
+            '#splitProgress',
+            ['读取会议纪要', '提取行动项', '生成任务草案', '校验项目依赖'],
+            'AI拆分中...'
+        );
+    </script>
+}

@@ -1,0 +1,104 @@
+﻿@page
+@using Microsoft.AspNetCore.Identity
+@using ToDo.Entities
+@model ToDo.Razor.Pages.Users.RecycleBinModel
+@inject UserManager<ApplicationUser> UserManager
+@{
+    ViewData["Title"] = "回收站";
+    Layout = "/Pages/Shared/_Layout.cshtml";
+}
+
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2>@ViewData["Title"]</h2>
+        </div>
+        <div class="col-md-4 text-end">
+            <a asp-page="./Index" class="btn btn-outline-primary">
+                <i class="bi bi-arrow-left"></i> 返回用户列表
+            </a>
+        </div>
+    </div>
+
+    @if (TempData["SuccessMessage"] != null)
+    {
+        <div class="alert alert-success alert-dismissible fade show mb-3" role="alert">
+            <i class="bi bi-check-circle-fill me-2"></i>
+            @TempData["SuccessMessage"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+
+    @if (TempData["ErrorMessage"] != null)
+    {
+        <div class="alert alert-danger alert-dismissible fade show mb-3" role="alert">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+            @TempData["ErrorMessage"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+
+    <div class="card shadow-sm">
+        <div class="card-header bg-secondary text-white">
+            <h5 class="mb-0">已删除用户</h5>
+        </div>
+        <div class="card-body">
+            @if (Model.DeletedUsers.Any())
+            {
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>用户名</th>
+                                <th>真实姓名</th>
+                                <th>邮箱</th>
+                                <th>角色</th>
+                                <th>删除时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var user in Model.DeletedUsers)
+                            {
+                                var isAdmin = await UserManager.IsInRoleAsync(user, "systemAdmin");
+                                var currentUser = await UserManager.GetUserAsync(User);
+                                
+                                <tr>
+                                    <td>@user.UserName</td>
+                                    <td>@user.RealName</td>
+                                    <td>@user.Email</td>
+                                    <td>@user.Role</td>
+                                    <td>@user.DeletedAt?.ToString("yyyy-MM-dd HH:mm")</td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm">
+                                            <form method="post" asp-page-handler="Restore" asp-route-id="@user.Id">
+                                                <button type="submit" class="btn btn-success">
+                                                    <i class="bi bi-arrow-counterclockwise"></i> 恢复
+                                                </button>
+                                            </form>
+                                            @*@if (!isAdmin || user.Id == currentUser.Id)
+                                            {
+                                                <form method="post" asp-page-handler="PermanentlyDelete" asp-route-id="@user.Id" 
+                                                      onsubmit="return confirm('确定要永久删除此用户吗？此操作不可恢复！');">
+                                                    <button type="submit" class="btn btn-danger">
+                                                        <i class="bi bi-trash-fill"></i> 永久删除
+                                                    </button>
+                                                </form>
+                                            }*@
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <div class="alert alert-info mb-0">
+                    <i class="bi bi-info-circle-fill me-2"></i> 回收站为空
+                </div>
+            }
+        </div>
+    </div>
+</div>

@@ -1,0 +1,15 @@
+﻿@page "/DailySummary/Generate"
+@model ToDo.Razor.Pages.DailySummary.GenerateModel
+@{
+    ViewData["Title"] = "生成每日汇总";
+    Layout = "_Layout";
+}
+
+<div class="container py-5 text-center">
+    <h3 class="mb-4">正在生成当日工作汇总...</h3>
+    <div class="spinner-border text-primary mb-3" role="status">
+        <span class="visually-hidden">加载中...</span>
+    </div>
+    <p class="text-muted">AI正在解析项目、任务、会议、日报数据，请勿关闭页面</p>
+    <p class="text-sm text-muted mt-2">生成完成后自动跳转至汇总展示页</p>
+</div>

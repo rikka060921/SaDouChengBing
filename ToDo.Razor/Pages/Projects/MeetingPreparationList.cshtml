@@ -1,0 +1,169 @@
+@page
+@model ToDo.Razor.Pages.Projects.MeetingPreparationListModel
+@{
+    ViewData["Title"] = "会前准备草稿列表";
+}
+
+<div class="container mt-4" style="min-height:70vh;">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <div>
+            <div class="app-eyebrow">MEETING PREP</div>
+            <h1 class="h2 mb-2">会前准备草稿列表</h1>
+            <p class="text-muted mb-0">所有已保存的会前准备草稿，开会前可随时编辑修改。</p>
+        </div>
+        <a href="/Projects/Index" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>返回项目
+        </a>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(Model.LoadError))
+    {
+        <div class="alert alert-danger">@Model.LoadError</div>
+    }
+
+    @if (Model.Drafts.Count == 0)
+    {
+        <div class="text-center text-muted py-5">
+            <i class="bi bi-clipboard2-check" style="font-size:3rem;"></i>
+            <p class="mt-3">暂无会前准备草稿，从项目导航点击"会议准备"开始创建。</p>
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover w-100">
+                <thead>
+                    <tr>
+                        <th style="width:48px;">#</th>
+                        <th>草稿标题</th>
+                        <th style="width:100px;">状态</th>
+                        <th style="width:120px;">创建者</th>
+                        <th style="width:80px;">项目数</th>
+                        <th style="width:80px;">任务数</th>
+                        <th style="width:160px;">创建时间</th>
+                        <th style="width:160px;">最后修改</th>
+                        <th style="width:140px;">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (int i = 0; i < Model.Drafts.Count; i++)
+                    {
+                        var draft = Model.Drafts[i];
+                        var collapseId = $"draftTasks-{draft.Id}";
+                        <tr>
+                            <td class="text-muted">@(i + 1)</td>
+                            <td>
+                                <a href="/Projects/MeetingPreparation?draftId=@draft.Id" class="text-decoration-none fw-semibold">@draft.Title</a>
+                                @if (draft.TaskSnapshots.Count > 0)
+                                {
+                                    <button class="btn btn-link btn-sm p-0 ms-2 text-muted" type="button" data-bs-toggle="collapse" data-bs-target="#@collapseId">
+                                        <i class="bi bi-chevron-down"></i> 查看任务
+                                    </button>
+                                }
+                            </td>
+                            <td>
+                                @if (draft.Status == ToDo.Entities.MeetingPrepDraftStatus.Draft)
+                                {
+                                    <span class="badge bg-info">草稿</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-success">已定稿</span>
+                                }
+                            </td>
+                            <td class="small text-muted">@draft.CreatorName@if (draft.IsCreator) { <span class="badge bg-light text-muted ms-1">我</span> }</td>
+                            <td>@draft.ProjectCount</td>
+                            <td>@draft.TaskCount</td>
+                            <td class="small text-muted">@draft.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                            <td class="small text-muted">@draft.LastModifiedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                            <td>
+                                <div class="d-flex gap-1">
+                                    @if (draft.Status == ToDo.Entities.MeetingPrepDraftStatus.Finalized)
+                                    {
+                                        <button class="btn btn-sm btn-outline-secondary" title="已定稿，开完会后不可再编辑" disabled>
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <a href="/Projects/MeetingPreparation?draftId=@draft.Id" class="btn btn-sm btn-outline-primary" title="编辑">
+                                            <i class="bi bi-pencil"></i>
+                                        </a>
+                                    }
+                                    @if (draft.CanDelete)
+                                    {
+                                        <button class="btn btn-sm btn-outline-danger btn-delete-draft" data-draft-id="@draft.Id" title="删除">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn btn-sm btn-outline-secondary" disabled title="无权限删除">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                        @if (draft.TaskSnapshots.Count > 0)
+                        {
+                            <tr class="collapse" id="@collapseId">
+                                <td colspan="8" class="bg-light p-3">
+                                    <table class="table table-sm mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>任务标题</th>
+                                                <th>所属项目</th>
+                                                <th>状态</th>
+                                                <th>责任人</th>
+                                                <th>截止时间</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var task in draft.TaskSnapshots)
+                                            {
+                                                <tr class="@(task.isOverdue ? "table-danger" : "")">
+                                                    <td>@task.title</td>
+                                                    <td class="small text-muted">@task.projectName</td>
+                                                    <td class="small">@task.status</td>
+                                                    <td class="small">@task.assigneeName</td>
+                                                    <td class="small">@(task.deadline ?? "-")</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<input type="hidden" id="antiforgeryToken" value="@Model.AntiforgeryToken" />
+
+<script>
+    (function() {
+        const token = document.getElementById('antiforgeryToken').value;
+        document.querySelectorAll('.btn-delete-draft').forEach(btn => {
+            btn.addEventListener('click', async function() {
+                if (!confirm('确定删除此草稿？')) return;
+                const id = this.dataset.draftId;
+                try {
+                    const resp = await fetch(`?handler=Delete&id=${id}`, {
+                        method: 'POST',
+                        headers: { 'RequestVerificationToken': token }
+                    });
+                    const data = await resp.json();
+                    if (data.success) {
+                        this.closest('tr').remove();
+                        document.getElementById(`draftTasks-${id}`)?.closest('tr')?.remove();
+                    }
+                    else { alert(data.message || '删除失败'); }
+                } catch (e) { alert('删除失败，请重试'); }
+            });
+        });
+    })();
+</script>

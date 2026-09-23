@@ -1,0 +1,15 @@
+@{
+    var projectId = Convert.ToInt32(ViewData["ProjectId"] ?? 0);
+    var activeSection = ViewData["ProjectSection"]?.ToString() ?? string.Empty;
+}
+
+@if (projectId > 0)
+{
+    <nav class="project-nav" aria-label="项目导航">
+        <a class="@(activeSection == "overview" ? "active" : "")" asp-page="/Projects/Details" asp-route-id="@projectId"><i class="bi bi-grid-1x2"></i>项目概览</a>
+        <a class="@(activeSection == "tasks" ? "active" : "")" asp-page="/Tasks/Index" asp-route-projectId="@projectId"><i class="bi bi-check2-square"></i>任务</a>
+        <a class="@(activeSection == "materials" ? "active" : "")" asp-page="/Projects/Materials" asp-route-projectId="@projectId"><i class="bi bi-folder2-open"></i>项目资料</a>
+        <a class="@(activeSection == "preparation" ? "active" : "")" asp-page="/Projects/MeetingPreparation" asp-route-projectId="@projectId"><i class="bi bi-clipboard2-check"></i>会议准备</a>
+        <a class="@(activeSection == "minutes" ? "active" : "")" asp-page="/MeetingMinutes/Index" asp-route-filterProjectId="@projectId"><i class="bi bi-journal-text"></i>会议纪要</a>
+    </nav>
+}

@@ -1,0 +1,293 @@
+﻿@page
+@model ToDo.Razor.Pages.Tasks.IndexModel
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+
+@{
+    ViewData["Title"] = "任务列表";
+    Layout = "_Layout";
+}
+
+<div class="container mt-4">
+    @if (Model.ProjectId.HasValue && Model.ProjectId.Value > 0)
+    {
+        ViewData["ProjectId"] = Model.ProjectId.Value;
+        ViewData["ProjectSection"] = "tasks";
+        <partial name="_ProjectNav" view-data="ViewData" />
+    }
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div><h1 class="page-heading">任务</h1><div class="page-subtitle">查看进展、处理阻塞，或把工作交给数字员工。</div></div>
+        <div class="d-flex gap-2">
+            <a asp-page="/Projects/Index" class="btn btn-light"><i class="bi bi-arrow-left"></i> 项目列表</a>
+            @if (User.Identity?.IsAuthenticated == true)
+            {
+                @if (Model.ProjectId.HasValue)
+                {
+                    <a asp-page="Edit" asp-route-projectId="@Model.ProjectId" class="btn btn-primary">新建任务</a>
+                }
+                else
+                {
+                    <button type="button" class="btn btn-primary" disabled title="请先选择项目">新建任务</button>
+                }
+            }
+        </div>
+    </div>
+
+    <!-- 提示消息 -->
+    @if (TempData["Message"] != null)
+    {
+        <div class="alert alert-info alert-dismissible fade show" role="alert">
+            @TempData["Message"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+
+    <nav class="d-flex gap-2 mb-3" aria-label="任务范围">
+        <a asp-page="Index" asp-route-projectId="@Model.ProjectId" asp-route-MyWork="true" class="btn btn-sm @(Model.MyWork ? "btn-primary" : "btn-outline-primary")">我的进行中任务</a>
+        <a asp-page="Index" asp-route-projectId="@Model.ProjectId" class="btn btn-sm @(!Model.MyWork ? "btn-primary" : "btn-outline-primary")">全部可见任务</a>
+    </nav>
+    <div class="filter-panel mb-4">
+        <form method="get" asp-page="Index">
+            <input type="hidden" asp-for="MyWork" />
+            <div class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label">项目</label>
+                    <select asp-for="ProjectId" asp-items="Model.ProjectOptions" class="form-select">
+                        <option value="">全部可访问项目</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">状态</label>
+                    <select asp-for="Status" class="form-select">
+                        <option value="">全部</option>
+                        <option value="NotStarted" selected="@(Model.Status == "NotStarted")">未开始</option>
+                        <option value="InProgress" selected="@(Model.Status == "InProgress")">进行中</option>
+                        <option value="Completed" selected="@(Model.Status == "Completed")">已完成</option>
+                        <option value="PendingConfirmation" selected="@(Model.Status == "PendingConfirmation")">待审核</option>
+                        <option value="Cancelled" selected="@(Model.Status == "Cancelled")">已取消</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">搜索任务</label>
+                    <input asp-for="SearchTerm" type="search" class="form-control" placeholder="输入任务标题" />
+                </div>
+                <div class="col-md-2 d-grid">
+                    <button type="submit" class="btn btn-primary">筛选</button>
+                </div>
+            </div>
+            <details class="filter-advanced">
+                <summary>更多筛选</summary>
+                <div class="row g-3 align-items-end mt-1">
+                    <div class="col-md-4">
+                        <label class="form-label">任务分组</label>
+                        <select asp-for="GroupId" asp-items="Model.TaskGroups" class="form-select" disabled="@(!Model.ProjectId.HasValue)"><option value="">全部</option></select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">负责人</label>
+                        <select asp-for="Assignee" asp-items="Model.Assignees" class="form-select"><option value="">全部</option></select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">截止日期不晚于</label>
+                        <input asp-for="EndDate" type="date" class="form-control" />
+                    </div>
+                    <div class="col-md-1 d-grid">
+                        <a asp-page="Index" asp-route-projectId="@Model.ProjectId" class="btn btn-light">重置</a>
+                    </div>
+                </div>
+            </details>
+        </form>
+    </div>
+
+    <!-- 显示已删除任务按钮和任务计数 -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div class="d-flex align-items-center gap-3">
+            @if (Model.ProjectId.HasValue && Model.IsProjectAdmin)
+            {
+                <a asp-page="Index"
+                   asp-route-projectId="@Model.ProjectId"
+                   asp-route-showDeleted="@(!Model.ShowDeleted)"
+                   asp-route-groupId="@Model.GroupId"
+                   asp-route-status="@Model.Status"
+                   asp-route-assignee="@Model.Assignee"
+                   asp-route-searchTerm="@Model.SearchTerm"
+                   asp-route-endDate="@Model.EndDate"
+                   class="btn @(Model.ShowDeleted ? "btn-warning" : "btn-outline-secondary")">
+                    <i class="bi @(Model.ShowDeleted ? "bi-eye-slash" : "bi-eye")"></i>
+                    @(Model.ShowDeleted ? "隐藏已删除任务" : "显示已删除任务")
+                </a>
+            }
+            <span class="text-muted">
+                共 @Model.Tasks.Count(t => !t.IsDeleted) 个活跃任务
+                @if (Model.Tasks.Any(t => t.IsDeleted))
+                {
+                    <span class="ms-2">| 已删除 @Model.Tasks.Count(t => t.IsDeleted) 个</span>
+                }
+            </span>
+        </div>
+    </div>
+
+    <!-- 任务列表 -->
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            @if (Model.Tasks.Any())
+            {
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="fw-bold">任务标题</th>
+                            @if (!Model.ProjectId.HasValue)
+                            {
+                                <th class="fw-bold">项目</th>
+                            }
+                            <th class="fw-bold">分组</th>
+                            <th class="fw-bold">负责人</th>
+                            <th class="fw-bold">优先级</th>
+                            <th class="fw-bold">状态</th>
+                            <th class="fw-bold">截止时间</th>
+                            <th class="fw-bold" style="min-width: 170px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var task in Model.Tasks)
+                        {
+                            var isDeleted = task.IsDeleted;
+                            <tr class="@(isDeleted ? "text-muted bg-light" : "")">
+                                <td>
+                                    <a asp-page="Details" asp-route-id="@task.Id" class="text-decoration-none @(isDeleted ? "text-muted" : "text-dark")">@task.Title</a>
+                                    @if (isDeleted)
+                                    {
+                                        <span class="badge bg-secondary ms-2">已删除</span>
+                                    }
+                                </td>
+                                @if (!Model.ProjectId.HasValue)
+                                {
+                                    <td>@(task.Project?.Name ?? "-")</td>
+                                }
+                                <td>
+                                    @if (task.Group != null)
+                                    {
+                                        <span>@task.Group.Name</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">未分组</span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (task.AssigneeType == TaskAssigneeType.DigitalEmployee)
+                                    {
+                                        <div><i class="bi bi-cpu me-1"></i>@(task.AgentDefinition?.Name ?? task.AgentName ?? "未绑定 Agent")</div>
+                                        <span class="badge bg-info text-dark mt-1">@task.AgentExecutionStatus.GetDisplayName()</span>
+                                    }
+                                    else if (task.Assignee != null)
+                                    {
+                                        <span>@(string.IsNullOrWhiteSpace(task.Assignee.RealName) ? task.Assignee.UserName : task.Assignee.RealName)</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">未指定</span>
+                                    }
+                                </td>
+                                <td>
+                                    @{
+                                        string priorityClass = task.Priority == Entities.TaskPriority.High ? "text-danger fw-bold" :
+                                        task.Priority == Entities.TaskPriority.Medium ? "text-warning" : "text-secondary";
+                                        string priorityText = task.Priority == Entities.TaskPriority.High ? "高" :
+                                        task.Priority == Entities.TaskPriority.Medium ? "中" : "低";
+                                    }
+                                    <span class="@priorityClass">@priorityText</span>
+                                </td>
+                                <td>
+                                    @{
+                                        string statusText = task.Status switch
+                                        {
+                                            Entities.TaskStatus.NotStarted => "未开始",
+                                            Entities.TaskStatus.InProgress => "进行中",
+                                            Entities.TaskStatus.Completed => "已完成",
+                                            Entities.TaskStatus.PendingConfirmation => "待审核",
+                                            Entities.TaskStatus.Cancelled => "已取消",
+                                            _ => task.Status.ToString()
+                                        };
+                                        string statusClass = task.Status == Entities.TaskStatus.Completed ? "text-success" :
+                                        task.Status == Entities.TaskStatus.PendingConfirmation ? "text-warning fw-bold" :
+                                        task.Status == Entities.TaskStatus.InProgress ? "text-primary" : "text-secondary";
+                                    }
+                                    <span class="@statusClass">@statusText</span>
+                                </td>
+                                <td>@(task.EndTime?.ToString("yyyy-MM-dd") ?? "-")</td>
+                                <td>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <a asp-page="Details" asp-route-id="@task.Id" class="btn btn-sm btn-outline-primary">查看</a>
+                                        @if (isDeleted)
+                                        {
+                                            @if (Model.IsProjectAdmin)
+                                            {
+                                                <form method="post" asp-page-handler="Restore" asp-route-id="@task.Id" asp-route-projectId="@Model.ProjectId">
+                                                    @Html.AntiForgeryToken()
+                                                    <button type="submit" class="btn btn-sm btn-success">恢复</button>
+                                                </form>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            @if (task.AssigneeType != TaskAssigneeType.DigitalEmployee && task.CanBeClaimedByHuman)
+                                            {
+                                                <form method="post" asp-page-handler="Claim" asp-route-id="@task.Id">
+                                                    @Html.AntiForgeryToken()
+                                                    <button type="submit" class="btn btn-sm btn-primary">认领</button>
+                                                </form>
+                                            }
+                                            @if (Model.TaskIdToCanEdit.GetValueOrDefault(task.Id) || Model.IsProjectAdmin)
+                                            {
+                                                <div class="dropdown">
+                                                    <button class="btn btn-sm btn-light" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="更多操作"><i class="bi bi-three-dots"></i></button>
+                                                    <ul class="dropdown-menu dropdown-menu-end">
+                                                        @if (Model.TaskIdToCanEdit.GetValueOrDefault(task.Id))
+                                                        {
+                                                            <li><a asp-page="Edit" asp-route-id="@task.Id" asp-route-projectId="@task.ProjectId" class="dropdown-item">编辑任务</a></li>
+                                                        }
+                                                        @if (Model.IsProjectAdmin)
+                                                        {
+                                                            <li><hr class="dropdown-divider" /></li>
+                                                            <li>
+                                                                <form method="post" asp-page-handler="Delete" asp-route-id="@task.Id" onsubmit="return confirm('确定要删除任务「@task.Title」吗？删除后可恢复。');">
+                                                                    @Html.AntiForgeryToken()
+                                                                    <button type="submit" class="dropdown-item text-danger">删除任务</button>
+                                                                </form>
+                                                            </li>
+                                                        }
+                                                    </ul>
+                                                </div>
+                                            }
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+            else
+            {
+                <div class="text-center py-5 text-muted">
+                    <i class="bi bi-inbox display-1 d-block mb-3"></i>
+                    <h5>@(Model.MyWork ? "当前范围内没有需要你推进的任务" : "暂无任务数据")</h5>
+                    <p>@(Model.MyWork ? "已提交验收和已完成的任务不在此处显示，可切换到「全部可见任务」查看，或清除筛选条件。" : Model.ProjectId.HasValue ? "点击「新建任务」创建第一个任务吧！" : "请选择项目创建任务，或调整筛选条件。")</p>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        // 自动隐藏提示消息
+        setTimeout(function() {
+            var alert = document.querySelector('.alert');
+            if (alert) {
+                var bsAlert = new bootstrap.Alert(alert);
+                bsAlert.close();
+            }
+        }, 5000);
+    </script>
+}

@@ -1,0 +1,174 @@
+@page
+@model ToDo.Razor.Pages.Agents.WorkItems.IndexModel
+@using ToDo.Entities
+@{
+    ViewData["Title"] = "Agent 执行中心";
+    Layout = "/Pages/Shared/_Layout.cshtml";
+}
+
+<div class="container-fluid py-3">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+        <div>
+            <h2 class="mb-1">Agent 执行中心</h2>
+            <div class="text-muted">查看自动执行状态、触发原因、错误和恢复操作。</div>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <a asp-page="/Agents/Index" class="btn btn-outline-secondary">返回 Agent 中心</a>
+            <a asp-page="/Agents/Manage/Index" class="btn btn-outline-primary">Agent 管理</a>
+        </div>
+    </div>
+
+    @if (TempData["SuccessMessage"] != null)
+    {
+        <div class="alert alert-success">@TempData["SuccessMessage"]</div>
+    }
+    @if (TempData["ErrorMessage"] != null)
+    {
+        <div class="alert alert-danger">@TempData["ErrorMessage"]</div>
+    }
+
+    <div class="row g-3 mb-3">
+        <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="small text-muted">筛选结果</div><div class="fs-3 fw-semibold">@Model.TotalCount</div></div></div></div>
+        <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="small text-muted">活动工作项</div><div class="fs-3 fw-semibold text-primary">@Model.ActiveCount</div></div></div></div>
+        <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="small text-muted">等待审批</div><div class="fs-3 fw-semibold text-warning">@Model.WaitingApprovalCount</div></div></div></div>
+        <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="small text-muted">执行失败</div><div class="fs-3 fw-semibold text-danger">@Model.FailedCount</div></div></div></div>
+    </div>
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-body">
+            <form method="get" class="row g-2 align-items-end">
+                <div class="col-md-2">
+                    <label asp-for="Status" class="form-label">状态</label>
+                    <select asp-for="Status" class="form-select">
+                        <option value="">全部状态</option>
+                        @foreach (var status in Enum.GetValues<AgentWorkItemStatus>())
+                        {
+                            <option value="@status">@Model.GetStatusLabel(status)</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label asp-for="ProjectId" class="form-label">项目</label>
+                    <select asp-for="ProjectId" class="form-select">
+                        <option value="">全部项目</option>
+                        @foreach (var project in Model.Projects) { <option value="@project.Id">@project.Name</option> }
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label asp-for="AgentId" class="form-label">Agent</label>
+                    <select asp-for="AgentId" class="form-select">
+                        <option value="">全部 Agent</option>
+                        @foreach (var agent in Model.Agents) { <option value="@agent.Id">@agent.Name</option> }
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label asp-for="Keyword" class="form-label">关键词</label>
+                    <input asp-for="Keyword" class="form-control" placeholder="任务、Agent、幂等键或因果链" />
+                </div>
+                <div class="col-md-1 d-grid"><button class="btn btn-primary" type="submit">筛选</button></div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr><th>工作项</th><th>任务与 Agent</th><th>状态</th><th>执行进度</th><th>时间</th><th class="text-end">操作</th></tr>
+                </thead>
+                <tbody>
+                @foreach (var item in Model.Items)
+                {
+                    <tr>
+                        <td>
+                            <div class="fw-semibold">#@item.Id · @Model.GetTriggerLabel(item.TriggerType)</div>
+                            <div class="small text-muted">因果链：@item.CauseChainId</div>
+                            <details class="small mt-1">
+                                <summary class="text-primary">查看触发指令与结果</summary>
+                                <div class="mt-2"><strong>幂等键：</strong>@item.IdempotencyKey</div>
+                                <div class="mt-1 text-break" style="white-space:pre-wrap"><strong>指令：</strong>@item.Prompt</div>
+                                @if (!string.IsNullOrWhiteSpace(item.ResultSummary))
+                                {
+                                    <div class="mt-1 text-break" style="white-space:pre-wrap"><strong>结果：</strong>@item.ResultSummary</div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(item.ErrorMessage))
+                                {
+                                    <div class="mt-1 text-danger text-break"><strong>错误：</strong>@item.ErrorMessage</div>
+                                }
+                            </details>
+                        </td>
+                        <td>
+                            <div><a asp-page="/Tasks/Details" asp-route-id="@item.TaskId">@(item.Task?.Title ?? $"任务 #{item.TaskId}")</a></div>
+                            <div class="small text-muted">@(item.Project?.Name ?? $"项目 #{item.ProjectId}")</div>
+                            <div class="small">@(item.AgentDefinition?.Name ?? $"Agent #{item.AgentDefinitionId}")</div>
+                        </td>
+                        <td><span class="badge bg-@Model.GetStatusClass(item.Status)">@Model.GetStatusLabel(item.Status)</span></td>
+                        <td class="small text-nowrap">
+                            <div>尝试 @item.AttemptCount / @item.MaxAttempts</div>
+                            <div>步骤 @item.StepCount / @item.MaxSteps</div>
+                            <div class="text-muted">发起：@(item.RequestedByUser?.RealName ?? item.RequestedByUser?.UserName ?? $"用户 #{item.RequestedByUserId}")</div>
+                        </td>
+                        <td class="small text-nowrap">
+                            <div>创建 @item.CreatedAt.ToString("MM-dd HH:mm:ss")</div>
+                            @if (item.StartedAt.HasValue) { <div>开始 @item.StartedAt.Value.ToString("MM-dd HH:mm:ss")</div> }
+                            @if (item.NextRunAt > AppTime.Now && item.Status is AgentWorkItemStatus.Pending or AgentWorkItemStatus.Retrying) { <div>下次 @item.NextRunAt.ToString("MM-dd HH:mm:ss")</div> }
+                        </td>
+                        <td class="text-end text-nowrap">
+                            @if (item.AiSessionId.HasValue)
+                            {
+                                <a asp-page="/AiSessions/Details" asp-route-id="@item.AiSessionId" class="btn btn-sm btn-outline-primary">Session</a>
+                            }
+                            @if (item.DeliveryReceipt != null)
+                            {
+                                <a asp-page="/Agents/WorkItems/Details" asp-route-id="@item.Id" class="btn btn-sm btn-outline-success">交付凭证</a>
+                            }
+                            @if (item.Status == AgentWorkItemStatus.WaitingPlanConfirmation)
+                            {
+                                <a asp-page="/Tasks/Details" asp-route-id="@item.TaskId" asp-fragment="execution-plan" class="btn btn-sm btn-outline-primary">确认计划</a>
+                            }
+                            @if (item.Status == AgentWorkItemStatus.WaitingApproval)
+                            {
+                                <a asp-page="/Approvals/Index" class="btn btn-sm btn-outline-warning">审批</a>
+                            }
+                            @if (item.Status is AgentWorkItemStatus.Pending or AgentWorkItemStatus.Retrying)
+                            {
+                                <form method="post" asp-page-handler="Pause" class="d-inline"><input type="hidden" name="id" value="@item.Id" /><button class="btn btn-sm btn-outline-info" type="submit">暂停</button></form>
+                            }
+                            @if (item.Status == AgentWorkItemStatus.Paused)
+                            {
+                                <form method="post" asp-page-handler="Resume" class="d-inline"><input type="hidden" name="id" value="@item.Id" /><button class="btn btn-sm btn-outline-success" type="submit">恢复</button></form>
+                            }
+                            @if (item.Status is AgentWorkItemStatus.Pending or AgentWorkItemStatus.Retrying or AgentWorkItemStatus.Paused or AgentWorkItemStatus.WaitingPlanConfirmation)
+                            {
+                                <form method="post" asp-page-handler="Cancel" class="d-inline" onsubmit="return confirm('确定取消该 Agent 工作项？');"><input type="hidden" name="id" value="@item.Id" /><button class="btn btn-sm btn-outline-danger" type="submit">取消</button></form>
+                            }
+                            @if (item.Status == AgentWorkItemStatus.Failed)
+                            {
+                                <form method="post" asp-page-handler="Retry" class="d-inline"><input type="hidden" name="id" value="@item.Id" /><button class="btn btn-sm btn-outline-success" type="submit">重试</button></form>
+                            }
+                        </td>
+                    </tr>
+                }
+                @if (Model.Items.Count == 0)
+                {
+                    <tr><td colspan="6" class="text-center text-muted py-5">没有符合条件的 Agent 工作项。</td></tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    @if (Model.TotalPages > 1)
+    {
+        <nav class="mt-3" aria-label="Agent 工作项分页">
+            <ul class="pagination justify-content-center flex-wrap">
+                @for (var pageIndex = 1; pageIndex <= Model.TotalPages; pageIndex++)
+                {
+                    <li class="page-item @(pageIndex == Model.PageNumber ? "active" : "")">
+                        <a class="page-link" asp-route-pageNumber="@pageIndex" asp-route-status="@Model.Status" asp-route-projectId="@Model.ProjectId" asp-route-agentId="@Model.AgentId" asp-route-keyword="@Model.Keyword">@pageIndex</a>
+                    </li>
+                }
+            </ul>
+        </nav>
+    }
+</div>

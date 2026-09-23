@@ -1,0 +1,69 @@
+@page
+@model ToDo.Razor.Pages.Agents.Manage.IndexModel
+@using ToDo.Entities
+@{
+    ViewData["Title"] = "Agent 管理";
+    Layout = "/Pages/Shared/_Layout.cshtml";
+}
+<div class="container py-3">
+    <div class="d-flex flex-wrap justify-content-between gap-3 mb-3">
+        <div><h2 class="mb-1">Agent 管理</h2><div class="text-muted">注册用途、配置权限、启用接单。任务按职责匹配，工具审批独立执行。</div></div>
+        <div class="d-flex gap-2 align-items-start">
+            <a asp-page="/ActionCenter/Index" class="btn btn-outline-secondary">待我处理</a>
+            <a asp-page="./Metrics" class="btn btn-outline-secondary">质量与成本</a>
+            <a asp-page="./Create" class="btn btn-primary">新建 Agent</a>
+        </div>
+    </div>
+    @if (TempData["SuccessMessage"] != null) { <div class="alert alert-success">@TempData["SuccessMessage"]</div> }
+    @if (TempData["ErrorMessage"] != null) { <div class="alert alert-danger">@TempData["ErrorMessage"]</div> }
+    <div class="alert alert-light border small">系统按用途和项目授权分配工作，后台规划、执行并检查交付；重要变更和无法自动判断的结果才进入“待我处理”。</div>
+    <div class="card shadow-sm table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead><tr><th>Agent 与用途</th><th>模型</th><th>状态</th><th class="text-end">操作</th></tr></thead>
+            <tbody>
+            @foreach (var agent in Model.Agents)
+            {
+                <tr>
+                    <td><div class="fw-semibold">@agent.Name</div><div class="small text-muted">@agent.Description</div></td>
+                    <td>@(string.IsNullOrWhiteSpace(agent.ModelName) ? "默认模型" : agent.ModelName)</td>
+                    <td>
+                        <span class="badge @(agent.IsEnabled ? "bg-success" : "bg-secondary")">@(agent.LifecycleStatus == AgentLifecycleStatus.Archived ? "已归档" : agent.IsEnabled ? "已启用" : "已停用")</span>
+                        @if (agent.IsEnabled && agent.CanReceiveTaskDispatch) { <div class="small text-muted">可按职责接单</div> }
+                    </td>
+                    <td class="text-end">
+                        @if (agent.LifecycleStatus != AgentLifecycleStatus.Archived)
+                        {
+                            <a asp-page="./Create" asp-route-id="@agent.Id" class="btn btn-sm btn-outline-primary">编辑</a>
+                            <form method="post" asp-page-handler="@(agent.IsEnabled ? "Pause" : "Enable")" class="d-inline">
+                                <input type="hidden" name="id" value="@agent.Id" />
+                                <button class="btn btn-sm btn-outline-secondary">@(agent.IsEnabled ? "停用" : "启用")</button>
+                            </form>
+                        }
+                        <details class="mt-2 text-start">
+                            <summary class="small text-muted">测试与历史</summary>
+                            <div class="d-flex flex-wrap gap-2 mt-2">
+                                @if (agent.LifecycleStatus != AgentLifecycleStatus.Archived) { <a asp-page="./Test" asp-route-id="@agent.Id" class="btn btn-sm btn-outline-secondary">可选测试</a> }
+                                <a asp-page="./Versions" asp-route-id="@agent.Id" class="btn btn-sm btn-outline-secondary">配置历史</a>
+                                @if (agent.IsSystemManaged && agent.ManagedDefinitionVersion < agent.AvailableManagedDefinitionVersion)
+                                {
+                                    <form method="post" asp-page-handler="ApplyManagedUpdate" onsubmit="return confirm('系统定义将替换本地配置，确认继续？');">
+                                        <input type="hidden" name="id" value="@agent.Id" /><button class="btn btn-sm btn-outline-info">更新内置配置</button>
+                                    </form>
+                                }
+                                @if (agent.LifecycleStatus != AgentLifecycleStatus.Archived)
+                                {
+                                    <form method="post" asp-page-handler="Archive" onsubmit="return confirm('归档后停止使用，历史记录仍会保留。确认归档？');">
+                                        <input type="hidden" name="id" value="@agent.Id" /><button class="btn btn-sm btn-outline-danger">归档</button>
+                                    </form>
+                                }
+                            </div>
+                            <div class="small text-muted mt-2">@agent.AgentKey · 配置 v@(agent.Version) · 最近测试：@agent.LastTestStatus.GetDisplayName()</div>
+                        </details>
+                    </td>
+                </tr>
+            }
+            @if (Model.Agents.Count == 0) { <tr><td colspan="4" class="text-center text-muted py-4">暂无 Agent，请先注册职责与权限。</td></tr> }
+            </tbody>
+        </table>
+    </div>
+</div>

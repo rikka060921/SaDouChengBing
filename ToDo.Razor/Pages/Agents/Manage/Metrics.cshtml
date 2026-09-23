@@ -1,0 +1,40 @@
+@page
+@model ToDo.Razor.Pages.Agents.Manage.MetricsModel
+@{
+    ViewData["Title"] = "Agent 运行指标";
+}
+<div class="container py-3">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div><h2 class="mb-1">Agent 运行指标</h2><div class="text-muted">同时查看机械运行结果与人工交付验收，避免把“模型跑完”误当成“工作做好”。</div></div>
+        <div class="d-flex gap-2"><a asp-page="./Index" class="btn btn-outline-secondary">返回 Agent 管理</a><a asp-page="/AiSessions/Index" class="btn btn-outline-primary">查看 Session</a></div>
+    </div>
+    <form method="get" class="card card-body mb-3"><div class="row g-2"><div class="col-md-3"><select name="days" class="form-select" aria-label="统计区间"><option value="7" selected="@(Model.Days == 7)">最近 7 天</option><option value="30" selected="@(Model.Days == 30)">最近 30 天</option><option value="90" selected="@(Model.Days == 90)">最近 90 天</option><option value="365" selected="@(Model.Days == 365)">最近一年</option></select></div><div class="col-md-4"><select name="projectId" class="form-select"><option value="">全部项目</option>@foreach (var project in Model.Projects) { <option value="@project.Id" selected="@(Model.ProjectId == project.Id)">@project.Name</option> }</select></div><div class="col-md-3"><select name="agentVersion" class="form-select"><option value="">全部版本</option>@foreach (var version in Model.Versions) { <option value="@version" selected="@(Model.AgentVersion == version)">v@version</option> }</select></div><div class="col-md-2"><button class="btn btn-primary w-100">统计</button></div></div></form>
+    <div class="alert alert-light border">自动验收通过：<strong>@Model.AutomaticallyAcceptedDeliveries</strong> 项。下方人工通过率仅统计人工处理，不混入自动验收。</div>
+    <div class="row g-3 mb-3">
+        <div class="col-6 col-lg-2"><div class="card h-100"><div class="card-body"><div class="small text-muted">Session</div><div class="h3 mb-0">@Model.TotalSessions</div></div></div></div>
+        <div class="col-6 col-lg-2"><div class="card h-100"><div class="card-body"><div class="small text-muted">失败</div><div class="h3 mb-0 text-danger">@Model.FailedSessions</div></div></div></div>
+        <div class="col-6 col-lg-2"><div class="card h-100"><div class="card-body"><div class="small text-muted">待人工验收</div><div class="h3 mb-0 text-warning">@Model.PendingDeliveries</div></div></div></div>
+        <div class="col-6 col-lg-2"><div class="card h-100"><div class="card-body"><div class="small text-muted">人工验收通过率</div><div class="h3 mb-0">@(Model.ReviewedDeliveries == 0 ? "暂无样本" : $"{Model.HumanAcceptanceRate:0.0}%")</div></div></div></div>
+        <div class="col-6 col-lg-2"><div class="card h-100"><div class="card-body"><div class="small text-muted">每个通过交付成本</div><div class="h3 mb-0">@Model.CostPerAcceptedDelivery.ToString("0.0000")</div></div></div></div>
+        <div class="col-6 col-lg-2"><div class="card h-100"><div class="card-body"><div class="small text-muted">派单推翻率</div><div class="h3 mb-0">@(Model.ConfirmedDispatches == 0 ? "暂无样本" : $"{Model.DispatchOverrideRate:0.0}%")</div></div></div></div>
+    </div>
+    <div class="card shadow-sm"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th>Agent/版本</th><th>Session</th><th>机械完成率</th><th>失败/取消</th><th>交付/待验收</th><th>自动通过</th><th>人工通过/驳回</th><th>人工通过率</th><th>返工率</th><th>通过交付成本</th><th>Token</th><th>平均耗时</th><th>最近运行</th></tr></thead><tbody>
+    @foreach (var item in Model.Rows)
+    {
+        <tr>
+            <td><div class="fw-semibold">@item.AgentName <span class="badge bg-light text-dark border">v@item.AgentVersion</span></div><div class="small text-muted">@item.AgentKey</div></td>
+            <td>@item.SessionCount</td><td>@item.CompletionRate.ToString("0.0")%</td>
+            <td><span class="text-danger">@item.FailedCount</span> / @item.CancelledCount</td>
+            <td>@item.SubmittedDeliveries / <span class="text-warning">@item.PendingDeliveries</span></td>
+            <td>@item.AutomaticallyAcceptedDeliveries</td>
+            <td><span class="text-success">@item.AcceptedDeliveries</span> / <span class="text-danger">@item.RejectedDeliveries</span></td>
+            <td>@(item.AcceptedDeliveries + item.RejectedDeliveries == 0 ? "-" : $"{item.HumanAcceptanceRate:0.0}% (n={item.AcceptedDeliveries + item.RejectedDeliveries})")</td>
+            <td>@(item.AcceptedDeliveries + item.RejectedDeliveries == 0 ? "-" : $"{item.ReworkRate:0.0}%")</td>
+            <td>@(item.AcceptedDeliveries + item.AutomaticallyAcceptedDeliveries == 0 ? "-" : item.CostPerAcceptedDelivery.ToString("0.0000"))</td>
+            <td>@item.TotalTokens.ToString("N0")</td><td>@TimeSpan.FromMilliseconds(item.AverageDurationMilliseconds).TotalSeconds.ToString("0.0") s</td>
+            <td class="small text-muted">@item.LastRunAt.ToString("yyyy-MM-dd HH:mm")</td>
+        </tr>
+    }
+    @if (Model.Rows.Count == 0) { <tr><td colspan="13" class="text-center text-muted py-5">统计区间内暂无运行记录</td></tr> }
+    </tbody></table></div></div>
+</div>

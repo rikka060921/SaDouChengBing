@@ -1,0 +1,106 @@
+﻿@page
+@model ToDo.Razor.Pages.Account.ProfileModel
+@using ToDo.Entities
+@{
+    ViewData["Title"] = "个人中心";
+    Layout = "/Pages/Shared/_Layout.cshtml";
+}
+
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-person-lines-fill me-2"></i>个人中心</h5>
+                </div>
+                <div class="card-body">
+                    @if (TempData["SuccessMessage"] != null)
+                    {
+                        <div class="alert alert-success alert-dismissible fade show" role="alert">
+                            @TempData["SuccessMessage"]
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                    }
+
+                    <div asp-validation-summary="All" class="text-danger"></div>
+                    
+                    <form method="post">
+                        <input type="hidden" asp-for="UserEditDto.Id" />
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label asp-for="UserEditDto.UserName" class="form-label">用户名</label>
+                                <div class="input-group">
+                                    <span class="input-group-text"><i class="bi bi-person-badge"></i></span>
+                                    <input asp-for="UserEditDto.UserName" class="form-control" readonly />
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-6 mb-3">
+                                <label asp-for="UserEditDto.RealName" class="form-label">真实姓名</label>
+                                <div class="input-group">
+                                    <span class="input-group-text"><i class="bi bi-card-heading"></i></span>
+                                    <input asp-for="UserEditDto.RealName" class="form-control" readonly />
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label asp-for="UserEditDto.Email" class="form-label">邮箱</label>
+                                <div class="input-group">
+                                    <span class="input-group-text"><i class="bi bi-envelope"></i></span>
+                                    <input asp-for="UserEditDto.Email" class="form-control" />
+                                </div>
+                                <span asp-validation-for="UserEditDto.Email" class="text-danger small"></span>
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label asp-for="UserEditDto.PhoneNumber" class="form-label">电话号码</label>
+                                <div class="input-group">
+                                    <span class="input-group-text"><i class="bi bi-telephone"></i></span>
+                                    <input asp-for="UserEditDto.PhoneNumber" class="form-control" />
+                                </div>
+                                <span asp-validation-for="UserEditDto.PhoneNumber" class="text-danger small"></span>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label asp-for="UserEditDto.Gender" class="form-label">性别</label>
+                                <div class="input-group">
+                                    <span class="input-group-text"><i class="bi bi-gender-ambiguous"></i></span>
+                                    <select asp-for="UserEditDto.Gender" asp-items="Html.GetEnumSelectList<Gender>()" class="form-select" disabled></select>
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">角色</label>
+                                <div class="input-group">
+                                    <span class="input-group-text"><i class="bi bi-shield-lock"></i></span>
+                                    <input type="text" class="form-control" value="@string.Join(", ", Model.FinalRoles.Distinct())" readonly />
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
+                            <a href="/" class="btn btn-outline-secondary me-md-2">
+                                <i class="bi bi-house-door me-2"></i>返回首页
+                            </a>
+                            <a href="/Account/ChangePassword" class="btn btn-outline-warning me-md-2">
+    <i class="bi bi-key me-2"></i>修改密码
+</a>
+                            <button type="submit" class="btn btn-primary px-4">
+                                <i class="bi bi-save me-2"></i>保存更改
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

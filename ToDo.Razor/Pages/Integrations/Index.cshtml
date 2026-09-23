@@ -1,0 +1,15 @@
+@page
+@model ToDo.Razor.Pages.Integrations.IndexModel
+@{
+    ViewData["Title"] = "外部集成接口";
+    Layout = "/Pages/Shared/_Layout.cshtml";
+}
+<div class="container py-3"><div class="mb-3"><h2 class="mb-1">外部集成接口</h2><div class="text-muted">管理员可测试已配置的企业微信与腾讯会议真实接口；密钥仅从服务器配置读取。</div></div>
+@if (!string.IsNullOrWhiteSpace(Model.ResultMessage)) { <div class="alert alert-info">@Model.ResultMessage</div> }
+@if (!string.IsNullOrWhiteSpace(Model.LoadError)) { <div class="alert alert-warning">@Model.LoadError</div> }
+<div class="row g-3"><div class="col-md-6"><div class="card shadow-sm"><div class="card-header">企业微信接口</div><div class="card-body"><form method="post" asp-page-handler="WeCom"><div class="mb-2"><label asp-for="Recipient" class="form-label">接收对象</label><input asp-for="Recipient" class="form-control" /></div><div class="mb-3"><label asp-for="MessageContent" class="form-label">消息内容</label><textarea asp-for="MessageContent" class="form-control" rows="3"></textarea></div><button class="btn btn-outline-primary" type="submit">测试接口</button></form></div></div></div>
+<div class="col-md-6"><div class="card shadow-sm"><div class="card-header">腾讯会议接口</div><div class="card-body"><form method="post" asp-page-handler="Tencent"><div class="mb-3"><label asp-for="MeetingSubject" class="form-label">会议主题</label><input asp-for="MeetingSubject" class="form-control" /></div><button class="btn btn-outline-primary" type="submit">测试接口</button></form></div></div></div></div>
+<div class="card shadow-sm mt-3"><div class="card-header">调用记录</div><div class="table-responsive"><table class="table table-hover mb-0 align-middle"><thead><tr><th>提供方</th><th>操作</th><th>状态</th><th>耗时/尝试</th><th>时间</th><th>响应</th></tr></thead><tbody>
+@foreach (var call in Model.Calls) { <tr><td>@call.Provider</td><td>@call.Operation</td><td><span class="badge bg-@(call.IsSuccess ? "success" : call.Status == "NotConfigured" ? "secondary" : "danger")">@call.Status</span></td><td>@call.DurationMs ms / @call.AttemptCount</td><td>@call.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</td><td class="text-break" style="max-width:420px">@call.ResponseJson</td></tr> }
+@if (Model.Calls.Count == 0) { <tr><td colspan="6" class="text-center text-muted py-4">暂无调用记录</td></tr> }
+</tbody></table></div></div></div>

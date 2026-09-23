@@ -1,0 +1,1726 @@
+@page "{id:int}"
+@using ToDo.Domain
+@model ToDo.Razor.Pages.MeetingMinutes.DetailsModel
+@{
+	ViewData["Title"] = "会议纪要详情";
+	bool hasPendingActionItems = Model.ActionItems.Any(item => item.SyncStatus.StartsWith("待确认"));
+}
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5.2.0/github-markdown.min.css">
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<style>
+	.markdown-body {
+		background: #ffffff;
+		border: 1px solid #e9ecef;
+		border-radius: 6px;
+		padding: 2rem;
+		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+		max-height: 600px;
+		overflow-y: auto;
+		white-space: pre-wrap !important;
+		word-wrap: break-word !important;
+	}
+
+		.markdown-body * {
+			white-space: pre-wrap !important;
+			word-wrap: break-word !important;
+		}
+
+		.markdown-body p {
+			margin: 0 0 0.5rem 0;
+			line-height: 1.8;
+			color: #495057;
+		}
+
+		.markdown-body h1, .markdown-body h2, .markdown-body h3 {
+			white-space: normal !important;
+		}
+
+		.markdown-body h1 {
+			font-size: 1.8rem;
+			color: #2c3e50;
+			margin: 1.8rem 0 1rem;
+			padding-bottom: 0.5rem;
+			border-bottom: 2px solid #e9ecef;
+		}
+
+		.markdown-body h2 {
+			font-size: 1.5rem;
+			color: #34495e;
+			margin: 1.5rem 0 0.8rem;
+			padding-bottom: 0.3rem;
+			border-bottom: 1px solid #e9ecef;
+		}
+
+		.markdown-body h3 {
+			font-size: 1.3rem;
+			color: #34495e;
+			margin: 1.2rem 0 0.6rem;
+		}
+
+		.markdown-body ul, .markdown-body ol {
+			margin: 0 0 1rem 1.5rem;
+			padding-left: 1rem;
+			white-space: normal !important;
+		}
+
+		.markdown-body li {
+			margin-bottom: 0.5rem;
+			line-height: 1.6;
+			white-space: normal !important;
+		}
+
+		.markdown-body pre {
+			background: #f8f9fa;
+			border-left: 3px solid #007bff;
+			padding: 1rem;
+			border-radius: 4px;
+			margin: 1rem 0;
+			overflow-x: auto;
+			font-family: "Consolas", "Monaco", monospace;
+			white-space: pre !important;
+		}
+
+		.markdown-body code {
+			background: #f1f3f5;
+			padding: 0.2rem 0.4rem;
+			border-radius: 3px;
+			font-size: 0.95rem;
+			font-family: "Consolas", "Monaco", monospace;
+			white-space: normal !important;
+		}
+
+		.markdown-body a {
+			color: #007bff;
+			text-decoration: none;
+			white-space: normal !important;
+		}
+
+			.markdown-body a:hover {
+				color: #0056b3;
+				text-decoration: underline;
+			}
+
+	#actionItemsTable {
+		table-layout: fixed;
+		width: 100%;
+	}
+
+		#actionItemsTable th {
+			vertical-align: middle;
+			white-space: nowrap;
+		}
+
+		#actionItemsTable td {
+			vertical-align: middle;
+			overflow-wrap: break-word;
+			word-break: break-all;
+		}
+
+	.task-section-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		flex-wrap: wrap;
+		margin-bottom: 0.5rem;
+	}
+
+		.task-section-header .title-group {
+			display: flex;
+			flex-direction: column;
+		}
+
+			.task-section-header .title-group h5 {
+				margin-bottom: 0;
+			}
+
+			.task-section-header .title-group .hint-text {
+				font-size: 0.75rem;
+				color: #6c757d;
+				margin-top: 0.1rem;
+				line-height: 1.2;
+			}
+
+		.task-section-header .action-group {
+			display: flex;
+			flex-direction: column;
+			align-items: flex-end;
+			gap: 0.25rem;
+		}
+
+			.task-section-header .action-group .btn-group {
+				display: flex;
+				gap: 0.5rem;
+			}
+
+	.action-cell {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.3rem;
+	}
+
+		.action-cell .btn-group-vertical-sm {
+			display: flex;
+			flex-direction: row;
+			gap: 0.2rem;
+			flex-wrap: wrap;
+		}
+
+		.action-cell .sync-status {
+			font-size: 0.7rem;
+			color: #28a745;
+			white-space: nowrap;
+		}
+
+			.action-cell .sync-status i {
+				margin-right: 0.15rem;
+			}
+
+	.ai-generation-status.full-width-progress {
+		width: 100%;
+		margin-top: 0.75rem;
+		border: 1px solid #dee2e6;
+		border-radius: 0.375rem;
+		padding: 1rem 1.25rem;
+		background: #f8f9fa;
+	}
+
+		.ai-generation-status.full-width-progress .progress {
+			height: 10px;
+			margin: 0.5rem 0;
+		}
+</style>
+
+<div class="container mt-4">
+	@{
+		// ===== 多项目改造：面包屑跟随来源项目，没有来源则用默认项目 =====
+		ViewData["ProjectId"] = Model.FromProjectId ?? Model.MeetingMinutes.ProjectId;
+		ViewData["ProjectSection"] = "minutes";
+	}
+	<partial name="_ProjectNav" view-data="ViewData" />
+
+	<div class="row">
+		<div class="col-md-12">
+			<div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
+				<h1 class="mb-0">会议纪要详情</h1>
+				@if (Model.CanEdit)
+				{
+					<a asp-page="Edit" asp-route-id="@Model.MeetingMinutes.Id" class="btn btn-primary"><i class="fas fa-edit me-1"></i>编辑会议纪要</a>
+				}
+			</div>
+			<hr />
+
+			<div class="card mb-4">
+				<div class="card-header d-flex justify-content-between align-items-center" style="background-color: #007bff; color: white;">
+					<h2 class="mb-0">@Model.MeetingMinutes.MeetingTitle</h2>
+					<div>
+						@if (Model.MeetingMinutes.IsDraft)
+						{
+							<span class="badge bg-warning text-dark me-2">草稿</span>
+						}
+						<div class="text-white-80 small">会议日期</div>
+						<div class="fw-bold">@Model.MeetingMinutes.MeetingDate.ToString("yyyy-MM-dd")</div>
+					</div>
+				</div>
+				<div class="card-body">
+					<div class="row mb-4">
+						<div class="col-md-6">
+							<div class="d-flex align-items-start">
+								<i class="fas fa-project-diagram me-2 mt-1"></i>
+								<div>
+									<div class="text-muted small">关联项目</div>
+									<div class="fw-bold">
+										@{
+											var projectNames = Model.ProjectsById.Values.Select(p => p.Name).ToList();
+										}
+										@if (projectNames.Any())
+										{
+											@string.Join("、", projectNames)
+											<span class="badge bg-secondary ms-2">@projectNames.Count 个</span>
+										}
+										else
+										{
+											@Model.Project.Name
+										}
+									</div>
+								</div>
+							</div>
+						</div>
+						<div class="col-md-6">
+							<div class="d-flex align-items-center">
+								<i class="fas fa-user me-2"></i>
+								<div><div class="text-muted small">创建人</div><div class="fw-bold">@Model.CreatorName</div></div>
+							</div>
+						</div>
+					</div>
+
+					<h5 class="mb-3"><i class="fas fa-file-alt me-2"></i>会议内容</h5>
+					<div class="markdown-body" id="markdown-content">
+						@Html.Raw(Model.RenderedContent)
+					</div>
+
+					@if (!string.IsNullOrWhiteSpace(Model.MeetingMinutes.TranscriptText))
+					{
+						<details class="border rounded p-3 mb-4 mt-4" id="meeting-transcript-details">
+							<summary class="fw-semibold">会议原始记录</summary>
+							<div class="mt-3 text-body" id="meeting-transcript-content" style="white-space: pre-wrap; max-height: 400px; overflow-y: auto;">@Model.MeetingMinutes.TranscriptText</div>
+						</details>
+					}
+
+					@if (!string.IsNullOrWhiteSpace(Model.MeetingMinutes.AiSummary))
+					{
+						<div class="alert alert-info">
+							<h5><i class="fas fa-robot me-2"></i>AI摘要</h5>
+							<div style="white-space: pre-wrap;">@Model.MeetingMinutes.AiSummary</div>
+						</div>
+					}
+
+					@if (!string.IsNullOrWhiteSpace(Model.MeetingMinutes.AiMeetingPurpose))
+					{
+						<div class="alert alert-light border">
+							<h6 class="mb-1"><i class="fas fa-flag me-2 text-primary"></i>开会原因</h6>
+							<div class="small text-muted" style="white-space: pre-wrap;">@Model.MeetingMinutes.AiMeetingPurpose</div>
+						</div>
+					}
+
+					@if (Model.MeetingDecisions.Any())
+					{
+						<div class="card mb-3">
+							<div class="card-header bg-light d-flex align-items-center">
+								<i class="fas fa-gavel me-2 text-warning"></i>
+								<strong>会议决策清单</strong>
+								<span class="badge bg-warning text-dark ms-2">@Model.MeetingDecisions.Count 条</span>
+								<span class="small text-muted ms-2">（点击原话可跳转到原始记录位置，讨论过程已标注在原文）</span>
+								<button type="button" class="btn btn-sm btn-outline-secondary ms-auto" onclick="clearAllHighlights()">
+									<i class="fas fa-eraser me-1"></i>清除全部高亮
+								</button>
+							</div>
+							<div class="card-body p-0">
+								<table class="table table-sm table-striped mb-0">
+									<thead class="table-light">
+										<tr>
+											<th style="width: 50px;">序号</th>
+											<th style="width: 25%;">决策内容</th>
+											<th style="width: 15%;">决策人</th>
+											<th>会议原话（点击跳转）</th>
+											@if (Model.MeetingMinutes.ConfirmedAt == null)
+											{
+												<th style="width: 80px;">操作</th>
+											}
+										</tr>
+									</thead>
+									<tbody>
+										@for (int i = 0; i < Model.MeetingDecisions.Count; i++)
+										{
+											var decision = Model.MeetingDecisions[i];
+											<tr id="decision-row-@i" class="decision-row" data-decision-index="@i">
+												<td class="text-center text-muted decision-col-seq">@(i + 1)</td>
+												<td class="decision-col-content">@decision.Content</td>
+												<td class="decision-col-maker">
+													@if (!string.IsNullOrWhiteSpace(decision.DecisionMaker))
+													{
+														<span class="badge bg-primary rounded-pill">@decision.DecisionMaker</span>
+													}
+													else
+													{
+														<span class="text-muted">未明确</span>
+													}
+												</td>
+												<td class="decision-col-quote">
+													@{
+														var kq = decision.GetKeyQuote();
+													}
+													@if (!string.IsNullOrWhiteSpace(kq))
+													{
+														<button type="button"
+																class="btn btn-link border-0 p-0 text-start text-decoration-none text-primary-hover decision-quote"
+																onclick="jumpToDecisionQuotes(@i)"
+																title="点击跳转到原文，标注完整讨论过程">
+															<span class="quote-text">"@kq"</span>
+															<i class="fas fa-arrow-up-right-from-square ms-1 small"></i>
+														</button>
+													}
+													else
+													{
+														<span class="text-muted">（暂无可验证原话）</span>
+													}
+												</td>
+												@if (Model.MeetingMinutes.ConfirmedAt == null)
+												{
+													<td class="decision-col-action">
+														<div class="d-flex gap-1">
+															<button type="button" class="btn btn-sm btn-outline-primary btn-edit-decision" title="手动修改决策">
+																<i class="bi bi-pencil"></i>
+															</button>
+															<button type="button" class="btn btn-sm btn-outline-warning btn-ai-match-decision" title="AI 重新匹配原话">
+																<i class="bi bi-stars"></i>
+															</button>
+															<button type="button" class="btn btn-sm btn-outline-danger btn-delete-decision" title="删除决策">
+																<i class="bi bi-trash"></i>
+															</button>
+														</div>
+													</td>
+												}
+											</tr>
+										}
+									</tbody>
+								</table>
+							</div>
+						</div>
+						<script>
+							window.decisionQuoteMap = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(
+															Model.MeetingDecisions.Select(d => new { quotes = d.GetQuotes(), key = d.GetKeyQuote() }).ToList()));
+
+						window.prepDraftTasks = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(
+														Model.PrepDraftAllTasks.Where(t => t.Id > 0).Select(t => new
+														{
+																id = t.Id,
+																title = t.Title,
+																projectName = t.ProjectName ?? "-",
+																assigneeName = t.AssigneeName ?? "-",
+																deadline = t.Deadline ?? "-",
+																isOverdue = t.IsOverdue
+														}).ToList()));
+						window.actionItemDraftLinks = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(
+														Model.ActionItems.Where(a => !a.IsConfirmed).Select(a => new
+														{
+																itemId = a.Id,
+																prepDraftTaskId = a.PrepDraftTaskId
+														}).ToList()));
+					</script>
+
+					@if (Model.MeetingMinutes.ConfirmedAt == null)
+						{
+							<script>
+								(function() {
+									const meetingId = @Model.MeetingMinutes.Id;
+									const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value ?? '';
+
+									function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+									function buildActionHtml() {
+										return `<div class="d-flex gap-1">
+											<button type="button" class="btn btn-sm btn-outline-primary btn-edit-decision" title="手动修改决策"><i class="bi bi-pencil"></i></button>
+											<button type="button" class="btn btn-sm btn-outline-warning btn-ai-match-decision" title="AI 重新匹配原话"><i class="bi bi-stars"></i></button>
+											<button type="button" class="btn btn-sm btn-outline-danger btn-delete-decision" title="删除决策"><i class="bi bi-trash"></i></button>
+										</div>`;
+									}
+
+									function rebindRowBtns(row) {
+										bindEditDecisionBtn(row.querySelector('.btn-edit-decision'));
+										bindAIMatchDecisionBtn(row.querySelector('.btn-ai-match-decision'));
+										bindDeleteDecisionBtn(row.querySelector('.btn-delete-decision'));
+									}
+
+									function bindAIMatchDecisionBtn(btn) {
+										if (!btn) return;
+										btn.addEventListener('click', async function() {
+											const row = this.closest('tr');
+											const idx = parseInt(row.dataset.decisionIndex);
+											const orig = this.innerHTML;
+											this.disabled = true;
+											this.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+											try {
+												const resp = await fetch('?handler=AIMatchDecisionQuotes', {
+													method: 'POST',
+													headers: {
+														'Content-Type': 'application/x-www-form-urlencoded',
+														'RequestVerificationToken': token
+													},
+													body: new URLSearchParams({ meetingId: meetingId, decisionIndex: idx })
+												});
+												const data = await resp.json();
+												if (!data.success) { alert(data.msg || 'AI 匹配失败'); this.disabled = false; this.innerHTML = orig; return; }
+
+												const quoteTd = row.querySelector('.decision-col-quote');
+												const quotesArr = (data.quotes && Array.isArray(data.quotes)) ? data.quotes : [];
+												const kq = data.keyQuote || '';
+												if (kq) {
+													quoteTd.innerHTML = `<button type="button" class="btn btn-link border-0 p-0 text-start text-decoration-none text-primary-hover decision-quote" onclick="jumpToDecisionQuotes(${idx})" title="点击跳转到原文，标注完整讨论过程">
+														<span class="quote-text">"${escapeHtml(kq)}"</span>
+														<i class="fas fa-arrow-up-right-from-square ms-1 small"></i>
+													</button>`;
+												} else {
+													quoteTd.innerHTML = `<span class="text-muted">（暂无可验证原话）</span>`;
+												}
+												if (data.decisionMaker !== undefined) {
+													const makerTd = row.querySelector('.decision-col-maker');
+													const dm = (data.decisionMaker || '').trim();
+													if (makerTd) {
+														if (dm && dm !== '未明确') {
+															makerTd.innerHTML = dm.split(/[、,，\s]+/).filter(Boolean)
+																.map(n => `<span class="badge bg-primary rounded-pill me-1">${escapeHtml(n)}</span>`).join('');
+														} else {
+															makerTd.innerHTML = `<span class="text-muted">未明确</span>`;
+														}
+													}
+												}
+												if (window.decisionQuoteMap && window.decisionQuoteMap[idx]) {
+													window.decisionQuoteMap[idx].key = kq;
+													window.decisionQuoteMap[idx].quotes = quotesArr;
+												}
+												alert('AI 重新匹配完成');
+												this.disabled = false;
+												this.innerHTML = orig;
+											} catch (e) { alert('请求失败，请重试'); this.disabled = false; this.innerHTML = orig; }
+										});
+									}
+
+									function bindDeleteDecisionBtn(btn) {
+										if (!btn) return;
+										btn.addEventListener('click', async function() {
+											const row = this.closest('tr');
+											const idx = parseInt(row.dataset.decisionIndex);
+											const contentTd = row.querySelector('.decision-col-content');
+											const title = contentTd.textContent.trim().slice(0, 30);
+											if (!confirm(`确定删除这条决策吗？\n\n"${title}${contentTd.textContent.length > 30 ? '…' : ''}"\n\n删除后后面的决策序号会自动前移，已关联的任务也会同步更新。`)) return;
+
+											this.disabled = true;
+											this.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+											try {
+												const resp = await fetch('?handler=DeleteDecision', {
+													method: 'POST',
+													headers: {
+														'Content-Type': 'application/x-www-form-urlencoded',
+														'RequestVerificationToken': token
+													},
+													body: new URLSearchParams({ meetingId: meetingId, decisionIndex: idx })
+												});
+												const data = await resp.json();
+												if (!data.success) { alert(data.msg || '删除失败'); this.disabled = false; this.innerHTML = '<i class="bi bi-trash"></i>'; return; }
+												window.location.reload();
+											} catch (e) { alert('删除失败，请重试'); this.disabled = false; this.innerHTML = '<i class="bi bi-trash"></i>'; }
+										});
+									}
+
+									function bindEditDecisionBtn(btn) {
+										if (!btn) return;
+										btn.addEventListener('click', function() {
+											const row = this.closest('tr');
+											const idx = parseInt(row.dataset.decisionIndex);
+											const contentTd = row.querySelector('.decision-col-content');
+											const makerTd = row.querySelector('.decision-col-maker');
+											const actionTd = row.querySelector('.decision-col-action');
+
+											if (row.dataset.editing === '1') return;
+
+											const origContent = contentTd.textContent.trim();
+											const origMaker = makerTd.querySelector('.badge')?.textContent.trim() || '';
+
+											contentTd.innerHTML = `<textarea class="form-control form-control-sm decision-edit-content" rows="3">${escapeHtml(origContent)}</textarea>`;
+											makerTd.innerHTML = `<input type="text" class="form-control form-control-sm decision-edit-maker" value="${escapeHtml(origMaker)}" placeholder="如：乔宽、赵冬" />`;
+											actionTd.innerHTML = `
+												<div class="d-flex gap-1">
+													<button type="button" class="btn btn-sm btn-outline-success btn-save-decision" title="保存"><i class="bi bi-check-lg"></i></button>
+													<button type="button" class="btn btn-sm btn-outline-secondary btn-cancel-decision" title="取消"><i class="bi bi-x-lg"></i></button>
+												</div>`;
+											row.dataset.editing = '1';
+
+											function renderSaved() {
+												contentTd.textContent = origContent;
+												makerTd.innerHTML = origMaker
+													? `<span class="badge bg-primary rounded-pill">${escapeHtml(origMaker)}</span>`
+													: `<span class="text-muted">未明确</span>`;
+												actionTd.innerHTML = buildActionHtml();
+												row.dataset.editing = '';
+												rebindRowBtns(row);
+											}
+
+											function renderSuccess(newContent, newMaker) {
+												contentTd.textContent = newContent.trim();
+												makerTd.innerHTML = newMaker.trim()
+													? `<span class="badge bg-primary rounded-pill">${escapeHtml(newMaker.trim())}</span>`
+													: `<span class="text-muted">未明确</span>`;
+												actionTd.innerHTML = buildActionHtml();
+												row.dataset.editing = '';
+												rebindRowBtns(row);
+											}
+
+											actionTd.querySelector('.btn-save-decision').addEventListener('click', async () => {
+												const newContent = contentTd.querySelector('.decision-edit-content').value;
+												const newMaker = makerTd.querySelector('.decision-edit-maker').value;
+												if (!newContent.trim()) { alert('决策内容不能为空'); return; }
+
+												const saveBtn = actionTd.querySelector('.btn-save-decision');
+												saveBtn.disabled = true;
+												saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+												try {
+													const resp = await fetch('?handler=UpdateDecision', {
+														method: 'POST',
+														headers: {
+															'Content-Type': 'application/x-www-form-urlencoded',
+															'RequestVerificationToken': token
+														},
+														body: new URLSearchParams({ meetingId: meetingId, decisionIndex: idx, content: newContent, decisionMaker: newMaker })
+													});
+													const data = await resp.json();
+													if (!data.success) { alert(data.msg || '保存失败'); saveBtn.disabled = false; saveBtn.innerHTML = '<i class="bi bi-check-lg"></i>'; return; }
+													renderSuccess(newContent, newMaker);
+												} catch (e) { alert('保存失败，请重试'); saveBtn.disabled = false; saveBtn.innerHTML = '<i class="bi bi-check-lg"></i>'; }
+											});
+
+											actionTd.querySelector('.btn-cancel-decision').addEventListener('click', renderSaved);
+										});
+									}
+
+									document.querySelectorAll('.btn-edit-decision').forEach(bindEditDecisionBtn);
+									document.querySelectorAll('.btn-ai-match-decision').forEach(bindAIMatchDecisionBtn);
+									document.querySelectorAll('.btn-delete-decision').forEach(bindDeleteDecisionBtn);
+								})();
+							</script>
+						}
+					}
+
+					<div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mt-4 mb-2">
+						<div>
+							<h5 class="mb-1"><i class="fas fa-tasks me-2"></i>本次会议任务</h5>
+							<div class="small text-muted">AI先生成任务建议，审批人确认后才会创建或更新任务。<span class="text-success">表格内下拉框直接选择即可自动保存</span></div>
+							@if (Model.MeetingMinutes.IsDraft)
+							{
+								<div class="small text-warning mt-1"><i class="fas fa-exclamation-triangle me-1"></i>当前为草稿状态，点击"确认并写入任务"后将正式提交会议纪要并锁定议题</div>
+							}
+						</div>
+						<div class="d-flex gap-2 flex-wrap">
+							@if (Model.CanEdit || Model.CanApproveWrites)
+							{
+								<form method="post" asp-page-handler="Prepare" asp-route-id="@Model.MeetingMinutes.Id" id="meetingSyncForm">
+									<button type="submit" class="btn btn-sm btn-outline-primary" id="meetingSyncSubmit"><i class="fas fa-wand-magic-sparkles me-1"></i>重新解析任务</button>
+								</form>
+							}
+							@if (Model.CanApproveWrites && !Model.MeetingMinutes.ConfirmedAt.HasValue)
+							{
+								@if (hasPendingActionItems)
+								{
+									<form method="post" asp-page-handler="Confirm" asp-route-id="@Model.MeetingMinutes.Id"
+										  onsubmit="return confirm('确认将这些任务创建或更新为项目任务吗？（已保存表格内所有下拉修改）\n\n确认后会议纪要将正式提交，符合条件的议题将自动归档。');">
+										<button type="submit" class="btn btn-sm btn-success"><i class="fas fa-check me-1"></i>确认并写入任务</button>
+									</form>
+								}
+								else
+								{
+									<form method="post" asp-page-handler="Confirm" asp-route-id="@Model.MeetingMinutes.Id"
+										  onsubmit="return confirm('本次会议没有待写入的任务。\n\n确认提交本次会议吗？');">
+										<button type="submit" class="btn btn-sm btn-success"><i class="fas fa-check me-1"></i>确认会议纪要（无新任务）</button>
+									</form>
+								}
+							}
+							else if (Model.MeetingMinutes.ConfirmedAt.HasValue)
+							{
+								<span class="badge bg-success align-middle"><i class="fas fa-check-circle me-1"></i>会议已确认　@Model.MeetingMinutes.ConfirmedAt.Value.ToString("yyyy-MM-dd HH:mm")</span>
+								@if (Model.CanApproveWrites)
+								{
+									<form method="post" asp-page-handler="Supervise" asp-route-id="@Model.MeetingMinutes.Id">
+										<button type="submit" class="btn btn-sm btn-outline-warning"><i class="fas fa-bell me-1"></i>立即检查督办</button>
+									</form>
+								}
+							}
+						</div>
+					</div>
+					<div id="meetingSyncProgress" class="ai-generation-status d-none ms-auto mb-3" aria-live="polite"></div>
+					@if (TempData["SuccessMessage"] != null)
+					{
+						<div class="alert alert-success">@TempData["SuccessMessage"]</div>
+					}
+					@if (TempData["ErrorMessage"] != null)
+					{
+						<div class="alert alert-danger">@TempData["ErrorMessage"]</div>
+					}
+
+					@if (Model.ActionItems.Any())
+					{
+						@if (hasPendingActionItems && !Model.CanApproveWrites)
+						{
+							<div class="alert alert-warning py-2">任务正在等待系统管理员、项目负责人或项目管理员确认。</div>
+						}
+
+						@* ===== 多项目改造：按项目分组渲染 ===== *@
+						@foreach (var kv in Model.ActionItemsByProject)
+						{
+							var projectId = kv.Key;
+							var items = kv.Value;
+							var project = Model.ProjectsById.GetValueOrDefault(projectId);
+							var projectMembers = Model.ProjectMembersByProject.GetValueOrDefault(projectId) ?? new List<ApplicationUser>();
+							var projectGroups = Model.ProjectTaskGroupsByProject.GetValueOrDefault(projectId) ?? new List<DomainSelectListItem>();
+
+							<div class="card mb-4 border-primary">
+								<div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+									<span>
+										<i class="fas fa-project-diagram me-1"></i>
+										项目：<strong>@(project?.Name ?? "未知项目")</strong>
+									</span>
+									<span class="badge bg-light text-primary">@items.Count 项任务</span>
+								</div>
+								<div class="card-body p-0">
+									<div class="table-responsive">
+										<table class="table table-sm table-bordered align-middle mb-0">
+											<thead class="table-primary text-white">
+												<tr>
+													<th style="width:50px;">序号</th>
+													<th style="min-width:60px;">类型</th>
+													<th style="min-width:200px;">任务标题</th>
+													<th style="min-width:250px;">详细描述</th>
+													<th style="min-width:200px;">变更详情</th>
+													<th style="min-width:120px;">责任人</th>
+													<th style="min-width:130px;">截止日期</th>
+													<th style="min-width:80px;">优先级</th>
+													<th style="min-width:100px;">任务分组</th>
+													<th style="min-width:180px;">所属项目</th>
+													<th style="min-width:200px;">关联任务</th>
+													<th style="min-width:180px;">来源决策</th>
+													<th style="min-width:100px;">初始状态</th>
+													<th style="min-width:220px;">督办状态</th>
+													<th style="min-width:140px;">操作</th>
+												</tr>
+											</thead>
+											<tbody>
+												@{
+													int index = 1;
+												}
+												@foreach (var item in items)
+												{
+													var task = item.MatchedTask;
+													var statusText = task?.Status switch
+													{
+														ToDo.Entities.TaskStatus.InProgress => "进行中",
+														ToDo.Entities.TaskStatus.Completed => "已完成",
+														ToDo.Entities.TaskStatus.PendingConfirmation => "待审核",
+														ToDo.Entities.TaskStatus.Cancelled => "已取消",
+														_ => item.TaskStatus == "Completed" ? "已完成" : item.TaskStatus == "InProgress" ? "进行中" : "未开始"
+													};
+													var statusClass = task?.Status switch
+													{
+														ToDo.Entities.TaskStatus.Completed => "bg-success",
+														ToDo.Entities.TaskStatus.InProgress => "bg-primary",
+														ToDo.Entities.TaskStatus.PendingConfirmation => "bg-warning text-dark",
+														ToDo.Entities.TaskStatus.Cancelled => "bg-secondary",
+														_ => item.TaskStatus == "Completed" ? "bg-success" : item.TaskStatus == "InProgress" ? "bg-primary" : "bg-light border text-dark"
+													};
+													var priorityClass = item.Priority switch { "High" => "bg-danger", "Low" => "bg-secondary", _ => "bg-warning text-dark" };
+													var priorityText = item.Priority switch { "High" => "高", "Low" => "低", _ => "中" };
+													var supervisionText = item.SupervisionStatus switch
+													{
+														MeetingActionSupervisionStatus.NeedsDefinition => "待补齐执行条件",
+														MeetingActionSupervisionStatus.OnTrack => "正常推进",
+														MeetingActionSupervisionStatus.DueSoon => "即将到期",
+														MeetingActionSupervisionStatus.Overdue => "已逾期",
+														MeetingActionSupervisionStatus.Blocked => "执行受阻",
+														MeetingActionSupervisionStatus.Completed => "已完成",
+														MeetingActionSupervisionStatus.Cancelled => "已取消",
+														_ => "待关联任务"
+													};
+													var supervisionClass = item.SupervisionStatus switch
+													{
+														MeetingActionSupervisionStatus.OnTrack => "bg-info text-dark",
+														MeetingActionSupervisionStatus.DueSoon => "bg-warning text-dark",
+														MeetingActionSupervisionStatus.Overdue => "bg-danger",
+														MeetingActionSupervisionStatus.Blocked => "bg-danger",
+														MeetingActionSupervisionStatus.Completed => "bg-success",
+														MeetingActionSupervisionStatus.Cancelled => "bg-secondary",
+														MeetingActionSupervisionStatus.NeedsDefinition => "bg-warning text-dark",
+														_ => "bg-light border text-dark"
+													};
+
+													<tr data-action-item-id="@item.Id">
+														<td class="text-center">@index</td>
+														<td>
+															@if (item.ActionType == "TaskChange")
+															{
+																<span class="badge bg-warning text-dark">变更</span>
+															}
+															else
+															{
+																<span class="badge bg-success">新增</span>
+															}
+														</td>
+														<td style="white-space:normal;word-break:break-all;">
+															@if (item.ActionType == "TaskChange" && task != null)
+															{
+																<a href="/Tasks/Details/@item.MatchedTaskId" target="_blank">@task.Title</a>
+																<span class="text-muted small">（历史任务）</span>
+															}
+															else
+															{
+																@item.Title
+															}
+														</td>
+														<td style="white-space:normal;word-break:break-all;">
+															@if (item.ActionType == "TaskChange" && task != null)
+															{
+																if (!string.IsNullOrEmpty(task.Description))
+																{
+																	@(task.Description.Length > 150 ? task.Description.Substring(0, 150) + "..." : task.Description)
+																}
+																else
+																{
+																	<span class="text-muted">-</span>
+																}
+															}
+															else
+															{
+																if (!string.IsNullOrEmpty(item.Description))
+																{
+																	@(item.Description.Length > 150 ? item.Description.Substring(0, 150) + "..." : item.Description)
+																}
+																else
+																{
+																	<span class="text-muted">-</span>
+																}
+															}
+														</td>
+														<td style="min-width:200px;">
+															@if (item.ActionType == "TaskChange")
+															{
+																<div class="small">
+																	@if (!string.IsNullOrEmpty(item.ChangeDescription))
+																	{
+																		<span>@item.ChangeDescription</span>
+																	}
+																	else
+																	{
+																		@if (!string.IsNullOrEmpty(item.BeforeStatus) && item.BeforeStatus != item.AfterStatus)
+																		{
+																			<span>状态: @item.BeforeStatus → @item.AfterStatus</span>
+																			<br />
+																		}
+																		@if (item.BeforeAssigneeId != item.AfterAssigneeId)
+																		{
+																			var beforeUser = projectMembers.FirstOrDefault(u => u.Id == item.BeforeAssigneeId);
+																			var afterUser = projectMembers.FirstOrDefault(u => u.Id == item.AfterAssigneeId);
+																			<span>负责人: @(beforeUser?.RealName ?? "未指定") → @(afterUser?.RealName ?? "未指定")</span>
+																			<br />
+																		}
+																		@if (item.BeforeDeadline?.ToString("yyyy-MM-dd") != item.AfterDeadline?.ToString("yyyy-MM-dd"))
+																		{
+																			<span>截止时间: @item.BeforeDeadline?.ToString("yyyy-MM-dd") → @item.AfterDeadline?.ToString("yyyy-MM-dd")</span>
+																			<br />
+																		}
+																		@if (item.BeforePriority != item.AfterPriority)
+																		{
+																			<span>优先级: @item.BeforePriority → @item.AfterPriority</span>
+																			<br />
+																		}
+																	}
+																</div>
+															}
+															else
+															{
+																<span class="text-muted">-</span>
+															}
+														</td>
+														<td>
+															@if (item.IsConfirmed)
+															{
+																var assigneeName = task?.Assignee?.RealName ?? item.AssigneeText ?? "-";
+																<span class="text-muted">@assigneeName</span>
+															}
+															else
+															{
+																<select class="form-select form-select-sm row-assignee-select" data-item-id="@item.Id" disabled="@(!Model.CanApproveWrites)">
+																	<option value="">未识别</option>
+																	@foreach (var user in projectMembers)
+																	{
+																		<option value="@user.Id" selected="@(item.AssigneeId == user.Id)">@user.RealName</option>
+																	}
+																</select>
+															}
+														</td>
+														<td>
+															@if (item.IsConfirmed)
+															{
+																var deadlineText = (task?.EndTime ?? item.Deadline)?.ToString("yyyy-MM-dd") ?? "-";
+																<span class="text-muted">@deadlineText</span>
+															}
+															else
+															{
+																<input type="date" class="form-control form-control-sm row-deadline-input"
+																	   data-item-id="@item.Id"
+																	   disabled="@(!Model.CanApproveWrites)"
+																	   value="@((task?.EndTime ?? item.Deadline)?.ToString("yyyy-MM-dd"))" />
+															}
+														</td>
+														<td>
+															@if (item.IsConfirmed)
+															{
+																<span class="badge @priorityClass">@priorityText</span>
+															}
+															else
+															{
+																<select class="form-select form-select-sm row-priority-select" data-item-id="@item.Id" disabled="@(!Model.CanApproveWrites)">
+																	<option value="Low" selected="@(item.Priority == "Low")">低</option>
+																	<option value="Medium" selected="@(item.Priority == "Medium")">中</option>
+																	<option value="High" selected="@(item.Priority == "High")">高</option>
+																</select>
+															}
+														</td>
+														<td>
+															@if (item.IsConfirmed)
+															{
+																var groupText = task?.Group?.Name ?? item.GroupName ?? "无分组";
+																<span class="text-muted">@groupText</span>
+															}
+															else
+															{
+																<select class="form-select form-select-sm row-group-select" data-item-id="@item.Id" disabled="@(!Model.CanApproveWrites)">
+																	<option value="" selected="@(string.IsNullOrEmpty(item.GroupName))">无分组</option>
+																	@foreach (var g in projectGroups)
+																	{
+																		<option value="@g.Text" selected="@(item.GroupName == g.Text)">@g.Text</option>
+																	}
+																</select>
+															}
+														</td>
+
+														@* ===== 所属项目下拉框（未确认时可改） ===== *@
+														<td>
+															@if (item.IsConfirmed)
+															{
+																<span class="text-muted">@(project?.Name ?? "-")</span>
+															}
+															else
+															{
+																<select class="form-select form-select-sm row-project-select" data-item-id="@item.Id" disabled="@(!Model.CanApproveWrites)">
+																	@foreach (var kvp in Model.ProjectsById)
+																	{
+																		<option value="@kvp.Key" selected="@(item.ProjectId == kvp.Key || (item.ProjectId == null && kvp.Key == Model.MeetingMinutes.ProjectId))">
+																			@kvp.Value.Name
+																		</option>
+																	}
+																</select>
+															}
+														</td>
+
+														<td style="white-space:normal;word-break:break-all;">
+															@if (!item.IsConfirmed && Model.MeetingMinutes.ConfirmedAt == null && Model.PrepDraftAllTasks.Count > 0)
+															{
+																<select class="form-select form-select-sm match-task-select" data-item-id="@item.Id">
+																	<option value="0" selected="@(!item.PrepDraftTaskId.HasValue)">未关联</option>
+																	@foreach (var dt in Model.PrepDraftAllTasks.Where(t => t.Id > 0))
+																	{
+																		<option value="@dt.Id" selected="@(item.PrepDraftTaskId == dt.Id)">@dt.Title</option>
+																	}
+																</select>
+															}
+															else if (!item.IsConfirmed && Model.MeetingMinutes.ConfirmedAt == null)
+															{
+																<span class="text-muted small">无会前准备草稿</span>
+															}
+															else if (item.PrepDraftTaskId.HasValue && Model.PrepDraftAllTasks.FirstOrDefault(t => t.Id == item.PrepDraftTaskId) != null)
+															{
+																<span>@Model.PrepDraftAllTasks.First(t => t.Id == item.PrepDraftTaskId).Title</span>
+															}
+															else
+															{
+																<span class="text-muted small">-</span>
+															}
+														</td>
+														<td style="white-space:normal;word-break:break-all;">
+															@if (!string.IsNullOrWhiteSpace(item.SourceDecisionContent))
+															{
+																int? sourceDecisionJumpIndex = null;
+																if (item.SourceDecisionIndex.HasValue
+																&& item.SourceDecisionIndex.Value >= 1
+																&& item.SourceDecisionIndex.Value <= Model.MeetingDecisions.Count
+																&& DetailsModel.DecisionContentMatches(
+																Model.MeetingDecisions[item.SourceDecisionIndex.Value - 1].Content,
+																item.SourceDecisionContent))
+																{ sourceDecisionJumpIndex = item.SourceDecisionIndex.Value - 1; }
+																else
+																{
+																	for (int d = 0; d < Model.MeetingDecisions.Count; d++)
+																	{
+																		if (DetailsModel.DecisionContentMatches(Model.MeetingDecisions[d].Content, item.SourceDecisionContent))
+																		{ sourceDecisionJumpIndex = d; break; }
+																	}
+																}
+																var sourceDecisionText = item.SourceDecisionContent.Length > 24
+																? item.SourceDecisionContent.Substring(0, 24) + "…"
+																: item.SourceDecisionContent;
+																if (sourceDecisionJumpIndex.HasValue)
+																{
+																	<button type="button" class="btn btn-link border-0 p-0 text-start text-decoration-none source-decision-link"
+																			data-decision-index="@sourceDecisionJumpIndex.Value">
+																		<span class="badge bg-warning text-dark me-1">决策@(sourceDecisionJumpIndex.Value + 1)</span>
+																		<span class="small">@sourceDecisionText</span>
+																	</button>
+																}
+																else
+																{
+																	<span class="text-muted small" title="@item.SourceDecisionContent">
+																		<span class="badge bg-light border text-muted me-1">决策</span>@sourceDecisionText
+																	</span>
+																}
+															}
+															else if (item.IsConfirmed)
+															{
+																<span class="text-muted">-</span>
+															}
+															else
+															{
+																<select class="form-select form-select-sm row-decision-select" data-item-id="@item.Id" disabled="@(!Model.CanApproveWrites)">
+																	<option value="" selected="@(!item.SourceDecisionIndex.HasValue)">无（讨论直接布置）</option>
+																	@for (int d = 0; d < Model.MeetingDecisions.Count; d++)
+																	{
+																		var decisionContent = Model.MeetingDecisions[d].Content ?? string.Empty;
+																		var optionText = decisionContent.Length > 18 ? decisionContent.Substring(0, 18) + "…" : decisionContent;
+																		<option value="@(d + 1)" selected="@(item.SourceDecisionIndex == d + 1)">决策@(d + 1)：@optionText</option>
+																	}
+																</select>
+															}
+														</td>
+														<td>
+															@if (item.IsConfirmed)
+															{
+																<span class="badge @statusClass">@statusText</span>
+															}
+															else
+															{
+																<select class="form-select form-select-sm row-status-select" data-item-id="@item.Id" disabled="@(!Model.CanApproveWrites)">
+																	<option value="NotStarted" selected="@(item.TaskStatus == "NotStarted")">未开始</option>
+																	<option value="InProgress" selected="@(item.TaskStatus == "InProgress")">进行中</option>
+																	<option value="Completed" selected="@(item.TaskStatus == "Completed")">已完成</option>
+																	<option value="Cancelled" selected="@(item.TaskStatus == "Cancelled")">已取消</option>
+																	<option value="PendingConfirmation" selected="@(item.TaskStatus == "PendingConfirmation")">待审核</option>
+																</select>
+															}
+														</td>
+														<td>
+															@if (!item.IsConfirmed)
+															{
+																<span class="badge bg-light border text-muted">确认后启用</span>
+															}
+															else
+															{
+																<span class="badge @supervisionClass">@supervisionText</span>
+																@if (item.EscalationLevel > 0)
+																{
+																	<span class="badge bg-dark ms-1">L@(item.EscalationLevel)</span>
+																}
+																@if (!string.IsNullOrWhiteSpace(item.SupervisionMessage))
+																{
+																	<div class="small text-muted mt-1" style="white-space:normal;">@item.SupervisionMessage</div>
+																}
+																@if (item.LastSupervisedAt.HasValue)
+																{
+																	<div class="small text-muted mt-1">检查于 @item.LastSupervisedAt.Value.ToString("MM-dd HH:mm") · 已提醒 @item.ReminderCount 次</div>
+																}
+															}
+														</td>
+														<td>
+															@if (item.IsConfirmed)
+															{
+																@if (item.MatchedTaskId.HasValue && task != null)
+																{
+																	<a asp-page="/Tasks/Details" asp-route-id="@item.MatchedTaskId" class="btn btn-sm btn-outline-primary">查看任务</a>
+																	<span class="text-success small ms-1">已同步</span>
+																}
+																else
+																{
+																	<span class="badge bg-danger">关联任务失效</span>
+																}
+															}
+															else if (Model.CanApproveWrites)
+															{
+																<button class="btn btn-sm btn-outline-warning edit-action-item-btn"
+																		data-id="@item.Id" data-title="@item.Title" data-desc="@item.Description"
+																		data-assignee-id="@item.AssigneeId" data-deadline="@item.Deadline?.ToString("yyyy-MM-dd")"
+																		data-priority="@item.Priority" data-status="@item.TaskStatus"
+																		data-group-value="@item.GroupName">
+																	<i class="fas fa-edit"></i>编辑
+																</button>
+																<button class="btn btn-sm btn-outline-danger delete-action-btn ms-1"
+																		data-item-id="@item.Id" data-meeting-id="@Model.MeetingMinutes.Id">
+																	<i class="fas fa-trash"></i>删除
+																</button>
+															}
+															else
+															{
+																<span class="badge bg-light border text-muted">等待审批人处理</span>
+															}
+														</td>
+													</tr>
+													index++;
+												}
+											</tbody>
+										</table>
+									</div>
+								</div>
+							</div>
+						}
+
+						@* 未讨论到的任务 *@
+						@if (Model.LinkedPrepDraft != null)
+						{
+							<div class="card mt-3" id="undiscussedDraftCard">
+								<div class="card-header bg-light">
+									<h6 class="mb-0">
+										<i class="fas fa-info-circle me-2"></i>
+										本次会议未讨论到的任务
+										<span class="badge bg-secondary ms-2">草稿：@Model.LinkedPrepDraft.Title</span>
+										（共 <span id="undiscussedCount">@Model.UndiscussedDraftTasks.Count</span> 项 / 草稿选了 @Model.PrepDraftAllTasks.Count 项）
+									</h6>
+								</div>
+								<div class="card-body" id="undiscussedDraftBody">
+									@if (Model.UndiscussedDraftTasks.Count == 0)
+									{
+										<div class="text-muted small"><i class="fas fa-check-circle me-1 text-success"></i>会前准备里勾选的所有任务在本次会议中都已处理。</div>
+									}
+									else
+									{
+										<div class="table-responsive">
+											<table class="table table-sm mb-0 w-100">
+												<thead>
+													<tr>
+														<th>任务</th>
+														<th>项目</th>
+														<th>责任人</th>
+														<th>截止</th>
+													</tr>
+												</thead>
+												<tbody>
+													@foreach (var t in Model.UndiscussedDraftTasks)
+													{
+														<tr class="@(t.IsOverdue ? "table-danger" : "")">
+															<td>@t.Title</td>
+															<td class="small text-muted">@(t.ProjectName ?? "-")</td>
+															<td class="small">@(t.AssigneeName ?? "-")</td>
+															<td class="small">@(t.Deadline ?? "-")@if (t.IsOverdue) {
+															<span class="badge bg-danger ms-1">逾期</span>
+														}
+			</td>
+													</tr>
+												}
+											</tbody>
+										</table>
+									</div>
+									<div class="text-muted small mt-2"><i class="fas fa-lightbulb me-1"></i>提示：这些是会前准备时勾选的任务，但本次会议没有产生与之关联的行动项，建议下次会议继续跟进。</div>
+								}
+							</div>
+						</div>
+					}
+										}
+										else if (Model.MeetingMinutes.IsDraft)
+					{
+						<div class="alert alert-secondary">当前为草稿。正式保存后，系统将解析任务并等待人工确认。</div>
+					}
+					else
+					{
+						<div class="alert alert-light border">暂未识别到明确任务。请在会议内容中写明待办事项、负责人和截止时间，然后保存修改或点击"重新解析任务"；如果本次会议确实没有产生新任务，可直接点击右上角"确认会议纪要（无新任务）"完成提交。</div>
+					}
+
+					@if (Model.Versions.Any())
+					{
+						<details class="mt-4">
+							<summary class="fw-bold">历史版本（@Model.Versions.Count）</summary>
+							<div class="list-group mt-2">
+								@foreach (var ver in Model.Versions)
+								{
+									<div class="list-group-item d-flex justify-content-between">
+										<span>v@(ver.VersionNumber) · @(ver.IsDraft ? "草稿" : "已提交")</span>
+										<span class="text-muted">@(ver.Editor?.RealName ?? ver.Editor?.UserName) · @ver.CreatedAt.ToString("yyyy-MM-dd HH:mm")</span>
+									</div>
+								}
+							</div>
+						</details>
+					}
+				</div>
+
+				<div class="card-footer bg-white d-flex justify-content-between py-3">
+					<div>
+						<a asp-page="Index" class="btn btn-outline-secondary">返回列表</a>
+						@if (Model.CanEdit)
+						{
+							<a asp-page="Edit" asp-route-id="@Model.MeetingMinutes.Id" class="btn btn-primary ms-2">编辑会议纪要</a>
+						}
+					</div>
+					<div class="text-muted small">
+						创建时间: @Model.MeetingMinutes.CreatedAt.ToString("yyyy-MM-dd HH:mm")
+						@if (Model.MeetingMinutes.LastModifiedAt != Model.MeetingMinutes.CreatedAt)
+						{
+							<span class="ms-2">最后修改: @Model.MeetingMinutes.LastModifiedAt.ToString("yyyy-MM-dd HH:mm")</span>
+						}
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<!-- 编辑弹窗（默认用第一个分组的项目成员/分组，因为行动项归属可以在表格里改） -->
+<div class="modal fade" id="editActionItemModal" tabindex="-1" aria-hidden="true">
+	<div class="modal-dialog modal-lg">
+		<div class="modal-content">
+			<form asp-page-handler="UpdateActionItem" method="post">
+				<div class="modal-header">
+					<h5 class="modal-title">编辑待确认任务项</h5>
+					<button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+				</div>
+				<div class="modal-body">
+					<input type="hidden" name="itemId" id="edit_itemId" />
+					<input type="hidden" name="meetingId" value="@Model.MeetingMinutes.Id" />
+					<div class="row mb-3"><label class="col-md-2 col-form-label">任务标题</label><div class="col-md-10"><input type="text" class="form-control" name="title" id="edit_title" required></div></div>
+					<div class="row mb-3"><label class="col-md-2 col-form-label">详细描述</label><div class="col-md-10"><textarea class="form-control" rows="3" name="description" id="edit_desc"></textarea></div></div>
+					<div class="row mb-3">
+						<label class="col-md-2 col-form-label">责任人</label><div class="col-md-10">
+							<select class="form-select" name="assigneeId" id="edit_assignee">
+								<option value="">未指定</option>
+								@foreach (var user in Model.ProjectMembers)
+								{
+									<option value="@user.Id">@user.RealName (@user.UserName)</option>
+								}
+							</select>
+						</div>
+					</div>
+					<div class="row mb-3"><label class="col-md-2 col-form-label">截止日期</label><div class="col-md-10"><input type="date" class="form-control" name="deadline" id="edit_deadline"></div></div>
+					<div class="row mb-3"><label class="col-md-2 col-form-label">优先级</label><div class="col-md-10"><select class="form-select" name="priority" id="edit_priority"><option value="Low">低</option><option value="Medium">中</option><option value="High">高</option></select></div></div>
+					<div class="row mb-3"><label class="col-md-2 col-form-label">初始状态</label><div class="col-md-10"><select class="form-select" name="taskStatus" id="edit_taskStatus"><option value="NotStarted">未开始</option><option value="InProgress">进行中</option><option value="Completed">已完成</option><option value="Cancelled">已取消</option><option value="PendingConfirmation">待审核</option></select></div></div>
+					<div class="row mb-3">
+						<label class="col-md-2 col-form-label">任务分组</label><div class="col-md-10">
+							<select class="form-select" name="groupName" id="edit_group">
+								<option value="">无分组</option>
+								@foreach (var group in Model.ProjectTaskGroups)
+								{
+									<option value="@group.Text">@group.Text</option>
+								}
+							</select>
+						</div>
+					</div>
+				</div>
+				<div class="modal-footer">
+					<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+					<button type="submit" class="btn btn-primary">保存修改</button>
+				</div>
+			</form>
+		</div>
+	</div>
+</div>
+
+@section Scripts {
+	<script>
+		function escapeHtml(value) {
+			return String(value ?? '').replace(/[&<>"']/g, character => ({
+				'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+			})[character]);
+		}
+
+		// ===== 行动项所属项目下拉框 =====
+		document.querySelectorAll('.row-project-select').forEach(s => {
+			s.addEventListener('change', async function () {
+				const itemId = parseInt(this.dataset.itemId);
+				const newProjectId = parseInt(this.value);
+				const prevValue = this.dataset.prevValue || this.value;
+
+				this.disabled = true;
+				try {
+					const formData = new FormData();
+					formData.append('itemId', itemId);
+					formData.append('meetingId', currentMeetingId);
+					formData.append('newProjectId', newProjectId);
+
+					const url = window.location.pathname + '?handler=UpdateActionItemProject';
+					const result = await postJsonRequest(url, formData);
+
+					if (!result.success) {
+						alert('保存失败：' + (result.msg || '未知错误'));
+						this.value = prevValue;
+						this.disabled = false;
+						return;
+					}
+
+					location.reload();
+				} catch (e) {
+					alert('保存异常：' + e.message);
+					this.value = prevValue;
+					this.disabled = false;
+				}
+			});
+			s.dataset.prevValue = s.value;
+		});
+
+		// ====================== 决策原话跳转功能 ======================
+		let currentHighlight = null;
+		let allHighlights = [];
+		let currentHighlightTranscript = null;
+
+		function normalizeText(text) {
+			return String(text || '')
+				.replace(/[\s，。、；：“”‘’（）【】《》！？,.;:\(\)\[\]!?'"`]/g, '')
+				.toLowerCase();
+		}
+
+		const IGNORE_CHAR_RE = /[\s，。、；：“”‘’（）【】《》！？,.;:\(\)\[\]!?'"`]/;
+
+		function buildElementTextIndex(element, normalized) {
+			const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null);
+			const index = { text: '', map: [] };
+			let node;
+			while ((node = walker.nextNode())) {
+				const value = node.textContent || '';
+				for (let offset = 0; offset < value.length; offset++) {
+					const character = value[offset];
+					if (normalized && IGNORE_CHAR_RE.test(character)) continue;
+					index.text += normalized ? character.toLowerCase() : character;
+					index.map.push({ node, offset });
+				}
+			}
+			return index;
+		}
+
+		function highlightMappedText(indexMap, startIndex, matchLength, silent) {
+			if (startIndex < 0 || matchLength <= 0 || !indexMap.length) return false;
+			const selected = indexMap.slice(startIndex, startIndex + matchLength);
+			if (!selected.length) return false;
+
+			const segments = new Map();
+			selected.forEach(entry => {
+				const segment = segments.get(entry.node);
+				if (segment) {
+					segment.end = entry.offset + 1;
+				} else {
+					segments.set(entry.node, { node: entry.node, start: entry.offset, end: entry.offset + 1 });
+				}
+			});
+
+			const created = [];
+			Array.from(segments.values()).reverse().forEach(segment => {
+				if (!segment.node.parentNode) return;
+				const range = document.createRange();
+				range.setStart(segment.node, segment.start);
+				range.setEnd(segment.node, segment.end);
+				const span = document.createElement('span');
+				span.className = 'meeting-quote-highlight';
+				span.style.backgroundColor = '#ffe066';
+				span.style.padding = '2px 4px';
+				span.style.borderRadius = '4px';
+				span.style.boxShadow = '0 0 0 2px #ffa500';
+				range.surroundContents(span);
+				created.unshift(span);
+			});
+
+			if (!created.length) return false;
+			currentHighlight = created[0];
+			allHighlights.push(...created);
+			if (!silent) {
+				created[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+			}
+			return true;
+		}
+
+		function findAndHighlightInElement(element, searchText, isFuzzy, silent) {
+			const source = buildElementTextIndex(element, isFuzzy);
+			const target = isFuzzy ? normalizeText(searchText) : searchText;
+			if (!target) return false;
+
+			let startIndex = source.text.indexOf(target);
+			let matchLength = target.length;
+			if (startIndex === -1 && isFuzzy && target.length > 10) {
+				const coreStart = Math.floor(target.length * 0.2);
+				const coreEnd = Math.ceil(target.length * 0.8);
+				const core = target.substring(coreStart, coreEnd);
+				if (core.length > 5) {
+					startIndex = source.text.indexOf(core);
+					matchLength = core.length;
+				}
+			}
+
+			return highlightMappedText(source.map, startIndex, matchLength, silent);
+		}
+
+		window.jumpToDecisionQuotes = function(decisionIndex) {
+			if (!window.decisionQuoteMap) {
+				alert('页面引用数据未加载（decisionQuoteMap 缺失），请刷新页面重试');
+				return;
+			}
+			const entry = (window.decisionQuoteMap || [])[decisionIndex];
+			const quotes = entry ? (entry.quotes || []) : [];
+			const keyQuote = entry ? (entry.key || '').trim() : '';
+			if (!quotes.length && !keyQuote) {
+				alert('该决策没有会议原话标注数据，请对该会议重新执行 AI 解析生成完整讨论标注');
+				return;
+			}
+
+			clearHighlight();
+
+			const cleanQuotes = quotes
+				.map(q => (q || '').replace(/^「|」$/g, '').trim())
+				.filter(q => q.length > 0);
+			const keyNormalized = normalizeText(keyQuote);
+			const seen = new Set();
+			const highlightTargets = [];
+			if (keyQuote) {
+				highlightTargets.push({ text: keyQuote, isKey: true });
+				seen.add(keyNormalized);
+			}
+			cleanQuotes.forEach(quote => {
+				const normalized = normalizeText(quote);
+				if (!normalized || seen.has(normalized)) return;
+				if (keyNormalized && (normalized.includes(keyNormalized) || keyNormalized.includes(normalized))) return;
+				seen.add(normalized);
+				highlightTargets.push({ text: quote, isKey: false });
+			});
+			if (!highlightTargets.length) return;
+
+			const transcriptDetails = document.getElementById('meeting-transcript-details');
+			const transcriptEl = document.getElementById('meeting-transcript-content');
+			const markdownEl = document.getElementById('markdown-content');
+			const targets = [];
+			if (transcriptEl) targets.push({ element: transcriptEl, details: transcriptDetails });
+			if (markdownEl) targets.push({ element: markdownEl, details: null });
+
+			for (const target of targets) {
+				let keySpan = null;
+				let firstSpan = null;
+				highlightTargets.forEach(item => {
+					const before = currentHighlight;
+					let ok = findAndHighlightInElement(target.element, item.text, false, true);
+					if (!ok) {
+						ok = findAndHighlightInElement(target.element, item.text, true, true);
+					}
+					if (ok && currentHighlight && currentHighlight !== before) {
+						if (item.isKey) {
+							keySpan = currentHighlight;
+						} else if (!firstSpan) {
+							firstSpan = currentHighlight;
+						} else {
+							const pos = currentHighlight.compareDocumentPosition(firstSpan);
+							if (pos & Node.DOCUMENT_POSITION_FOLLOWING) firstSpan = currentHighlight;
+						}
+					}
+				});
+
+				const scrollTarget = keySpan || firstSpan;
+				if (scrollTarget) {
+					if (target.details) target.details.open = true;
+					requestAnimationFrame(() => {
+						scrollTarget.scrollIntoView({ behavior: 'smooth', block: 'center' });
+					});
+					return;
+				}
+			}
+
+			alert('未在会议原始记录或整理内容中找到该决策的讨论内容');
+		};
+
+		window.jumpToDecisionRow = function(decisionIndex) {
+			if (isNaN(decisionIndex) || decisionIndex < 0) return;
+			document.querySelectorAll('.decision-row-flash').forEach(el => {
+				el.classList.remove('decision-row-flash');
+				el.style.backgroundColor = '';
+			});
+			const row = document.getElementById('decision-row-' + decisionIndex);
+			if (!row) {
+				alert('未找到对应的会议决策，请尝试重新解析任务');
+				return;
+			}
+			row.classList.add('decision-row-flash');
+			row.style.backgroundColor = '#fff3cd';
+			row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+			setTimeout(() => {
+				row.style.backgroundColor = '';
+				row.classList.remove('decision-row-flash');
+			}, 3000);
+		};
+
+		function clearHighlight() {
+			const parentsToNormalize = new Set();
+			allHighlights.forEach(span => {
+				if (span && span.parentNode) {
+					const parent = span.parentNode;
+					parentsToNormalize.add(parent);
+					while (span.firstChild) parent.insertBefore(span.firstChild, span);
+					span.remove();
+				}
+			});
+			parentsToNormalize.forEach(parent => parent.normalize());
+			allHighlights = [];
+			currentHighlight = null;
+
+			if (currentHighlightTranscript) {
+				const originalBg = currentHighlightTranscript.dataset.originalBg || '';
+				currentHighlightTranscript.style.backgroundColor = originalBg;
+				currentHighlightTranscript.style.border = '';
+				currentHighlightTranscript.style.padding = '';
+
+				const marker = document.getElementById('transcript-highlight-marker');
+				if (marker) marker.remove();
+
+				currentHighlightTranscript = null;
+			}
+		}
+
+		function clearAllHighlights() {
+			clearHighlight();
+		}
+
+		// ====================== AI解析绑定 ======================
+		AiGeneration.bindForm(
+			'#meetingSyncForm',
+			'#meetingSyncSubmit',
+			'#meetingSyncProgress',
+			['读取会议内容', '识别任务', '匹配现有任务', '生成待确认建议'],
+			'AI解析中...'
+		);
+
+		// ====================== 重新编号 ======================
+		function renumberRows() {
+			const rows = document.querySelectorAll('#actionItemsBody tr');
+			rows.forEach((row, index) => {
+				const numCell = row.querySelector('.row-number');
+				if (numCell) numCell.textContent = index + 1;
+				row.dataset.rowIndex = index + 1;
+			});
+		}
+
+		// ====================== 编辑弹窗 ======================
+		const modalEl = document.getElementById('editActionItemModal');
+		const modal = new bootstrap.Modal(modalEl);
+
+		document.querySelectorAll('.edit-action-item-btn').forEach(btn => {
+			btn.addEventListener('click', function () {
+				document.getElementById('edit_itemId').value = this.dataset.id;
+				document.getElementById('edit_title').value = this.dataset.title;
+				document.getElementById('edit_desc').value = this.dataset.desc || '';
+				document.getElementById('edit_deadline').value = this.dataset.deadline || '';
+
+				const assigneeSelect = document.getElementById('edit_assignee');
+				assigneeSelect.value = this.dataset.assigneeId || '';
+
+				document.getElementById('edit_priority').value = this.dataset.priority || 'Medium';
+				document.getElementById('edit_taskStatus').value = this.dataset.status || 'NotStarted';
+				document.getElementById('edit_group').value = this.dataset.groupValue || '';
+
+				modal.show();
+			});
+		});
+
+		modalEl.addEventListener('hidden.bs.modal', function () {
+			this.querySelector('form').reset();
+		});
+
+		// ====================== 获取防伪令牌 ======================
+		function getRequestVerificationToken() {
+			const tokenInput = document.querySelector('input[name="__RequestVerificationToken"]');
+			if (!tokenInput) {
+				console.error('未找到防伪令牌元素');
+				return null;
+			}
+			return tokenInput.value;
+		}
+
+		// ====================== 通用AJAX请求函数 ======================
+		async function postJsonRequest(url, formData) {
+			const token = getRequestVerificationToken();
+			if (!token) {
+				return { success: false, msg: '防伪令牌缺失，请刷新页面重试' };
+			}
+
+			try {
+				const response = await fetch(url, {
+					method: 'POST',
+					headers: { 'RequestVerificationToken': token },
+					body: formData
+				});
+
+				if (!response.ok) {
+					const errorText = await response.text();
+					console.error('服务器返回错误状态:', response.status, errorText);
+					try {
+						return JSON.parse(errorText);
+					} catch {
+						return { success: false, msg: `服务器错误 (${response.status})，请联系管理员` };
+					}
+				}
+
+				const rawText = await response.text();
+				if (!rawText || rawText.trim() === '') {
+					return { success: false, msg: '服务器返回空响应' };
+				}
+
+				try {
+					return JSON.parse(rawText);
+				} catch (parseError) {
+					console.error('JSON解析失败，原始内容:', rawText);
+					if (rawText.trim().startsWith('<!DOCTYPE') || rawText.trim().startsWith('<html')) {
+						return { success: false, msg: '服务器返回了HTML页面而不是JSON，请检查路由配置' };
+					}
+					return { success: false, msg: `服务器返回了无效的JSON格式: ${rawText.substring(0, 100)}...` };
+				}
+			} catch (error) {
+				console.error('请求异常:', error);
+				return { success: false, msg: `网络请求失败: ${error.message}` };
+			}
+		}
+
+		// ====================== 删除按钮 ======================
+		document.querySelectorAll('.delete-action-btn').forEach(btn => {
+			btn.addEventListener('click', async function () {
+				const itemId = this.dataset.itemId;
+				const meetingId = this.dataset.meetingId;
+				const trEl = document.querySelector(`tr[data-action-item-id="${itemId}"]`);
+
+				if (!confirm('确定删除该待确认任务？已同步生成正式任务的条目无法删除！')) return;
+
+				this.disabled = true;
+				const originalHtml = this.innerHTML;
+				this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 删除中';
+
+				try {
+					const formData = new FormData();
+					formData.append('itemId', itemId);
+					formData.append('meetingId', meetingId);
+
+					const url = window.location.pathname + '?handler=DeleteActionItem';
+					const result = await postJsonRequest(url, formData);
+
+					if (result.success) {
+						alert(result.msg || '删除成功');
+						if (trEl) {
+							trEl.remove();
+							renumberRows();
+						}
+						const remainingRows = document.querySelectorAll('#actionItemsBody tr');
+						if (remainingRows.length === 0) {
+							location.reload();
+						}
+					} else {
+						alert(result.msg || '删除失败，请重试');
+					}
+				} catch (error) {
+					console.error('删除请求异常:', error);
+					alert('操作异常，请查看控制台错误信息');
+				} finally {
+					this.disabled = false;
+					this.innerHTML = originalHtml;
+				}
+			});
+		});
+
+		// ====================== 行内下拉/输入框自动保存 ======================
+		const currentMeetingId = @Model.MeetingMinutes.Id;
+
+		async function saveRowField(itemId, fieldName, value) {
+			try {
+				const formData = new FormData();
+				formData.append('itemId', itemId);
+				formData.append('meetingId', currentMeetingId);
+				formData.append(fieldName, value ?? '');
+
+				const url = window.location.pathname + '?handler=UpdateActionItemField';
+				const result = await postJsonRequest(url, formData);
+
+				if (!result.success) {
+					alert(`保存失败: ${result.msg || '未知错误'}`);
+					return false;
+				}
+				return true;
+			} catch (error) {
+				console.error('行内修改保存异常:', error);
+				alert('保存请求异常，请查看控制台');
+				return false;
+			}
+		}
+
+		document.querySelectorAll('.row-assignee-select').forEach(s => {
+			s.addEventListener('change', function() {
+				saveRowField(this.dataset.itemId, 'assigneeId', this.value);
+			});
+		});
+
+		document.querySelectorAll('.row-priority-select').forEach(s => {
+			s.addEventListener('change', function() {
+				saveRowField(this.dataset.itemId, 'priority', this.value);
+			});
+		});
+
+		document.querySelectorAll('.row-group-select').forEach(s => {
+			s.addEventListener('change', function() {
+				saveRowField(this.dataset.itemId, 'groupName', this.value);
+			});
+		});
+
+		document.querySelectorAll('.row-status-select').forEach(s => {
+			s.addEventListener('change', function() {
+				saveRowField(this.dataset.itemId, 'taskStatus', this.value);
+			});
+		});
+
+		document.querySelectorAll('.row-deadline-input').forEach(inp => {
+			inp.addEventListener('change', function() {
+				saveRowField(this.dataset.itemId, 'deadline', this.value);
+			});
+		});
+
+		document.querySelectorAll('.match-task-select').forEach(s => {
+			s.addEventListener('change', async function() {
+				const itemId = parseInt(this.dataset.itemId);
+				const newVal = this.value === '0' ? null : parseInt(this.value);
+
+				const ok = await saveRowField(itemId, 'prepDraftTaskId', this.value);
+				if (!ok) { this.value = this.dataset.prevValue || '0'; return; }
+
+				const link = window.actionItemDraftLinks.find(l => l.itemId === itemId);
+				if (link) link.prepDraftTaskId = newVal;
+
+				updateUndiscussedDraftCard();
+			});
+			s.dataset.prevValue = s.value;
+		});
+
+		function updateUndiscussedDraftCard() {
+			const body = document.getElementById('undiscussedDraftBody');
+			const countEl = document.getElementById('undiscussedCount');
+			if (!body || !countEl) return;
+			if (!window.prepDraftTasks || window.prepDraftTasks.length === 0) return;
+
+			const linkedIds = new Set(
+				(window.actionItemDraftLinks || [])
+					.map(l => l.prepDraftTaskId)
+					.filter(id => id != null && id !== 0)
+			);
+
+			const undiscussed = window.prepDraftTasks.filter(t => !linkedIds.has(t.id));
+			countEl.textContent = undiscussed.length;
+
+			if (undiscussed.length === 0) {
+				body.innerHTML = '<div class="text-muted small"><i class="fas fa-check-circle me-1 text-success"></i>会前准备里勾选的所有任务在本次会议中都已处理。</div>';
+				return;
+			}
+
+			const rowsHtml = undiscussed.map(t => `
+				<tr class="${t.isOverdue ? 'table-danger' : ''}">
+					<td>${escapeHtml(t.title)}</td>
+					<td class="small text-muted">${escapeHtml(t.projectName)}</td>
+					<td class="small">${escapeHtml(t.assigneeName)}</td>
+					<td class="small">${escapeHtml(t.deadline)}${t.isOverdue ? ' <span class="badge bg-danger ms-1">逾期</span>' : ''}</td>
+				</tr>
+			`).join('');
+
+			body.innerHTML = `
+				<div class="table-responsive">
+					<table class="table table-sm mb-0 w-100">
+						<thead><tr>
+							<th>任务</th><th>项目</th><th>责任人</th><th>截止</th>
+						</tr></thead>
+						<tbody>${rowsHtml}</tbody>
+					</table>
+				</div>
+				<div class="text-muted small mt-2"><i class="fas fa-lightbulb me-1"></i>提示：这些是会前准备时勾选的任务，但本次会议没有产生与之关联的行动项，建议下次会议继续跟进。</div>
+			`;
+		}
+
+		document.querySelectorAll('.row-decision-select').forEach(s => {
+			s.addEventListener('change', function() {
+				var value = this.value ? parseInt(this.value) : 0;
+				saveRowField(this.dataset.itemId, 'sourceDecisionIndex', value);
+			});
+		});
+
+		document.querySelectorAll('.source-decision-link').forEach(btn => {
+			btn.addEventListener('click', function() {
+				jumpToDecisionRow(parseInt(this.dataset.decisionIndex));
+			});
+		});
+	</script>
+}

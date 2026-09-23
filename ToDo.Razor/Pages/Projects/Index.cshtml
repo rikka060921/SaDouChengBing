@@ -1,0 +1,357 @@
+@page
+@model ToDo.Razor.Pages.Projects.IndexModel
+@using ToDo.Entities;
+@{
+    ViewData["Title"] = "项目列表";
+}
+
+<!-- 添加成功消息显示 -->
+@if (TempData["SuccessMessage"] != null)
+{
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        @TempData["SuccessMessage"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+}
+
+<!-- 添加错误消息显示 -->
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        @Model.ErrorMessage
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+}
+
+<!-- 标题和新建按钮区域 -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div><h1 class="page-heading">项目</h1><div class="page-subtitle">进入项目空间，统一管理任务、资料与会议。</div></div>
+    @if (User.Identity?.IsAuthenticated == true)
+    {
+        <div class="d-flex gap-2">
+            <a href="/Projects/Create" class="btn btn-primary">
+                <i class="bi bi-plus"></i> 新建项目
+            </a>
+            <!-- 修复：正确跳转，传projectId=0 -->
+            <a asp-page="/Tasks/SplitTask" asp-route-projectId="0" class="btn btn-outline-secondary">
+                <i class="bi bi-magic"></i> AI 任务拆分
+            </a>
+        </div>
+    }
+</div>
+
+<!-- 筛选区域 - 使用卡片式布局 -->
+<div class="filter-panel mb-4">
+    <form method="get">
+        <div class="row g-3">
+            <!-- 关键词搜索 -->
+            <div class="col-md-6">
+                <label class="form-label">搜索项目</label>
+                <input asp-for="Keyword" class="form-control" placeholder="输入项目名称或描述">
+            </div>
+
+            <!-- 状态筛选 -->
+            <div class="col-md-3">
+                <label class="form-label">项目状态</label>
+                <select asp-for="IsArchivedFilter" class="form-select">
+                    <option value="">全部状态</option>
+                    <option value="false">活跃</option>
+                    <option value="true">已归档</option>
+                </select>
+            </div>
+
+            <!-- 操作按钮 -->
+            <div class="col-md-3 d-flex align-items-end gap-2">
+                <button type="submit" class="btn btn-primary flex-grow-1">
+                    <i class="bi bi-search"></i> 查询
+                </button>
+                <a asp-page="Index" class="btn btn-light">重置</a>
+            </div>
+        </div>
+
+        <!-- 分页参数 -->
+        <input type="hidden" asp-for="PageIndex" value="1" />
+    </form>
+</div>
+
+<div class="table-responsive">
+        <table class="table table-hover table-striped" style="table-layout: fixed;">
+            <colgroup>
+                <col style="width: 180px">
+                <col style="width: 320px">
+                <col style="width: 130px">
+                <col style="width: 100px">
+                <col style="width: 70px">
+                <col style="width: 110px">
+            </colgroup>
+            <thead>
+                <tr>
+                    <th scope="col" class=" align-top">项目名称</th>
+                    <th scope="col" class=" align-top">描述</th>
+                    <th scope="col" class=" align-top">创建时间</th>
+                    <th scope="col" class=" align-top">创建人</th>
+                    <th scope="col" class=" align-top">状态</th>
+                    <th scope="col" class=" align-top">操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var project in Model.Projects)
+                {
+                    // 检查用户是否有权限管理该项目
+                    bool canManageProject = await Model.CanManageProjectAsync(project.Id);
+                    bool isProjectActive = project.Status == ProjectStatus.Active;
+
+                    <tr data-project-id="@project.Id" data-project-status="@project.Status">
+                        <td class="text-truncate" title="@project.Name">@project.Name</td>
+                        <td class="text-truncate" title="@project.Description">
+                            @if (!string.IsNullOrEmpty(project.Description))
+                            {
+                                var displayText = project.Description.Length > 80
+                                ? project.Description.Substring(0, 80) + "..."
+                                : project.Description;
+                                @displayText
+                            }
+                            else
+                            {
+                                @:"-"
+                            }
+                        </td>
+                        <td>@AppTime.ToBeijingTime(project.CreatedAt).ToString("yyyy-MM-dd HH:mm")</td>
+                        <td class="text-truncate" title="@project.CreatedByUserName">@project.CreatedByUserName</td>
+                        <td>
+                            <span class="badge @(project.Status == ProjectStatus.Archived ? "bg-secondary" : "bg-success")">
+                                @(project.Status == ProjectStatus.Archived ? "已归档" : "活跃")
+                            </span>
+                        </td>
+                        <td>
+                            <div class="d-flex align-items-center gap-2">
+                                <a href="/Projects/Details/@project.Id" class="btn btn-sm btn-outline-primary">打开</a>
+                                @if (isProjectActive || canManageProject)
+                                {
+                                    <div class="dropdown">
+                                        <button class="btn btn-sm btn-light" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="更多操作"><i class="bi bi-three-dots"></i></button>
+                                        <ul class="dropdown-menu dropdown-menu-end">
+                                            @if (isProjectActive)
+                                            {
+                                                <li><a asp-page="/Tasks/Index" asp-route-projectId="@project.Id" class="dropdown-item">查看任务</a></li>
+                                            }
+                                            @if (canManageProject && isProjectActive)
+                                            {
+                                                <li><a asp-page="/TaskGroups/Index" asp-route-projectId="@project.Id" class="dropdown-item">管理分组</a></li>
+                                                <li><hr class="dropdown-divider" /></li>
+                                                <li><button class="dropdown-item archive-btn" data-project-id="@project.Id" data-current-filter="@(Model.IsArchivedFilter?.ToString().ToLower())">归档项目</button></li>
+                                            }
+                                            else if (canManageProject)
+                                            {
+                                                <li><button class="dropdown-item restore-btn" data-project-id="@project.Id" data-current-filter="@(Model.IsArchivedFilter?.ToString().ToLower())">恢复项目</button></li>
+                                            }
+                                        </ul>
+                                    </div>
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+@if (!Model.Projects.Any())
+{
+    <div class="alert alert-info text-center py-5">
+        <i class="bi bi-folder-open text-muted display-4"></i>
+        <h4 class="mt-3">暂无符合条件的项目</h4>
+        <p>@Html.Raw("您可以点击上方\"创建新项目\"按钮开始管理您的项目。")</p>
+    </div>
+}
+</div>
+@if (Model.TotalCount > 0)
+{
+    <nav aria-label="分页导航">
+        <ul class="pagination justify-content-center">
+            <li class="page-item @(Model.PageIndex == 1 ? "disabled" : "")">
+                <a class="page-link" href="?PageIndex=1&Keyword=@Model.Keyword&IsArchivedFilter=@Model.IsArchivedFilter" aria-label="首页">
+                    <span aria-hidden="true">&laquo;</span>
+                </a>
+            </li>
+            <li class="page-item @(Model.PageIndex == 1 ? "disabled" : "")">
+                <a class="page-link" href="?PageIndex=@(Model.PageIndex - 1)&Keyword=@Model.Keyword&IsArchivedFilter=@Model.IsArchivedFilter" aria-label="上一页">
+                    <span aria-hidden="true">&lsaquo;</span>
+                </a>
+            </li>
+            <li class="page-item active" aria-current="page">
+                <span class="page-link">第 @Model.PageIndex 页 / 共 @(Math.Ceiling((double)Model.TotalCount / Model.PageSize)) 页</span>
+            </li>
+            <li class="page-item @(Model.PageIndex >= Math.Ceiling((double)Model.TotalCount / Model.PageSize) ? "disabled" : "")">
+                <a class="page-link" href="?PageIndex=@(Model.PageIndex + 1)&Keyword=@Model.Keyword&IsArchivedFilter=@Model.IsArchivedFilter" aria-label="下一页">
+                    <span aria-hidden="true">&rsaquo;</span>
+                </a>
+            </li>
+            <li class="page-item @(Model.PageIndex >= Math.Ceiling((double)Model.TotalCount / Model.PageSize) ? "disabled" : "")">
+                <a class="page-link" href="?PageIndex=@(Math.Ceiling((double)Model.TotalCount / Model.PageSize))&Keyword=@Model.Keyword&IsArchivedFilter=@Model.IsArchivedFilter" aria-label="末页">
+                    <span aria-hidden="true">&raquo;</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+}
+
+@section Scripts {
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelector('tbody').addEventListener('click', async function(e) {
+                const btn = e.target.closest('.archive-btn, .restore-btn');
+                if (!btn) return;
+
+                e.preventDefault();
+                const isArchive = btn.classList.contains('archive-btn');
+                const projectId = btn.dataset.projectId;
+                const currentFilter = btn.dataset.currentFilter || '';
+                const row = btn.closest('tr');
+
+                if (!confirm(`确定要${isArchive ? '归档' : '恢复'}该项目吗？`)) return;
+
+                // 添加防重复点击
+                btn.disabled = true;
+                btn.textContent = '处理中...';
+
+                try {
+                    const formData = new FormData();
+                    formData.append('projectId', projectId);
+                    formData.append('shouldArchive', isArchive);
+
+                    const response = await fetch('?handler=Archive', {
+                        method: 'POST',
+                        headers: {
+                            'RequestVerificationToken': document.querySelector('input[name="__RequestVerificationToken"]').value
+                        },
+                        body: formData
+                    });
+
+                    const result = await response.json();
+
+                    if (result.success) {
+                        const newStatus = result.data.status;
+                        const newStatusText = newStatus === 1 ? "已归档" : "活跃";
+
+                        // 1. 立即更新状态徽章
+                        const badge = row.querySelector('.badge');
+                        badge.className = `badge ${newStatus === 1 ? 'bg-secondary' : 'bg-success'}`;
+                        badge.textContent = newStatusText;
+
+                        // 2. 立即更新分组和任务按钮
+                        updateProjectActionButtons(row, newStatus);
+
+                        // 3. 更新归档/恢复按钮
+                        if (newStatus === 1) {
+                            // 切换为恢复按钮
+                            btn.classList.remove('btn-warning', 'archive-btn');
+                            btn.classList.add('btn-success', 'restore-btn');
+                            btn.textContent = '恢复';
+                            btn.title = '恢复项目';
+                        } else {
+                            // 切换为归档按钮
+                            btn.classList.remove('btn-success', 'restore-btn');
+                            btn.classList.add('btn-warning', 'archive-btn');
+                            btn.textContent = '归档';
+                            btn.title = '归档项目';
+                        }
+
+                        // 更新行数据状态
+                        row.dataset.projectStatus = newStatus;
+
+                        // 筛选状态同步
+                        if (currentFilter === 'false' && newStatus === 1) {
+                            setTimeout(() => row.remove(), 1000);
+                        } else if (currentFilter === 'true' && newStatus === 0) {
+                            setTimeout(() => row.remove(), 1000);
+                        }
+
+                        // 显示成功消息
+                        showTempMessage('success', `项目${isArchive ? '归档' : '恢复'}成功`);
+                    } else {
+                        showTempMessage('danger', result.message || '操作失败');
+                        btn.textContent = isArchive ? '归档' : '恢复';
+                    }
+                } catch (error) {
+                    console.error('操作失败:', error);
+                    showTempMessage('danger', '操作失败，请重试');
+                    btn.textContent = isArchive ? '归档' : '恢复';
+                } finally {
+                    btn.disabled = false;
+                }
+            });
+
+            // 精确的按钮状态更新函数
+            function updateProjectActionButtons(row, projectStatus) {
+                const isProjectActive = projectStatus === 0; // 0 = Active, 1 = Archived
+                const projectId = row.dataset.projectId;
+
+                // 获取操作按钮容器（第6个td）
+                const actionTd = row.querySelector('td:nth-child(6)');
+                if (!actionTd) return;
+
+                // 构建新的按钮HTML
+                let buttonsHtml = `
+                    <!-- 详情按钮 - 始终可用 -->
+                    <a href="/Projects/Details/${projectId}" class="btn btn-sm btn-info me-1">详情</a>
+                `;
+
+                if (isProjectActive) {
+                    // 活跃状态 - 可点击的分组和任务按钮
+                    buttonsHtml += `
+                        <a href="/TaskGroups/Index?projectId=${projectId}" class="btn btn-sm btn-warning me-1" title="管理分组">分组</a>
+                        <a href="/Tasks/Index?projectId=${projectId}" class="btn btn-sm btn-primary me-1" title="管理任务">任务</a>
+                    `;
+                } else {
+                    // 归档状态 - 禁用的分组和任务按钮
+                    buttonsHtml += `
+                        <button type="button" class="btn btn-sm btn-secondary me-1" disabled title="项目已归档">分组</button>
+                        <button type="button" class="btn btn-sm btn-secondary me-1" disabled title="项目已归档">任务</button>
+                    `;
+                }
+
+                // 添加归档/恢复按钮
+                if (isProjectActive) {
+                    buttonsHtml += `
+                        <button class="btn btn-sm btn-warning me-1 archive-btn"
+                                data-project-id="${projectId}"
+                                data-current-filter="${document.querySelector('#IsArchivedFilter')?.value || ''}"
+                                title="归档项目">归档</button>
+                    `;
+                } else {
+                    buttonsHtml += `
+                        <button class="btn btn-sm btn-success me-1 restore-btn"
+                                data-project-id="${projectId}"
+                                data-current-filter="${document.querySelector('#IsArchivedFilter')?.value || ''}"
+                                title="恢复项目">恢复</button>
+                    `;
+                }
+
+                // 直接替换整个操作列内容
+                actionTd.innerHTML = buttonsHtml;
+            }
+
+            // 显示临时消息的函数
+            function showTempMessage(type, message) {
+                const alert = document.createElement('div');
+                const safeType = ['success', 'danger', 'warning', 'info'].includes(type) ? type : 'info';
+                alert.className = `alert alert-${safeType} alert-dismissible fade show position-fixed top-0 end-0 m-3`;
+                alert.style.zIndex = '1100';
+                alert.append(document.createTextNode(String(message || '')));
+                const closeButton = document.createElement('button');
+                closeButton.type = 'button';
+                closeButton.className = 'btn-close';
+                closeButton.dataset.bsDismiss = 'alert';
+                alert.appendChild(closeButton);
+                document.body.appendChild(alert);
+                setTimeout(() => {
+                    const alert = document.querySelector('.alert:last-child');
+                    if (alert) {
+                        const bsAlert = new bootstrap.Alert(alert);
+                        bsAlert.close();
+                    }
+                }, 5000);
+            }
+        });
+    </script>
+}

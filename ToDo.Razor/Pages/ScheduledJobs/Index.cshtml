@@ -1,0 +1,233 @@
+@page
+@model ToDo.Razor.Pages.ScheduledJobs.IndexModel
+@{
+    ViewData["Title"] = "定时任务";
+    Layout = "/Pages/Shared/_Layout.cshtml";
+}
+<div class="container py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div><h2 class="mb-1">定时任务</h2><div class="text-muted">项目日报按项目汇总；个人日报按用户独立汇总并单独进行进度记录；团队日报基于个人日报按项目自动汇总生成。</div></div>
+        <div class="d-flex gap-2"><a href="/Reports/Index" class="btn btn-outline-secondary">项目日报</a><a href="/DailySummary/Index" class="btn btn-outline-primary">个人日报</a><a href="/Reports/Index?tab=team" class="btn btn-outline-info">团队日报</a></div>
+    </div>
+    @if (TempData["SuccessMessage"] != null) { <div class="alert alert-success">@TempData["SuccessMessage"]</div> }
+    @if (TempData["ErrorMessage"] != null) { <div class="alert alert-danger">@TempData["ErrorMessage"]</div> }
+    <div asp-validation-summary="All" class="text-danger"></div>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-header d-flex align-items-center">
+            <span>新增定时报告任务</span>
+            <span class="text-muted small ms-2">（团队汇报会在「每个人的每日报告」执行完毕后自动汇总，无需单独设置）</span>
+        </div>
+        <div class="card-body">
+            <form method="post" asp-page-handler="Create">
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label asp-for="JobType" class="form-label">任务类型</label>
+                        <select asp-for="JobType" class="form-select">
+                            <option value="0">项目自动日报</option>
+                            <option value="1">每个人的每日报告</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label asp-for="Name" class="form-label">任务名称</label>
+                        <input asp-for="Name" class="form-control" placeholder="留空使用默认名称" />
+                    </div>
+                    <div class="col-md-3">
+                        <label asp-for="RunAtText" class="form-label">运行时间</label>
+                        <input asp-for="RunAtText" class="form-control" placeholder="18:00" />
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end">
+                        <button class="btn btn-primary w-100" type="submit">创建</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-header">任务列表</div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle" style="table-layout: fixed;">
+                <colgroup>
+                    <col style="width: 14%;" />
+                    <col style="width: 8%;" />
+                    <col style="width: 7%;" />
+                    <col style="width: 6%;" />
+                    <col style="width: 13%;" />
+                    <col style="width: 13%;" />
+                    <col style="width: *;" />
+                    <col style="width: 18%;" />
+                </colgroup>
+                <thead>
+                    <tr>
+                        <th>名称</th>
+                        <th>类型</th>
+                        <th>时间</th>
+                        <th>状态</th>
+                        <th>上次执行</th>
+                        <th>下次执行</th>
+                        <th>结果</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var job in Model.Jobs)
+                {
+                    var jobTypeText = job.JobType == ToDo.Entities.ScheduledJobType.TeamDailySummary
+                        ? "团队汇报"
+                        : job.JobType == ToDo.Entities.ScheduledJobType.PersonalDailySummary ? "个人日报" : "项目日报";
+                    var isEnabled = job.IsEnabled;
+                    var toggleBtnClass = isEnabled ? "btn-outline-danger" : "btn-outline-success";
+                    var toggleText = isEnabled ? "停用" : "启用";
+                    <tr>
+                        <td style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="@job.Name">@job.Name</td>
+                        <td style="white-space: nowrap;">@jobTypeText</td>
+                        <td style="white-space: nowrap;">@job.RunAt.ToString(@"hh\:mm")</td>
+                        <td style="white-space: nowrap;">
+                            @if (job.IsRunning)
+                            {
+                                <span class="badge bg-primary">执行中</span>
+                            }
+                            else if (isEnabled)
+                            {
+                                <span class="badge bg-success">启用</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-secondary">停用</span>
+                            }
+                        </td>
+                        <td style="white-space: nowrap;">@job.LastRunAt?.ToString("yyyy-MM-dd HH:mm")</td>
+                        <td style="white-space: nowrap;">@job.NextRunAt?.ToString("yyyy-MM-dd HH:mm")</td>
+                        <td style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="@(string.IsNullOrWhiteSpace(job.LastError) ? job.LastResult : job.LastError)">
+                            @if (job.ConsecutiveFailureCount > 0)
+                            {
+                                <span class="text-danger">连续失败 @job.ConsecutiveFailureCount 次：@job.LastError</span>
+                            }
+                            else
+                            {
+                                @job.LastResult
+                            }
+                        </td>
+                        <td class="text-nowrap">
+                            <form method="post" asp-page-handler="Toggle" class="d-inline">
+                                <input type="hidden" name="id" value="@job.Id" />
+                                <button class="btn btn-sm @toggleBtnClass">@toggleText</button>
+                            </form>
+                            <form method="post" asp-page-handler="RunNow" class="d-inline ms-1">
+                                <input type="hidden" name="id" value="@job.Id" />
+                                <button class="btn btn-sm btn-outline-primary" disabled="@job.IsRunning">立即执行</button>
+                            </form>
+                        </td>
+                    </tr>
+                }
+                @if (Model.Jobs.Count == 0) { <tr><td colspan="8" class="text-center text-muted py-4">暂无定时任务</td></tr> }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mt-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span>项目汇总进度记录</span>
+            <span class="small text-muted">AI 生成和日报保存均成功后才会更新</span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead><tr><th>项目</th><th>上次成功汇总</th><th>对应日报</th></tr></thead>
+                <tbody>
+                @foreach (var checkpoint in Model.SummaryCheckpoints)
+                {
+                    <tr>
+                        <td>@(checkpoint.Project?.Name ?? $"项目 #{checkpoint.ProjectId}")</td>
+                        <td>@checkpoint.LastSuccessfulSummaryAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td>
+                            @if (checkpoint.LastDailyReportId.HasValue)
+                            {
+                                <a asp-page="/Reports/Details" asp-route-id="@checkpoint.LastDailyReportId">
+                                    @(checkpoint.LastDailyReport?.ReportTitle ?? $"日报 #{checkpoint.LastDailyReportId}")
+                                </a>
+                            }
+                            else
+                            {
+                                <span class="text-muted">无</span>
+                            }
+                        </td>
+                    </tr>
+                }
+                @if (Model.SummaryCheckpoints.Count == 0)
+                {
+                    <tr><td colspan="3" class="text-center text-muted py-4">尚无成功的自动汇总记录</td></tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mt-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span>个人汇总进度记录</span>
+            <span class="small text-muted">无变化时不调用 AI，但会记录成功检查时间</span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead><tr><th>用户</th><th>上次成功检查/汇总</th><th>对应个人日报</th></tr></thead>
+                <tbody>
+                @foreach (var checkpoint in Model.UserSummaryCheckpoints)
+                {
+                    <tr>
+                        <td>@(checkpoint.User?.RealName ?? checkpoint.User?.UserName ?? $"用户 #{checkpoint.UserId}")</td>
+                        <td>@checkpoint.LastSuccessfulSummaryAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td>
+                            @if (checkpoint.LastDailyWorkSummaryId.HasValue)
+                            {
+                                <a asp-page="/DailySummary/Index" asp-route-selectDate="@checkpoint.LastDailyWorkSummary?.SummaryDate.ToString("yyyy-MM-dd")" asp-route-userId="@checkpoint.UserId">
+                                    @(checkpoint.LastDailyWorkSummary?.Title ?? $"个人日报 #{checkpoint.LastDailyWorkSummaryId}")
+                                </a>
+                            }
+                            else
+                            {
+                                <span class="text-muted">无变化，未生成</span>
+                            }
+                        </td>
+                    </tr>
+                }
+                @if (Model.UserSummaryCheckpoints.Count == 0)
+                {
+                    <tr><td colspan="3" class="text-center text-muted py-4">尚无个人汇总记录</td></tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mt-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span>团队汇报汇总进度记录</span>
+            <span class="small text-muted">基于个人日报自动汇总</span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead><tr><th>项目</th><th>上次成功汇总</th><th>对应团队汇报</th></tr></thead>
+                <tbody>
+                @foreach (var checkpoint in Model.TeamReportCheckpoints)
+                {
+                    <tr>
+                        <td>@checkpoint.ProjectName</td>
+                        <td>@checkpoint.LastSuccessfulSummaryAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td>
+                            <a asp-page="/Reports/Details" asp-route-id="@checkpoint.LastTeamReportId">
+                                @checkpoint.LastTeamReportTitle
+                            </a>
+                        </td>
+                    </tr>
+                }
+                @if (Model.TeamReportCheckpoints.Count == 0)
+                {
+                    <tr><td colspan="3" class="text-center text-muted py-4">尚无团队汇报记录</td></tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

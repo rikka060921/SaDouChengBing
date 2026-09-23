@@ -1,0 +1,11 @@
+@page
+@model ToDo.Razor.Pages.Agents.Manage.VersionsModel
+@{
+    ViewData["Title"] = "Agent 版本";
+}
+<div class="container py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3"><div><h2 class="mb-1">@Model.Agent.Name · 版本记录</h2><div class="text-muted">每次保存或启停都会保留不可变配置快照，已有 Session 记录实际运行版本。</div></div><a asp-page="./Index" class="btn btn-outline-secondary">返回</a></div>
+    @if (TempData["ErrorMessage"] != null) { <div class="alert alert-danger">@TempData["ErrorMessage"]</div> }
+    @foreach (var item in Model.Items) { <details class="card mb-2"><summary class="card-header d-flex justify-content-between"><span class="fw-semibold">v@(item.Version)@if (item.Version == Model.Agent.StableVersion) { <span class="badge bg-success ms-2">当前稳定</span> }@if (item.Version == Model.Agent.CanaryVersion) { <span class="badge bg-info text-dark ms-2">灰度</span> }</span><span class="small text-muted">@(item.ChangedByUser?.RealName ?? item.ChangedByUser?.UserName ?? "系统初始化") · @item.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</span></summary><div class="card-body"><div class="d-flex justify-content-end mb-2">@if (item.Version != Model.Agent.StableVersion) { <form method="post" asp-page-handler="Rollback" onsubmit="return confirm('确认基于该历史版本创建并发布新的稳定版本？');"><input type="hidden" name="id" value="@Model.Agent.Id" /><input type="hidden" name="version" value="@item.Version" /><button class="btn btn-sm btn-outline-danger">回滚到此配置</button></form> }</div><pre class="small mb-0 text-wrap">@item.SnapshotJson</pre></div></details> }
+    @if (Model.Items.Count == 0) { <div class="alert alert-light border text-muted">这是迁移前创建的 Agent，首次保存后会生成版本快照。</div> }
+</div>

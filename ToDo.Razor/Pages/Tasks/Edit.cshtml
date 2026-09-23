@@ -1,0 +1,210 @@
+@page "{projectId:int?}/{id:int?}"
+@model ToDo.Razor.Pages.Tasks.EditModel
+
+@{
+    ViewData["Title"] = Model.Task.Id == 0 ? "新建任务" : "编辑任务";
+}
+
+@if (TempData["EditMessage"] != null)
+{
+    <div class="alert alert-warning alert-dismissible fade show" role="alert">
+        @TempData["EditMessage"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+}
+
+<div class="container py-3 task-editor-page">
+    <div class="mb-4">
+        <h1 class="page-heading">@((Model.Task.Id == 0) ? "新建任务" : "编辑任务")</h1>
+        <div class="page-subtitle">先描述要完成的结果，其余规则可以稍后补充。</div>
+    </div>
+    <form method="post" novalidate>
+        @if (!ViewData.ModelState.IsValid)
+        {
+            <div asp-validation-summary="All" class="alert alert-danger" role="alert"></div>
+        }
+        <input type="hidden" asp-for="Task.Id" />
+        <input asp-for="ReturnPage" type="hidden" />
+        <input asp-for="ReturnId" type="hidden" />
+        <input type="hidden" asp-for="ProjectId" />
+        <div class="mb-3">
+            <label asp-for="Task.Title" class="form-label"></label>
+            <input asp-for="Task.Title" class="form-control" />
+            <span asp-validation-for="Task.Title" class="text-danger"></span>
+        </div>
+
+        @* <div class="mb-3">
+            <label asp-for="Task.Description" class="form-label"></label>
+            <textarea asp-for="Task.Description" rows="4" class="form-control"></textarea>
+        </div> *@
+
+        <div class="mb-4">
+            <label class="form-label fw-semibold text-dark">任务描述 <span class="text-muted fw-normal">· 支持 Markdown</span></label>
+            <div class="border rounded-top p-2 bg-light d-flex flex-wrap gap-1">
+                <button type="button" class="btn btn-sm btn-light" onclick="insertText('**', '**')" title="粗体">B</button>
+                <button type="button" class="btn btn-sm btn-light fst-italic" onclick="insertText('*', '*')" title="斜体">I</button>
+                <button type="button" class="btn btn-sm btn-light" onclick="insertText('## ', '')" title="标题">标题</button>
+                <button type="button" class="btn btn-sm btn-light" onclick="insertText('- ', '')" title="无序列表">列表</button>
+                <button type="button" class="btn btn-sm btn-light" onclick="insertText('1. ', '')" title="有序列表">序号</button>
+                <button type="button" class="btn btn-sm btn-light" onclick="insertText('```\n', '\n```')" title="代码块">代码</button>
+                <button type="button" class="btn btn-sm btn-light" onclick="insertText('[链接文本](', ')')" title="链接">链接</button>
+            </div>
+            <textarea asp-for="Task.Description"
+                      class="form-control border-top-0 rounded-top-0"
+                      rows="9"
+                      placeholder="写清楚目标、交付物和验收标准…"
+                      id="markdown-editor"></textarea>
+            <details class="mt-2">
+                <summary class="small text-primary">查看实时预览</summary>
+                <div class="border rounded bg-white p-3 mt-2" id="markdown-preview">
+                    <div class="text-muted">输入内容后将在这里预览。</div>
+                </div>
+            </details>
+            <span asp-validation-for="Task.Description" class="text-danger"></span>
+            <div class="form-text mt-1">建议包含：完成标准、必要资料、不能触碰的边界。</div>
+        </div>
+
+
+        <div class="row g-3 mb-3">
+            <div class="col-md-4">
+                <label asp-for="Task.AssigneeType" class="form-label">执行主体</label>
+                <select asp-for="Task.AssigneeType" class="form-select">
+                    <option value="Human">团队成员</option>
+                    <option value="DigitalEmployee">数字员工</option>
+                </select>
+            </div>
+            <div class="col-md-8" id="human-assignee-field">
+                <label asp-for="Task.AssigneeId" class="form-label"></label>
+                <select asp-for="Task.AssigneeId" asp-items="Model.UserList" class="form-select">
+                    <option value="">--未指派--</option>
+                </select>
+            </div>
+            <div class="col-md-8" id="agent-assignee-field">
+                <label class="form-label">自动调度</label>
+                <div class="border rounded p-3 bg-light">
+                    <div class="fw-semibold">系统会自动选择最合适的数字员工</div>
+                    <div class="small text-muted mt-1">系统按用途和授权自动分配、规划并执行；普通交付通过检查后自动完成，重要变更或异常再请你处理。</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-3 mb-3">
+            <div class="col-md-6">
+                <label asp-for="Task.EndTime" class="form-label"></label>
+                <input asp-for="Task.EndTime" class="form-control" type="datetime-local" />
+                <span asp-validation-for="Task.EndTime" class="text-danger"></span>
+            </div>
+            <div class="col-md-6">
+                <label asp-for="Task.Priority" class="form-label"></label>
+                <select asp-for="Task.Priority" class="form-select">
+                    <option value="Low">低</option>
+                    <option value="Medium">中</option>
+                    <option value="High">高</option>
+                </select>
+            </div>
+        </div>
+
+        <details class="advanced-settings">
+            <summary>高级设置</summary>
+            <div class="row g-3">
+                <div class="col-md-6">
+                    @if (Model.Task.Id == 0)
+                    {
+                        <label asp-for="Task.GroupId" class="form-label"></label>
+                        <select asp-for="Task.GroupId" asp-items="Model.GroupList" class="form-select"><option value="">--无分组--</option></select>
+                    }
+                    else
+                    {
+                        <label class="form-label">任务分组</label>
+                        <input type="text" readonly class="form-control" value="@(Model.Task.Group?.Name ?? "未分组")" />
+                        <input type="hidden" asp-for="Task.GroupId" />
+                        <input type="hidden" asp-for="Task.ProjectId" />
+                    }
+                </div>
+                <div class="col-md-6">
+                    <label asp-for="Task.ReviewerId" class="form-label">审核人</label>
+                    <select asp-for="Task.ReviewerId" asp-items="Model.ReviewerList" class="form-select"><option value="">--项目管理员审核--</option></select>
+                </div>
+                <div class="col-md-6">
+                    <label asp-for="Task.ParentTaskId" class="form-label">父任务</label>
+                    <select asp-for="Task.ParentTaskId" asp-items="Model.ParentTaskList" class="form-select"><option value="">--无父任务--</option></select>
+                    <span asp-validation-for="Task.ParentTaskId" class="text-danger"></span>
+                </div>
+                <div class="col-md-6">
+                    <label asp-for="LabelNames" class="form-label">任务标签</label>
+                    <input asp-for="LabelNames" class="form-control" placeholder="多个标签用逗号分隔" />
+                </div>
+                <div class="col-md-6">
+                    <label asp-for="Task.Status" class="form-label"></label>
+                    <select asp-for="Task.Status" class="form-select">
+                        <option value="NotStarted">未开始</option>
+                        <option value="InProgress">进行中</option>
+                        <option value="Completed">已完成</option>
+                        <option value="PendingConfirmation">待审核</option>
+                        <option value="Cancelled">已取消</option>
+                    </select>
+                    <span asp-validation-for="Task.Status" class="text-danger"></span>
+                </div>
+                <div class="col-md-6">
+                    <label asp-for="Task.Progress" class="form-label">完成进度（%）</label>
+                    <input asp-for="Task.Progress" class="form-control" type="number" min="0" max="100" />
+                </div>
+            </div>
+        </details>
+
+        <div class="form-action-bar">
+            <div class="d-flex gap-2">
+                <a asp-page="/Tasks/Index" asp-route-projectId="@Model.ProjectId" class="btn btn-light">取消</a>
+                @if(Model.Task.Id != 0 && Model.Task.GroupId.HasValue)
+                {
+                    <a asp-page="/TaskGroups/Details" asp-route-id="@Model.Task.GroupId" asp-route-projectId="@Model.ProjectId" class="btn btn-outline-secondary">返回分组</a>
+                }
+            </div>
+            <button type="submit" class="btn btn-primary px-4">@((Model.Task.Id == 0) ? "创建任务" : "保存更改")</button>
+        </div>
+    </form>
+</div>
+
+@section Scripts {
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js"></script>
+    <script>
+        const editor = document.getElementById("markdown-editor");
+        const preview = document.getElementById("markdown-preview");
+        const assigneeType = document.getElementById("Task_AssigneeType");
+        const humanAssigneeField = document.getElementById("human-assignee-field");
+        const agentAssigneeField = document.getElementById("agent-assignee-field");
+        const humanAssignee = document.getElementById("Task_AssigneeId");
+
+        function updateAssigneeFields() {
+            const isAgent = assigneeType.value === "DigitalEmployee";
+            humanAssigneeField.classList.toggle("d-none", isAgent);
+            agentAssigneeField.classList.toggle("d-none", !isAgent);
+            humanAssignee.disabled = isAgent;
+        }
+
+        // 插入文本工具函数
+        function insertText(prefix, suffix) {
+            const start = editor.selectionStart;
+            const end = editor.selectionEnd;
+            const selected = editor.value.substring(start, end);
+            editor.value = editor.value.substring(0, start) + prefix + selected + suffix + editor.value.substring(end);
+            editor.focus();
+            editor.selectionEnd = end + prefix.length + suffix.length;
+            updatePreview();
+        }
+
+        // 实时预览
+        function updatePreview() {
+            preview.innerHTML = DOMPurify.sanitize(marked.parse(editor.value || ""));
+        }
+
+        editor.addEventListener("input", updatePreview);
+        assigneeType.addEventListener("change", updateAssigneeFields);
+        window.addEventListener("DOMContentLoaded", function () {
+            updatePreview();
+            updateAssigneeFields();
+        });
+    </script>
+}

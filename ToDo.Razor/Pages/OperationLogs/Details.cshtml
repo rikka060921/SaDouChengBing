@@ -1,0 +1,231 @@
+﻿@page
+@using ToDo.Entities
+@using System.Text.Json
+@model ToDo.Razor.Pages.OperationLogs.DetailsModel
+
+@{
+    ViewData["Title"] = "操作日志详情";
+}
+
+<style>
+    .detail-row {
+        display: flex;
+        align-items: center;
+        margin-bottom: 0.8rem;
+    }
+
+    .detail-label {
+        font-size: 0.9rem;
+        font-weight: 500;
+        color: #6c757d;
+        min-width: 100px;
+        margin-right: 1rem;
+    }
+
+    .detail-value {
+        font-weight: 500;
+        flex: 1;
+    }
+
+    .badge {
+        font-weight: 500;
+        padding: 0.35em 0.65em;
+    }
+
+    pre {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        background-color: #f8f9fa;
+        padding: 1rem;
+        border-radius: 0.25rem;
+        margin-bottom: 0;
+        height: 100%;
+    }
+
+    .content-card {
+        height: 50%;
+        display: flex;
+        flex-direction: column;
+        min-height: 200px;
+    }
+
+    .card-header {
+        font-weight: 500;
+    }
+
+    .info-column {
+        padding-right: 1.5rem;
+    }
+
+    .content-column {
+        padding-left: 1.5rem;
+        border-left: 1px solid #dee2e6;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .back-button {
+        margin-top: 1.5rem;
+        margin-left: 116px; /* 对齐标签位置 */
+    }
+
+    .card-body-container {
+        height: calc(100% - 56px);
+        display: flex;
+        flex-direction: column;
+    }
+
+    .card-body-content {
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+    }
+</style>
+
+<div class="card h-100">
+    <div class="card-header bg-primary text-white">
+        <h3 class="mb-0"><i class="fas fa-info-circle me-2"></i>操作日志详情</h3>
+    </div>
+
+    <div class="card-body card-body-container">
+        <div class="row h-100 card-body-content">
+            <!-- 左侧信息列 - 新样式 -->
+            <div class="col-md-6 info-column">
+                <div class="detail-row">
+                    <div class="detail-label">序号</div>
+                    <div class="detail-value">@Model.Index</div>
+                </div>
+
+                <div class="detail-row">
+                    <div class="detail-label">操作对象</div>
+                    <div class="detail-value">@Model.ChangeLog.OperationTarget</div>
+                </div>
+
+                <div class="detail-row">
+                    <div class="detail-label">操作对象ID</div>
+                    <div class="detail-value">@(Model.ChangeLog.TargetId?.ToString() ?? "-")</div>
+                </div>
+
+                <div class="detail-row">
+                    <div class="detail-label">操作类型</div>
+                    <div class="detail-value">
+                        <span class="badge @GetOperationTypeBadge(Model.ChangeLog.OperationType)">
+                            @Model.ChangeLog.OperationType
+                        </span>
+                    </div>
+                </div>
+
+                <div class="detail-row">
+                    <div class="detail-label">操作状态</div>
+                    <div class="detail-value">
+                        <span class="badge @(Model.ChangeLog.OperationStatus == OperationStatus.成功 ? "bg-success" : "bg-danger")">
+                            @Model.ChangeLog.OperationStatus
+                        </span>
+                    </div>
+                </div>
+
+                <div class="detail-row">
+                    <div class="detail-label">项目ID</div>
+                    <div class="detail-value">@(Model.ChangeLog.ProjectId?.ToString() ?? "-")</div>
+                </div>
+
+                <div class="detail-row">
+                    <div class="detail-label">项目名称</div>
+                    <div class="detail-value">@(Model.ChangeLog.ProjectName ?? "-")</div>
+                </div>
+
+                <div class="detail-row">
+                    <div class="detail-label">任务ID</div>
+                    <div class="detail-value">@(Model.ChangeLog.TaskId?.ToString() ?? "-")</div>
+                </div>
+
+                <div class="detail-row">
+                    <div class="detail-label">任务名称</div>
+                    <div class="detail-value">@(Model.ChangeLog.TaskTitle ?? "-")</div>
+                </div>
+
+                <div class="detail-row">
+                    <div class="detail-label">操作人ID</div>
+                    <div class="detail-value">@Model.ChangeLog.OperatedByUserId</div>
+                </div>
+
+                <div class="detail-row">
+                    <div class="detail-label">操作人姓名</div>
+                    <div class="detail-value">
+                        @Model.ChangeLog.OperatedByRealName
+                        @if (!string.IsNullOrEmpty(Model.ChangeLog.OperatedByUserName))
+                        {
+                            <small class="text-muted">(@Model.ChangeLog.OperatedByUserName)</small>
+                        }
+                    </div>
+                </div>
+
+                <div class="detail-row">
+                    <div class="detail-label">操作时间</div>
+                    <div class="detail-value">@AppTime.ToBeijingTime(Model.ChangeLog.OperatedAt).ToString("yyyy-MM-dd HH:mm")</div>
+                </div>
+
+                
+
+                <div class="back-button">
+                    <a asp-page="./Index"
+                       asp-route-Parameters.PageIndex="@Model.Parameters.PageIndex"
+                       asp-route-Parameters.UserName="@Model.Parameters.UserName"
+                       asp-route-Parameters.ProjectName="@Model.Parameters.ProjectName"
+                       asp-route-Parameters.OperationTarget="@Model.Parameters.OperationTarget"
+                       asp-route-Parameters.OperationType="@Model.Parameters.OperationType"
+                       asp-route-Parameters.StartDate="@Model.Parameters.StartDate?.ToString("yyyy-MM-dd")"
+                       asp-route-Parameters.EndDate="@Model.Parameters.EndDate?.ToString("yyyy-MM-dd")"
+                       class="btn btn-outline-primary">
+                        <i class="fas fa-arrow-left me-1"></i>返回列表
+                    </a>
+                    @if (Model.Task != null && !Model.Task.IsDeleted)
+                    {
+                        <a asp-page="/Tasks/Details" asp-route-id="@Model.Task.Id" class="btn btn-outline-primary">
+                            <i class="fas fa-arrow-left me-1"></i>查看任务详情
+                        </a>
+                    }
+                </div>
+            </div>
+
+            <!-- 右侧变更内容列保持不变 -->
+            <div class="col-md-6 content-column">
+                <div class="card-content-body">
+                    <div class="card content-card mb-3 flex-grow-1">
+                        <div class="card-header bg-danger text-white">
+                            <span>变更前</span>
+                        </div>
+                        <div class="card-body p-0 d-flex flex-column">
+                            <pre id="beforeContent" class="flex-grow-1">@Model.BeforeContent</pre>
+                        </div>
+                    </div>
+
+                    <div class="card content-card mt-3 flex-grow-1">
+                        <div class="card-header bg-success text-white">
+                            <span>变更后</span>
+                        </div>
+                        <div class="card-body p-0 d-flex flex-column">
+                            <pre id="afterContent" class="flex-grow-1">@Model.AfterContent</pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@functions {
+    string GetOperationTypeBadge(OperationType type)
+    {
+        return type switch
+        {
+            OperationType.创建 => "bg-success",
+            OperationType.更新 => "bg-primary",
+            OperationType.删除 => "bg-danger",
+            OperationType.启用 => "bg-info",
+            
+            _ => "bg-secondary"
+        };
+    }
+}

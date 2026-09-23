@@ -1,0 +1,151 @@
+﻿@page
+@model ToDo.Razor.Pages.Users.CreateModel
+@using ToDo.Entities
+@{
+    ViewData["Title"] = "创建新用户";
+    Layout = "/Pages/Shared/_Layout.cshtml";
+}
+
+<div class="container">
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <h2>@ViewData["Title"]</h2>
+            <div class="text-muted">请填写以下信息创建新用户</div>
+        </div>
+    </div>
+
+    @if (TempData["ErrorMessage"] != null)
+    {
+        <div class="alert alert-danger alert-dismissible fade show mb-3" role="alert">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+            @TempData["ErrorMessage"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+
+    <div class="card shadow-sm">
+        <div class="card-body">
+            <form method="post" id="createUserForm">
+                <div asp-validation-summary="All" class="text-danger"></div>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label asp-for="Input.UserName" class="form-label required"></label>
+                            <input asp-for="Input.UserName" class="form-control" />
+                            <span asp-validation-for="Input.UserName" class="text-danger"></span>
+                            <small class="form-text text-muted">用于登录系统的唯一标识</small>
+                        </div>
+
+                        <div class="mb-3">
+                            <label asp-for="Input.RealName" class="form-label required"></label>
+                            <input asp-for="Input.RealName" class="form-control" />
+                            <span asp-validation-for="Input.RealName" class="text-danger"></span>
+                        </div>
+
+                        <div class="mb-3">
+                            <label asp-for="Input.Email" class="form-label required"></label>
+                            <input asp-for="Input.Email" class="form-control" />
+                            <span asp-validation-for="Input.Email" class="text-danger"></span>
+                            <small class="form-text text-muted">例如: user@example.com</small>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label asp-for="Input.PhoneNumber" class="form-label required"></label>
+                            <input asp-for="Input.PhoneNumber" class="form-control" />
+                            <span asp-validation-for="Input.PhoneNumber" class="text-danger"></span>
+                            <small class="form-text text-muted">11位中国手机号码</small>
+                        </div>
+
+                        <div class="mb-3">
+                            <label asp-for="Input.Gender" class="form-label required"></label>
+                            <select asp-for="Input.Gender" class="form-select">
+                                <option value="">-- 选择性别 --</option>
+                                <option value="@Gender.Male">男</option>
+                                <option value="@Gender.Female">女</option>
+                            </select>
+                            <span asp-validation-for="Input.Gender" class="text-danger"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row mt-3">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label asp-for="Input.Role" class="form-label required"></label>
+                            <select asp-for="Input.Role" class="form-select">
+                                <option value="">-- 选择角色 --</option>
+                                <option value="@UserRole.systemAdmin">系统管理员</option>
+                                <option value="@UserRole.teamMember">团队成员</option>
+                            </select>
+                            <span asp-validation-for="Input.Role" class="text-danger"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row mt-3">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label asp-for="Input.Password" class="form-label required"></label>
+                            <input asp-for="Input.Password" type="password" class="form-control" />
+                            <span asp-validation-for="Input.Password" class="text-danger"></span>
+                            <small class="form-text text-muted">至少6位字符</small>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label asp-for="Input.ConfirmPassword" class="form-label required"></label>
+                            <input asp-for="Input.ConfirmPassword" type="password" class="form-control" />
+                            <span asp-validation-for="Input.ConfirmPassword" class="text-danger"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-end mt-4">
+                    <a asp-page="./Index" class="btn btn-outline-secondary me-2">
+                        <i class="bi bi-x-circle"></i> 取消
+                    </a>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-person-plus"></i> 创建用户
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+    
+    <script>
+        // 客户端验证增强
+        document.getElementById('createUserForm').addEventListener('submit', function(e) {
+            // 确保所有必填字段都已填写
+            const requiredFields = this.querySelectorAll('[required]');
+            let isValid = true;
+            
+            requiredFields.forEach(field => {
+                if (!field.value.trim()) {
+                    isValid = false;
+                    const errorSpan = field.nextElementSibling;
+                    if (errorSpan && errorSpan.classList.contains('text-danger')) {
+                        errorSpan.textContent = '此字段是必填项';
+                    }
+                }
+            });
+
+            if (!isValid) {
+                e.preventDefault();
+                // 显示顶部汇总错误
+                const validationSummary = this.querySelector('[asp-validation-summary]');
+                if (validationSummary) {
+                    validationSummary.textContent = '请填写所有必填字段';
+                    validationSummary.style.display = 'block';
+                }
+            }
+        });
+    </script>
+}

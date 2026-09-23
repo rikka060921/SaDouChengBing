@@ -1,0 +1,59 @@
+﻿<div class="modal fade" id="versionDiffModal" tabindex="-1" aria-labelledby="diffModalLabel" aria-hidden="true">
+    <!-- 改为 modal-xl 超大宽度，解决弹窗过窄 -->
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="diffModalLabel">版本内容对比</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-primary mb-3">
+                    <strong>本次修改AI总结：</strong>
+                    <span id="aiSummaryText"></span>
+                </div>
+                <div class="text-muted small mb-3">红色=删除内容，绿色=新增内容（后端AI摘要已提炼变更）</div>
+
+                <div class="row g-3">
+                    <div class="col-md-6 border p-3">
+                        <h6 id="oldVerTitle">旧版本</h6>
+                        <!-- 增加滚动、内边距，pre改用class做diff高亮，不再直接text-danger整行变红 -->
+                        <pre id="oldContentBox" class="diff-old border p-3 bg-light" style="min-height:450px;white-space:pre-wrap;overflow:auto;"></pre>
+                    </div>
+                    <div class="col-md-6 border p-3">
+                        <h6 id="newVerTitle">新版本</h6>
+                        <pre id="newContentBox" class="diff-new border p-3 bg-light" style="min-height:450px;white-space:pre-wrap;overflow:auto;"></pre>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="closeDiffModalBtn" class="btn btn-secondary">关闭</button>
+                <!-- 修复：JS动态给hidden赋值diffRollbackVerId，之前为空导致后台收不到 -->
+                <form method="post" asp-page-handler="RollbackFromDiff" class="d-inline">
+                    <input type="hidden" name="diffRollbackVerId" id="diffRollbackVerId" value="" />
+                    <button class="btn btn-primary">回滚至当前对比旧版本</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    /* Diff行内高亮样式，实现第二张图效果：删除红底红字，新增绿底绿字 */
+    .diff-old del {
+        background-color: #ffebee;
+        color: #d32f2f;
+        text-decoration: none;
+    }
+
+    .diff-new ins {
+        background-color: #e8f5e9;
+        color: #2e7d32;
+        text-decoration: none;
+    }
+
+    pre.diff-old, pre.diff-new {
+        font-family: Consolas, "Microsoft YaHei", monospace;
+        font-size: 14px;
+        line-height: 1.6;
+    }
+</style>

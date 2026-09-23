@@ -1,0 +1,99 @@
+@page
+@model ToDo.Razor.Pages.DataGovernance.IndexModel
+@using ToDo.Entities
+@{
+    ViewData["Title"] = "数据治理";
+    Layout = "/Pages/Shared/_Layout.cshtml";
+}
+
+<div class="container-fluid py-3 px-2 px-lg-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div>
+            <h2 class="mb-1">数据治理</h2>
+            <div class="text-muted">先预览影响范围，再执行最小破坏的数据留存策略。</div>
+        </div>
+        <a asp-page="/AiSessions/Index" asp-route-IncludeArchived="true" class="btn btn-outline-secondary">查看 Session 归档</a>
+    </div>
+
+    @if (TempData["SuccessMessage"] is string success)
+    {
+        <div class="alert alert-success">@success</div>
+    }
+    @if (TempData["ErrorMessage"] is string error)
+    {
+        <div class="alert alert-danger">@error</div>
+    }
+
+    <div class="alert alert-info">
+        <strong>证据保护：</strong>Agent 交付凭证、审批记录、工具调用、验收建议、会议督办事件和操作日志不会被本策略删除。
+        旧 AI Session 只会从默认列表归档，仍可检索和打开；只有已经读取并超过保留期的通知会被物理清理。
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <div class="card shadow-sm h-100"><div class="card-body">
+                <div class="text-muted small">待归档 Session</div>
+                <div class="display-6">@Model.Preview.SessionsToArchive</div>
+                <div class="small text-muted">最后活动早于 @Model.Preview.ArchiveSessionsBefore.ToString("yyyy-MM-dd")</div>
+            </div></div>
+        </div>
+        <div class="col-md-4">
+            <div class="card shadow-sm h-100"><div class="card-body">
+                <div class="text-muted small">待清理已读通知</div>
+                <div class="display-6">@Model.Preview.NotificationsToDelete</div>
+                <div class="small text-muted">读取时间早于 @Model.Preview.DeleteNotificationsBefore.ToString("yyyy-MM-dd")</div>
+            </div></div>
+        </div>
+        <div class="col-md-4">
+            <div class="card shadow-sm h-100"><div class="card-body">
+                <div class="text-muted small">后台自动执行</div>
+                <div class="fs-3 fw-semibold @(Model.Preview.AutomaticExecutionEnabled ? "text-success" : "text-secondary")">
+                    @(Model.Preview.AutomaticExecutionEnabled ? "已启用" : "未启用")
+                </div>
+                <div class="small text-muted">默认关闭，避免生产策略未经确认即自动生效。</div>
+            </div></div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-header">执行留存策略</div>
+        <div class="card-body">
+            <form method="post" asp-page-handler="Execute" class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+                <div class="form-check">
+                    <input asp-for="ConfirmExecution" class="form-check-input" />
+                    <label asp-for="ConfirmExecution" class="form-check-label">我已核对上方预览，并确认执行本批次</label>
+                </div>
+                <button type="submit" class="btn btn-primary">执行一次</button>
+            </form>
+            <div class="form-text mt-2">每次最多处理配置的一个批次；如积压较多，可分批执行并逐次核对结果。</div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-header">最近执行记录</div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead><tr><th>时间</th><th>触发方式</th><th>执行人</th><th>结果</th><th>归档</th><th>清理</th><th>异常</th></tr></thead>
+                <tbody>
+                @foreach (var run in Model.RecentRuns)
+                {
+                    var statusClass = run.Status == DataRetentionRunStatus.Completed ? "bg-success" : run.Status == DataRetentionRunStatus.Failed ? "bg-danger" : "bg-secondary";
+                    <tr>
+                        <td>@run.StartedAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td>@(run.Trigger == "scheduled" ? "后台" : "手动")</td>
+                        <td>@(run.TriggeredByUser?.RealName ?? run.TriggeredByUser?.UserName ?? "系统")</td>
+                        <td><span class="badge @statusClass">@run.Status</span></td>
+                        <td>@run.ArchivedSessionCount</td>
+                        <td>@run.DeletedNotificationCount</td>
+                        <td class="text-danger small">@run.ErrorMessage</td>
+                    </tr>
+                }
+                @if (Model.RecentRuns.Count == 0)
+                {
+                    <tr><td colspan="7" class="text-center text-muted py-4">暂无执行记录</td></tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

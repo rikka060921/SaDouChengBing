@@ -1,0 +1,797 @@
+@page "{id:int}"
+@using System.Text.Json
+@using ToDo.Entities
+@model ToDo.Razor.Pages.Tasks.DetailsModel
+@{
+    ViewData["Title"] = Model.TaskDetail.Title;
+}
+
+<link rel="stylesheet" href="~/css/task-assistance.css" asp-append-version="true" />
+
+<div class="container py-4">
+	@{
+		ViewData["ProjectId"] = Model.TaskDetail.ProjectId;
+		ViewData["ProjectSection"] = "tasks";
+	}
+	<partial name="_ProjectNav" view-data="ViewData" />
+	@if (TempData["TaskMessage"] != null)
+	{
+		<div class="alert alert-info alert-dismissible fade show" role="alert">
+			@TempData["TaskMessage"]
+			<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+		</div>
+	}
+	<div class="card shadow-lg border-0 rounded-3">
+		<div asp-validation-summary="ModelOnly" class="text-danger px-3 pt-2" role="alert"></div>
+		@if (!ViewData.ModelState.IsValid)
+		{
+			<div class="px-3 pb-2 small"><a asp-page="Details" asp-route-id="@Model.TaskDetail.Id" asp-fragment="my-progress">重新打开任务，读取最新状态</a><span class="text-muted ms-2">如需保留本次说明，请先复制下方输入。</span></div>
+		}
+		<div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+			<h4 class="mb-0"><i class="bi bi-clipboard-check me-2"></i>任务详情</h4>
+				<span class="badge bg-@(Model.TaskDetail.Status switch
+		 {
+			 Entities.TaskStatus.Completed => "success",
+			 Entities.TaskStatus.InProgress => "warning text-dark",
+			 _ => "secondary"
+		 })">
+				@Html.DisplayFor(model => model.TaskDetail.Status)
+			</span>
+		</div>
+
+		<div class="card-body">
+			<div class="row mb-3">
+				<div class="col-md-6">
+					<h6 class="text-muted">任务标题</h6>
+					<p class="fs-5 fw-semibold">@Model.TaskDetail.Title</p>
+				</div>
+				<div class="col-md-6">
+					<h6 class="text-muted">优先级</h6>
+					<span class="badge rounded-pill bg-@(
+						Model.TaskDetail.Priority == Entities.TaskPriority.High ? "danger" :
+						Model.TaskDetail.Priority == Entities.TaskPriority.Medium ? "warning text-dark" : "secondary") fs-6">
+						@Html.DisplayFor(model => model.TaskDetail.Priority)
+					</span>
+
+				</div>
+			</div>
+
+			<div class="row mb-3">
+				<div class="col-md-6">
+					<h6 class="text-muted">开始时间</h6>
+					<p>@Model.TaskDetail.StartTime?.ToString("yyyy-MM-dd")</p>
+				</div>
+				<div class="col-md-6">
+					<h6 class="text-muted">截止时间</h6>
+					<p>@Model.TaskDetail.EndTime?.ToString("yyyy-MM-dd")</p>
+				</div>
+			</div>
+
+			<div class="row mb-3">
+				<div class="col-md-6">
+					<h6 class="text-muted">负责人</h6>
+					@if (Model.TaskDetail.AssigneeType == TaskAssigneeType.DigitalEmployee)
+					{
+						<p><i class="bi bi-cpu me-1"></i>@(Model.TaskDetail.AgentDefinition?.Name ?? Model.TaskDetail.AgentName ?? "未指定 Agent") <span class="badge bg-info text-dark ms-1">Agent</span></p>
+					}
+					else
+					{
+						<p><i class="bi bi-person-circle me-1"></i>@(Model.TaskDetail.Assignee?.RealName ?? Model.TaskDetail.Assignee?.UserName ?? "未指派") <span class="badge bg-light text-dark border ms-1">人员</span></p>
+					}
+				</div>
+				<div class="col-md-6">
+					<h6 class="text-muted">所属项目</h6>
+					<p><i class="bi bi-folder2-open me-1"></i>@Model.TaskDetail.Project?.Name</p>
+				</div>
+			</div>
+
+			<div class="row mb-3">
+				<div class="col-md-4"><span class="text-muted">审核人：</span>@(Model.TaskDetail.Reviewer?.RealName ?? Model.TaskDetail.Reviewer?.UserName ?? "项目负责人 / 项目管理员")</div>
+				<div class="col-md-4"><span class="text-muted">返工次数：</span><span class="badge @(Model.TaskDetail.ReworkCount > 0 ? "bg-warning text-dark" : "bg-secondary")">@Model.TaskDetail.ReworkCount</span></div>
+				<div class="col-md-4"><span class="text-muted">执行主体：</span>@(Model.TaskDetail.AssigneeType == TaskAssigneeType.DigitalEmployee ? "数字员工" : "团队成员")</div>
+			</div>
+
+			@if (Model.TaskDetail.AssigneeType == TaskAssigneeType.DigitalEmployee)
+			{
+				var agentStatusClass = Model.TaskDetail.AgentExecutionStatus switch
+				{
+					AgentTaskExecutionStatus.Running => "primary",
+					AgentTaskExecutionStatus.WaitingApproval => "warning",
+					AgentTaskExecutionStatus.Retrying => "warning",
+					AgentTaskExecutionStatus.AwaitingConfirmation => "info",
+					AgentTaskExecutionStatus.Completed => "success",
+					AgentTaskExecutionStatus.Failed => "danger",
+					_ => "secondary"
+				};
+				<div class="border rounded-3 bg-light p-3 mb-3">
+					<div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+						<div>
+							<div class="fw-semibold"><i class="bi bi-cpu me-1"></i>@(Model.TaskDetail.AgentDefinition?.Name ?? Model.TaskDetail.AgentName ?? "未指定 Agent")</div>
+							<div class="small text-muted">真实 Agent 绑定 · 分配版本 @Model.TaskDetail.AgentAssignmentVersion</div>
+						</div>
+						<span class="badge bg-@agentStatusClass">@Model.TaskDetail.AgentExecutionStatus.GetDisplayName()</span>
+					</div>
+					@if (Model.TaskDetail.AgentLastRunAt.HasValue)
+					{
+						<div class="small text-muted mt-2">最近执行：@Model.TaskDetail.AgentLastRunAt.Value.ToString("yyyy-MM-dd HH:mm:ss")</div>
+					}
+					@if (!string.IsNullOrWhiteSpace(Model.TaskDetail.AgentLastError))
+					{
+						<div class="small text-danger mt-2">@Model.TaskDetail.AgentLastError</div>
+					}
+					@if (Model.LatestAgentWorkItem != null && (Model.CanViewSession(Model.LatestAgentWorkItem.AiSessionId) || Model.LatestAgentWorkItem.WaitingApprovalRequestId.HasValue))
+					{
+						<div class="mt-2">
+							@if (Model.CanViewSession(Model.LatestAgentWorkItem.AiSessionId))
+							{
+								<a asp-page="/AiSessions/Details" asp-route-id="@Model.LatestAgentWorkItem.AiSessionId" class="btn btn-sm btn-outline-primary">查看执行对话</a>
+							}
+							@if (Model.LatestAgentWorkItem.WaitingApprovalRequestId.HasValue)
+							{
+								<a asp-page="/Approvals/Index" class="btn btn-sm btn-outline-warning ms-1">查看待审批操作</a>
+							}
+						</div>
+					}
+                    @if (Model.PendingPlan is { } plan)
+                    {
+                        <section class="border rounded p-3 mt-3 bg-light" id="execution-plan">
+                            <h2 class="h5">确认执行计划 <small class="text-muted">第 @(plan.PlanRevision) 版</small></h2>
+                            <p class="small text-muted">此时仅生成计划，尚未执行任务。确认计划不替代敏感操作审批和最终验收。</p>
+                            <div class="mb-3" style="white-space:pre-wrap;overflow-wrap:anywhere">@plan.ExecutionPlan</div>
+                            @if (Model.CanReviewPlan)
+                            {
+                                <form method="post" asp-page-handler="ReviewPlan" asp-route-id="@Model.TaskDetail.Id">
+                                    <input type="hidden" name="workItemId" value="@plan.Id" />
+                                    <input type="hidden" name="revision" value="@plan.PlanRevision" />
+                                    <label asp-for="PlanFeedback" class="form-label">调整意见（重新生成时必填）</label>
+                                    <textarea asp-for="PlanFeedback" maxlength="2000" class="form-control mb-2" rows="2" placeholder="例如：先整理现有资料，不要联网"></textarea>
+                                    <div class="d-flex flex-wrap gap-2">
+                                        <button name="approved" value="true" class="btn btn-primary">确认计划并执行</button>
+                                        <button name="approved" value="false" class="btn btn-outline-secondary">按意见重新生成</button>
+                                    </div>
+                                </form>
+                            }
+                            else { <div class="small text-muted">等待任务创建人、验收人或项目管理员确认。</div> }
+                        </section>
+                    }
+					@if (Model.AgentWorkItems.Any())
+					{
+						<details class="mt-3" open>
+							<summary class="fw-semibold text-primary">执行时间线（最近 @Model.AgentWorkItems.Count 条）</summary>
+							<div class="mt-3 d-grid gap-2">
+								@foreach (var item in Model.AgentWorkItems)
+								{
+									<div class="border-start border-3 border-@DetailsModel.GetAgentWorkStatusClass(item.Status) ps-3 py-1">
+										<div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+											<div>
+												<span class="fw-semibold">@DetailsModel.GetAgentWorkTriggerLabel(item.TriggerType)</span>
+												<span class="small text-muted ms-1">#@item.Id · @(item.AgentDefinition?.Name ?? $"Agent #{item.AgentDefinitionId}")</span>
+											</div>
+											<span class="badge bg-@DetailsModel.GetAgentWorkStatusClass(item.Status)">@DetailsModel.GetAgentWorkStatusLabel(item.Status)</span>
+										</div>
+										<div class="small text-muted mt-1">
+											创建 @item.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss") · 步骤 @item.StepCount/@item.MaxSteps · 尝试 @item.AttemptCount/@item.MaxAttempts
+										</div>
+										@if (DetailsModel.IsAgentWorkItemStalled(item))
+										{
+											<div class="small text-danger mt-1"><i class="bi bi-exclamation-triangle me-1"></i>执行心跳已超过 15 分钟，后台恢复器将自动重试。</div>
+										}
+										@if (!string.IsNullOrWhiteSpace(item.ErrorMessage))
+										{
+											<div class="small text-danger mt-1">@item.ErrorMessage</div>
+										}
+										@if (!string.IsNullOrWhiteSpace(item.ResultSummary))
+										{
+											<details class="small mt-1"><summary>查看执行结果</summary><div class="mt-1" style="white-space:pre-wrap">@item.ResultSummary</div></details>
+										}
+										@if (Model.CanViewSession(item.AiSessionId))
+										{
+											<a asp-page="/AiSessions/Details" asp-route-id="@item.AiSessionId" class="small">查看执行对话</a>
+										}
+									</div>
+								}
+							</div>
+						</details>
+					}
+				</div>
+
+				@if (Model.LatestDeliveryReceipt != null)
+				{
+					var receipt = Model.LatestDeliveryReceipt;
+					var acceptanceClass = receipt.AcceptanceStatus switch
+					{
+						AgentDeliveryAcceptanceStatus.Accepted => "success",
+						AgentDeliveryAcceptanceStatus.AutomaticallyAccepted => "success",
+						AgentDeliveryAcceptanceStatus.Rejected => "danger",
+						AgentDeliveryAcceptanceStatus.Superseded => "secondary",
+						_ => "warning text-dark"
+					};
+					var acceptanceLabel = receipt.AcceptanceStatus switch
+					{
+						AgentDeliveryAcceptanceStatus.Accepted => "验收通过",
+						AgentDeliveryAcceptanceStatus.AutomaticallyAccepted => "自动验收通过",
+						AgentDeliveryAcceptanceStatus.Rejected => "验收驳回",
+						AgentDeliveryAcceptanceStatus.Superseded => "已被新交付替代",
+						_ => "待验收"
+					};
+					<div class="card border-primary-subtle shadow-sm mb-3">
+						<div class="card-header bg-primary-subtle d-flex flex-wrap justify-content-between align-items-center gap-2">
+							<div class="fw-semibold"><i class="bi bi-patch-check me-1"></i>Agent 正式交付 #@receipt.Id</div>
+							<div>
+								<span class="badge bg-@(receipt.EvidenceQuality == AgentEvidenceQuality.Strong ? "primary" : "secondary")">@(receipt.EvidenceQuality == AgentEvidenceQuality.Strong ? "强证据" : "基础证据")</span>
+								<span class="badge bg-@acceptanceClass ms-1">@acceptanceLabel</span>
+							</div>
+						</div>
+						<div class="card-body">
+							<div class="small text-muted mb-1">交付结论</div>
+							<div style="white-space:pre-wrap">@receipt.OutcomeSummary</div>
+							<div class="row g-3 mt-1">
+								<div class="col-lg-6">
+									<div class="small fw-semibold mb-1">系统证据（@Model.DeliveryEvidence.Count）</div>
+									<ul class="small mb-0">
+										@foreach (var evidence in Model.DeliveryEvidence)
+										{
+											<li>@evidence.Label <span class="text-muted">· @evidence.Source · @evidence.Reference</span></li>
+										}
+									</ul>
+								</div>
+								<div class="col-lg-6">
+									<div class="small fw-semibold mb-1">工具影响（@Model.DeliveryToolEffects.Count）</div>
+									@if (Model.DeliveryToolEffects.Any())
+									{
+										<ul class="small mb-0">
+											@foreach (var effect in Model.DeliveryToolEffects)
+											{
+												<li><code>@effect.ToolName</code> · @effect.Status · @effect.Effect</li>
+											}
+										</ul>
+									}
+									else
+									{
+										<div class="small text-muted">本次交付没有业务工具副作用。</div>
+									}
+								</div>
+							</div>
+							<div class="alert alert-light border small mt-3 mb-2"><strong>校验：</strong>@receipt.ValidationSummary<br /><strong>风险：</strong>@receipt.RiskSummary</div>
+							<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 small">
+								<span class="text-muted font-monospace text-break">SHA-256 @receipt.ContentHash</span>
+								<a asp-page="/Agents/WorkItems/Details" asp-route-id="@receipt.AgentWorkItemId" class="btn btn-sm btn-outline-primary">查看完整交付凭证</a>
+							</div>
+							@if (receipt.ReviewedAt.HasValue)
+							{
+								<div class="small mt-2">审核：@(receipt.AcceptanceStatus == AgentDeliveryAcceptanceStatus.AutomaticallyAccepted ? "系统自动检查" : receipt.ReviewedByUser?.RealName ?? receipt.ReviewedByUser?.UserName ?? $"用户 #{receipt.ReviewedByUserId}") · @receipt.ReviewedAt.Value.ToString("yyyy-MM-dd HH:mm") · @receipt.ReviewComment</div>
+							}
+							else if (!string.IsNullOrWhiteSpace(receipt.ReviewComment))
+							{
+								<div class="alert alert-warning small mt-2 mb-0">需要你处理：@receipt.ReviewComment</div>
+							}
+						</div>
+					</div>
+				}
+
+				@if (Model.LatestDispatchDecision?.Status == AgentDispatchDecisionStatus.PendingConfirmation)
+				{
+					<div class="alert alert-warning border-0 shadow-sm mb-3">
+						<div class="d-flex align-items-start gap-2 mb-2">
+							<i class="bi bi-diagram-3 fs-4"></i>
+							<div>
+								<div class="fw-semibold">请选择匹配的执行 Agent</div>
+								<div class="small">@(Model.LatestDispatchDecision.Confidence > 0 ? "这是更新前的匹配记录。确认执行者时会重新检查职责和项目授权；也可以修改任务后重新匹配。" : Model.LatestDispatchDecision.Explanation)</div>
+							</div>
+						</div>
+						@if (Model.CanEdit && Model.DispatchCandidates.Any())
+						{
+							<form method="post" asp-page-handler="ConfirmDispatch" asp-route-id="@Model.TaskDetail.Id" class="mt-3">
+								<div class="input-group">
+									<select asp-for="SelectedDispatchAgentId" class="form-select" aria-label="选择执行 Agent" required>
+                                        <option value="">请选择执行者</option>
+										@foreach (var candidate in Model.DispatchCandidates)
+										{
+											<option value="@candidate.AgentDefinitionId" selected="@(candidate.AgentDefinitionId == Model.LatestDispatchDecision.RecommendedAgentDefinitionId)">
+												@candidate.AgentName · @string.Join("；", candidate.Reasons.Take(1))
+											</option>
+										}
+									</select>
+									<button class="btn btn-warning" type="submit">确认执行者并生成计划</button>
+								</div>
+							</form>
+						}
+					</div>
+				}
+				else if (Model.LatestDispatchDecision?.Status == AgentDispatchDecisionStatus.NoCandidate)
+				{
+					<div class="alert alert-danger border-0 shadow-sm mb-3">
+						<div class="fw-semibold"><i class="bi bi-exclamation-triangle me-1"></i>没有可接单的 Agent</div>
+						<div class="small mt-1">@(Model.LatestDispatchDecision.Confidence > 0 ? "这是更新前的匹配记录。确认执行者时会重新检查职责和项目授权；也可以修改任务后重新匹配。" : Model.LatestDispatchDecision.Explanation)</div>
+                        @if (Model.CanEdit)
+                        {
+                            <a asp-page="./Edit" asp-route-id="@Model.TaskDetail.Id" class="btn btn-sm btn-outline-primary mt-2">修改任务或改为人工</a>
+                        }
+					</div>
+				}
+			}
+
+			@if (Model.Labels.Any())
+			{
+				<div class="mb-3">
+					<span class="text-muted me-2">标签：</span>
+					@foreach (var label in Model.Labels)
+					{
+						<span class="badge rounded-pill me-1" style="background-color:@label.Color">@label.Name</span>
+					}
+				</div>
+			}
+
+			<div class="card-header bg-light fw-bold">
+				任务描述
+			</div>
+			<div class="card-body">
+				@if (string.IsNullOrWhiteSpace(Model.TaskDetail.Description))
+				{
+					<p class="text-muted">暂无描述。</p>
+				}
+				else
+				{
+					@Html.Raw(Model.DescriptionHtml)
+				}
+			</div>
+
+			@if (Model.CanUpdateProgress)
+			{
+				<section class="border rounded-3 p-3 mb-3 bg-light" id="my-progress" aria-labelledby="my-progress-heading">
+					<h2 class="h5" id="my-progress-heading">我的执行进展</h2>
+					<p class="small text-muted">直接更新你负责的工作，无需请负责人代改。提交验收后会自动提醒审核人。</p>
+					<form method="post" asp-page-handler="Progress" asp-route-id="@Model.TaskDetail.Id">
+						<input type="hidden" asp-for="ExpectedTaskVersion" />
+						<div class="row g-3">
+							<div class="col-md-3"><label asp-for="ExecutionProgress" class="form-label">当前进度（%）</label><input asp-for="ExecutionProgress" class="form-control" type="number" min="0" max="99" /><div class="form-text">验收通过后为 100%。</div></div>
+							<div class="col-md-9"><label asp-for="ProgressNote" class="form-label">进展或成果说明</label><textarea asp-for="ProgressNote" class="form-control" rows="3" maxlength="1500" placeholder="写下完成了什么、还有什么阻塞；提交验收时说明成果在哪里、如何核验。"></textarea></div>
+						</div>
+						<div class="d-flex flex-wrap gap-2 mt-3"><button type="submit" name="submitForReview" value="false" class="btn btn-outline-primary">保存进展</button><button type="submit" name="submitForReview" value="true" class="btn btn-primary">提交成果验收</button></div>
+					</form>
+				</section>
+			}
+
+			@if (Model.CanUseTaskAssistance || Model.MyTaskAssistance != null)
+			{
+				<partial name="/Pages/Tasks/_TaskAssistance.cshtml" model="Model" />
+			}
+
+			<div class="border-top px-3 py-3">
+				<div class="d-flex justify-content-between align-items-center mb-2">
+					<h6 class="mb-0 fw-bold">子任务</h6>
+					<span class="text-muted small">@Model.SubTasks.Count 项</span>
+				</div>
+				@if (Model.TaskDetail.ParentTask != null)
+				{
+					<div class="small text-muted mb-2">父任务：<a asp-page="Details" asp-route-id="@Model.TaskDetail.ParentTask.Id">@Model.TaskDetail.ParentTask.Title</a></div>
+				}
+				@if (Model.SubTasks.Any())
+				{
+					<div class="list-group list-group-flush">
+					@foreach (var subTask in Model.SubTasks)
+					{
+						<a asp-page="Details" asp-route-id="@subTask.Id" class="list-group-item list-group-item-action px-0 d-flex justify-content-between align-items-center">
+							<span>@subTask.Title</span><span class="small text-muted">@subTask.Status · @subTask.Progress%</span>
+						</a>
+					}
+					</div>
+				}
+				else if (Model.TaskDetail.ParentTask == null)
+				{
+					<div class="text-muted small">暂无子任务。</div>
+				}
+			</div>
+		</div>
+
+		@if (Model.TaskDetail.Status == Entities.TaskStatus.PendingConfirmation && Model.CanReview)
+		{
+			<div class="card-body border-top bg-light">
+				<h5 class="mb-3"><i class="bi bi-check2-square me-2"></i>人工审核</h5>
+				<form method="post" class="row g-2" asp-page-handler="Review" asp-route-id="@Model.TaskDetail.Id">
+					<div class="col-md-8"><input asp-for="ReviewComment" class="form-control" placeholder="审核意见（打回时建议填写原因）" /></div>
+					<div class="col-md-2"><button type="submit" name="approved" value="true" class="btn btn-success w-100">通过</button></div>
+					<div class="col-md-2"><button type="submit" name="approved" value="false" class="btn btn-warning w-100">打回</button></div>
+				</form>
+			</div>
+		}
+
+		<div class="card-footer text-end">
+			<a asp-page="/Tasks/Edit"
+			   asp-route-projectId="@Model.TaskDetail.ProjectId"
+			   asp-route-id="@Model.TaskDetail.Id"
+			   asp-route-returnPage="TaskGroups/Details"
+			   asp-route-returnId="@Model.TaskDetail.GroupId"
+			   class="btn btn-outline-primary me-2 @(Model.CanEdit ? "" : "disabled")"
+			   title="@(Model.CanEdit ? "" : "你没有权限编辑")">
+				<i class="bi bi-pencil-square"></i> 编辑
+			</a>
+			<a asp-page="/Tasks/Index"
+			   asp-route-projectId="@Model.TaskDetail.ProjectId"
+			   asp-route-returnPage="Tasks/Index"
+			   asp-route-returnId="@Model.TaskDetail.GroupId"
+			   class="btn btn-outline-secondary">
+				<i class="bi bi-arrow-left"></i> 返回任务列表
+			</a>
+		</div>
+	</div>
+</div>
+
+<div class="container mb-4">
+	<div class="row g-4">
+		@*
+		<div class="col-lg-6">
+			<div class="card shadow-sm h-100">
+				<div class="card-header bg-light fw-bold">子任务</div>
+				<div class="card-body">
+					@if (Model.TaskDetail.ParentTask != null)
+					{
+						<p class="text-muted">父任务：<a asp-page="Details" asp-route-id="@Model.TaskDetail.ParentTask.Id">@Model.TaskDetail.ParentTask.Title</a></p>
+					}
+					@if (Model.SubTasks.Any())
+					{
+						<ul class="list-group list-group-flush">
+						@foreach (var subTask in Model.SubTasks)
+						{
+							<li class="list-group-item px-0"><a asp-page="Details" asp-route-id="@subTask.Id">@subTask.Title</a><span class="float-end text-muted">@subTask.Status</span></li>
+						}
+						</ul>
+					}
+					else if (Model.TaskDetail.ParentTask == null)
+					{
+						<p class="text-muted mb-0">暂无父子任务关系。</p>
+					}
+				</div>
+			</div>
+		</div>
+		*@
+		<div class="col-12">
+			<div class="card shadow-sm h-100">
+				<div class="card-header bg-light fw-bold">任务评论</div>
+				<div class="card-body">
+					<form method="post" asp-page-handler="AddComment" asp-route-id="@Model.TaskDetail.Id" class="mb-3">
+						<textarea asp-for="CommentText" class="form-control mb-2" rows="3" placeholder="记录进展、问题或审核意见"></textarea>
+						<button class="btn btn-primary btn-sm" type="submit">发布评论</button>
+					</form>
+					@if (Model.Comments.Any())
+					{
+						@foreach (var comment in Model.Comments)
+						{
+							<div class="border-top pt-2 mb-2"><div class="small text-muted">@(comment.Author?.RealName ?? comment.Author?.UserName) · @comment.CreatedAt.ToString("yyyy-MM-dd HH:mm") @if (comment.IsAiGenerated) { <span class="badge bg-info text-dark ms-1">Agent · @comment.AgentKey</span> @if (Model.CanViewSession(comment.AiSessionId)) { <a asp-page="/AiSessions/Details" asp-route-id="@comment.AiSessionId" class="ms-1">查看执行对话</a> } }</div><div class="mt-1" style="white-space:pre-wrap">@comment.Content</div></div>
+						}
+					}
+					else
+					{
+						<p class="text-muted mb-0">暂无评论。</p>
+					}
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<div class="container mb-4 d-flex justify-content-end">
+	<a asp-page="/OperationLogs/Index"
+	   asp-route-Parameters.TaskId="@Model.TaskDetail.Id"
+	   class="btn btn-sm btn-outline-secondary">
+		<i class="bi bi-clock-history me-1"></i>查看该任务操作日志
+	</a>
+</div>
+
+@*
+<div class="card mb-4 p-3">
+	<h5>操作日志</h5>
+
+	<!-- 筛选区域 -->
+	<form method="get">
+		<div class="row g-3">
+			<!-- 隐藏字段：当前任务组ID -->
+			<input type="hidden" name="id" value="@Model.TaskDetail.GroupId" />
+			<input type="hidden" asp-for="Parameters.PageIndex" value="1" />
+			<!-- 操作人员 -->
+			<div class="col-md-4">
+				<label class="form-label">操作人员</label>
+				<select class="form-select" name="Parameters.UserName" asp-items="Model.UserOptions"></select>
+			</div>
+
+			<!-- 操作类型 -->
+			<div class="col-md-4">
+				<label class="form-label">操作类型</label>
+				<select class="form-select" name="Parameters.OperationType">
+					<option value="">全部</option>
+					<option value="创建" selected="@(Model.Parameters.OperationType?.ToString() == "创建")">创建</option>
+					<option value="更新" selected="@(Model.Parameters.OperationType?.ToString() == "更新")">更新</option>
+					<option value="删除" selected="@(Model.Parameters.OperationType?.ToString() == "删除")">删除</option>
+					<option value="恢复" selected="@(Model.Parameters.OperationType?.ToString() == "启用")">恢复</option>
+				</select>
+			</div>
+
+			<!-- 按钮组 -->
+			<div class="col-md-4 d-flex align-items-end">
+				<button type="submit" class="btn btn-outline-primary w-50">
+					<i class="bi bi-search"></i> 筛选
+				</button>
+				<a asp-page="Details" asp-route-id="@Model.TaskDetail.Id"
+				   class="btn btn-outline-secondary ms-2 w-50">
+					<i class="bi bi-arrow-clockwise"></i> 重置
+				</a>
+			</div>
+		</div>
+	</form>
+</div>
+
+<div class="table-responsive">
+	<div class="table-responsive">
+		<table class="table table-hover table-striped" style="table-layout: fixed;">
+			<thead class="bg-primary text-white">
+				<tr>
+					<th>序号</th>
+					<th>操作人员</th>
+					<th>操作状态</th>
+					<th>操作对象</th>
+					<th>操作类型</th>
+					<th>时间</th>
+					<th>操作内容</th>
+					<th>详情</th>
+				</tr>
+			</thead>
+			<tbody>
+				@foreach (var log in Model.ChangeLogs)
+				{
+					var operationContentFull = GetOperationContentFull(log);
+					var operationContent = GetOperationContent(log);
+					<tr>
+						<td>@log.Id</td>
+						<td>@log.OperatedByRealName</td>
+						<td>
+							<span class="badge @(log.OperationStatus == OperationStatus.成功 ? "bg-success" : "bg-danger")">
+								@log.OperationStatus
+							</span>
+						</td>
+						<td>@log.OperationTarget</td>
+						<td>
+							<span class="badge @GetOperationTypeBadge(log.OperationType)">
+								@log.OperationType
+							</span>
+						</td>
+						<td>@AppTime.ToBeijingTime(log.OperatedAt).ToString("yyyy-MM-dd HH:mm")</td>
+						<td class="content-preview" title="@operationContentFull">@operationContent</td>
+						<td>
+							<a asp-page="/OperationLogs/Details"
+							   asp-route-id="@log.Id"
+							   asp-route-Parameters.UserName="@Model.Parameters.UserName"
+							   asp-route-Parameters.ProjectName="@Model.Parameters.ProjectName"
+							   asp-route-Parameters.OperationTarget="@Model.Parameters.OperationTarget"
+							   asp-route-Parameters.OperationType="@Model.Parameters.OperationType"
+							   asp-route-Parameters.StartDate="@Model.Parameters.StartDate?.ToString("yyyy-MM-dd")"
+							   asp-route-Parameters.EndDate="@Model.Parameters.EndDate?.ToString("yyyy-MM-dd")"
+							   asp-route-Parameters.PageIndex="@Model.Parameters.PageIndex"
+							   class="btn btn-sm btn-info">详情</a>
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	</div>
+</div>
+
+@if (!Model.ChangeLogs.Any())
+{
+	<div class="alert alert-info text-center py-5">
+		<i class="bi bi-folder-open text-muted display-4"></i>
+		<h4 class="mt-3">暂无日志</h4>
+	</div>
+}
+
+<!-- 分页控件 - 只在有数据时显示 -->
+@if (Model.ChangeLogs.Any())
+{
+	<nav aria-label="分页导航" class="pagination-container">
+		<ul class="pagination justify-content-center">
+			<!-- 首页按钮 -->
+			<li class="page-item @(Model.ChangeLogs.PageIndex == 1 ? "disabled" : "")">
+				<a class="page-link"
+				   asp-route-Parameters.PageIndex="1"
+				   asp-route-Parameters.UserName="@Model.Parameters.UserName"
+				   asp-route-Parameters.ProjectName="@Model.Parameters.ProjectName"
+				   asp-route-Parameters.OperationTarget="@Model.Parameters.OperationTarget"
+				   asp-route-Parameters.OperationType="@Model.Parameters.OperationType"
+				   asp-route-Parameters.StartDate="@Model.Parameters.StartDate?.ToString("yyyy-MM-dd")"
+				   asp-route-Parameters.EndDate="@Model.Parameters.EndDate?.ToString("yyyy-MM-dd")"
+				   aria-label="首页">
+					<span aria-hidden="true">&laquo;</span>
+				</a>
+			</li>
+
+			<!-- 上一页按钮 -->
+			<li class="page-item @(Model.ChangeLogs.PageIndex == 1 ? "disabled" : "")">
+				<a class="page-link"
+				   asp-route-Parameters.PageIndex="@(Model.ChangeLogs.PageIndex - 1)"
+				   asp-route-Parameters.UserName="@Model.Parameters.UserName"
+				   asp-route-Parameters.ProjectName="@Model.Parameters.ProjectName"
+				   asp-route-Parameters.OperationTarget="@Model.Parameters.OperationTarget"
+				   asp-route-Parameters.OperationType="@Model.Parameters.OperationType"
+				   asp-route-Parameters.StartDate="@Model.Parameters.StartDate?.ToString("yyyy-MM-dd")"
+				   asp-route-Parameters.EndDate="@Model.Parameters.EndDate?.ToString("yyyy-MM-dd")"
+				   aria-label="上一页">
+					<span aria-hidden="true">&lsaquo;</span>
+				</a>
+			</li>
+
+			<!-- 当前页/总页数 -->
+			<li class="page-item active" aria-current="page">
+				<span class="page-link">
+					第 @Model.ChangeLogs.PageIndex 页 / 共 @Model.ChangeLogs.TotalPages 页
+				</span>
+			</li>
+
+			<!-- 下一页按钮 -->
+			<li class="page-item @(Model.ChangeLogs.PageIndex >= Model.ChangeLogs.TotalPages ? "disabled" : "")">
+				<a class="page-link"
+				   asp-route-Parameters.PageIndex="@(Model.ChangeLogs.PageIndex + 1)"
+				   asp-route-Parameters.UserName="@Model.Parameters.UserName"
+				   asp-route-Parameters.ProjectName="@Model.Parameters.ProjectName"
+				   asp-route-Parameters.OperationTarget="@Model.Parameters.OperationTarget"
+				   asp-route-Parameters.OperationType="@Model.Parameters.OperationType"
+				   asp-route-Parameters.StartDate="@Model.Parameters.StartDate?.ToString("yyyy-MM-dd")"
+				   asp-route-Parameters.EndDate="@Model.Parameters.EndDate?.ToString("yyyy-MM-dd")"
+				   aria-label="下一页">
+					<span aria-hidden="true">&rsaquo;</span>
+				</a>
+			</li>
+
+			<!-- 末页按钮 -->
+			<li class="page-item @(Model.ChangeLogs.PageIndex >= Model.ChangeLogs.TotalPages ? "disabled" : "")">
+				<a class="page-link"
+				   asp-route-Parameters.PageIndex="@Model.ChangeLogs.TotalPages"
+				   asp-route-Parameters.UserName="@Model.Parameters.UserName"
+				   asp-route-Parameters.ProjectName="@Model.Parameters.ProjectName"
+				   asp-route-Parameters.OperationTarget="@Model.Parameters.OperationTarget"
+				   asp-route-Parameters.OperationType="@Model.Parameters.OperationType"
+				   asp-route-Parameters.StartDate="@Model.Parameters.StartDate?.ToString("yyyy-MM-dd")"
+				   asp-route-Parameters.EndDate="@Model.Parameters.EndDate?.ToString("yyyy-MM-dd")"
+				   aria-label="末页">
+					<span aria-hidden="true">&raquo;</span>
+				</a>
+			</li>
+		</ul>
+	</nav>
+}
+
+*@
+
+@functions {
+	string GetOperationTypeBadge(OperationType type)
+	{
+		return type switch
+		{
+			OperationType.创建 => "bg-success",
+			OperationType.更新 => "bg-primary",
+			OperationType.删除 => "bg-danger",
+			OperationType.恢复 => "bg-info",
+
+			_ => "bg-secondary"
+		};
+	}
+
+	string GetOperationContent(ChangeLog log)
+	{
+		if (log.OperationType == OperationType.创建)
+		{
+			return $"新建: {FormatContentPreview(log.AfterContent)}";
+		}
+		else if (log.OperationType == OperationType.更新)
+		{
+			return $"更新: {FormatContentPreview(log.BeforeContent)} → {FormatContentPreview(log.AfterContent)}";
+		}
+		else if (log.OperationType == OperationType.删除)
+		{
+			return $"删除: {FormatContentPreview(log.BeforeContent)}";
+		}
+		else
+		{
+			return $"{log.OperationType}: {FormatContentPreview(log.AfterContent)}";
+		}
+	}
+
+	string FormatContentPreview(string? content)
+	{
+		if (string.IsNullOrEmpty(content))
+		{
+			return "-";
+		}
+
+		try
+		{
+			var jsonDoc = JsonDocument.Parse(content);
+			var jsonText = JsonSerializer.Serialize(jsonDoc.RootElement);
+			return jsonText.Length > 6 ? jsonText.Substring(0, 6) + "..." : jsonText;
+		}
+		catch
+		{
+			return content.Length > 6 ? content.Substring(0, 6) + "..." : content;
+		}
+	}
+
+	string FormatContentFull(string? content)
+	{
+		if (string.IsNullOrEmpty(content))
+		{
+			return "无内容";
+		}
+
+		try
+		{
+			var jsonDoc = JsonDocument.Parse(content);
+			return JsonSerializer.Serialize(jsonDoc.RootElement, new JsonSerializerOptions
+			{
+				WriteIndented = true,
+				Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+			});
+		}
+		catch
+		{
+			return content;
+		}
+	}
+
+	string GetOperationContentFull(ChangeLog log)
+	{
+		if (log.OperationType == OperationType.创建)
+		{
+			return $"新建内容:\n{FormatContentFull(log.AfterContent)}";
+		}
+		else if (log.OperationType == OperationType.更新)
+		{
+			return $"更新前:\n{FormatContentFull(log.BeforeContent)}\n\n更新后:\n{FormatContentFull(log.AfterContent)}";
+		}
+		else if (log.OperationType == OperationType.删除)
+		{
+			return $"删除内容:\n{FormatContentFull(log.BeforeContent)}";
+		}
+		else
+		{
+			return $"{log.OperationType}内容:\n{FormatContentFull(log.AfterContent)}";
+		}
+	}
+}
+
+@section Scripts {
+	<script src="~/js/task-assistance.js" asp-append-version="true" defer></script>
+	<script>
+		$(function() {
+			// 设置日期选择器的最大值为今天
+			$('input[type="date"]').attr('max', ToDoTime.todayInBeijing());
+
+			// 日期验证
+			$('form').submit(function() {
+				const startDateVal = $('#Parameters_StartDate').val();
+				const endDateVal = $('#Parameters_EndDate').val();
+				const today = ToDoTime.todayInBeijing();
+
+				if (startDateVal) {
+					if (startDateVal > today) {
+						alert('开始日期不能晚于今天');
+						return false;
+					}
+				}
+
+				if (endDateVal) {
+					if (endDateVal > today) {
+						alert('结束日期不能晚于今天');
+						return false;
+					}
+				}
+
+				if (startDateVal && endDateVal) {
+					if (endDateVal < startDateVal) {
+						alert('结束日期不能早于开始日期');
+						return false;
+					}
+				}
+
+				return true;
+			});
+		});
+	</script>
+}

@@ -1,0 +1,320 @@
+﻿@page
+@model ToDo.Razor.Pages.Reports.CreateModel
+@{
+    ViewData["Title"] = "新建项目日报";
+}
+
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-12">
+            <h1>新建项目日报</h1>
+            <hr />
+
+            <!-- 错误信息显示 -->
+            @if (!ViewData.ModelState.IsValid)
+            {
+                <div class="alert alert-danger mb-4">
+                    <strong>提交失败，请修正以下问题：</strong>
+                    <ul>
+                        @foreach (var error in ViewData.ModelState.Values.SelectMany(v => v.Errors))
+                        {
+                            <li>@error.ErrorMessage</li>
+                        }
+                    </ul>
+                </div>
+            }
+
+            <!-- 表单添加 enctype 支持文件上传 -->
+            <form method="post" enctype="multipart/form-data" onsubmit="return validateForm()">
+                <!-- 项目选择 -->
+                <div class="mb-3">
+                    <label asp-for="DailyReport.ProjectId" class="form-label fw-bold text-dark">项目</label>
+                    <select asp-for="DailyReport.ProjectId" asp-items="Model.ProjectOptions"
+                            class="form-select @(ViewData.ModelState.ContainsKey("DailyReport.ProjectId") ? "is-invalid" : "")"
+                            required id="projectSelect" onchange="updateDefaultTitle()">
+                        <option value="">请选择项目</option>
+                    </select>
+                    <span asp-validation-for="DailyReport.ProjectId" class="text-danger"></span>
+                </div>
+
+                <!-- 报告类型 -->
+                <div class="mb-3">
+                    <label asp-for="DailyReport.ReportType" class="form-label fw-bold text-dark">报告类型</label>
+                    <select asp-for="DailyReport.ReportType" asp-items="Model.ReportTypeOptions"
+                            class="form-select @(ViewData.ModelState.ContainsKey("DailyReport.ReportType") ? "is-invalid" : "")"
+                            required id="reportTypeSelect" onchange="updateDefaultTitle()">
+                    </select>
+                    <span asp-validation-for="DailyReport.ReportType" class="text-danger"></span>
+                </div>
+
+                <!-- 报告日期 -->
+                <div class="mb-3">
+                    <label asp-for="DailyReport.ReportDate" class="form-label fw-bold text-dark">报告日期</label>
+                    <input asp-for="DailyReport.ReportDate" type="date" class="form-control" required
+                           id="reportDate" onchange="updateDefaultTitle()"
+                           max="@AppTime.Today.ToString("yyyy-MM-dd")">
+                    <span asp-validation-for="DailyReport.ReportDate" class="text-danger"></span>
+                   
+                </div>
+
+                <!-- 报告标题 -->
+                <div class="mb-3">
+                    <label asp-for="DailyReport.ReportTitle" class="form-label fw-bold text-dark">报告标题</label>
+                    <input asp-for="DailyReport.ReportTitle" class="form-control" id="reportTitle"
+                           placeholder="系统将自动生成标题，可手动修改">
+                    <span asp-validation-for="DailyReport.ReportTitle" class="text-danger"></span>
+                </div>
+
+                <!-- Markdown编辑器和预览区 -->
+                <div class="mb-3">
+                    <label class="form-label fw-bold text-dark">报告内容（支持Markdown）</label>
+
+                    <!-- 工具栏 -->
+                    <div class="border rounded p-2 bg-light mb-2 d-flex flex-wrap gap-1">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="insertText('**', '**')">粗体 (Ctrl+B)</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="insertText('*', '*')">斜体 (Ctrl+I)</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="insertText('# ', '')">一级标题</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="insertText('## ', '')">二级标题</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="insertText('### ', '')">三级标题</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="insertText('- ', '')">无序列表</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="insertText('1. ', '')">有序列表</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="insertText('```\n', '\n```')">代码块</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="insertText('[链接文本](', ')')">链接</button>
+                    </div>
+
+                    <!-- 编辑和预览区域 -->
+                    <div class="row">
+                        <!-- 编辑区 -->
+                        <div class="col-md-6 mb-3">
+                            <div class="card h-100">
+                                <div class="card-header bg-light">编辑区</div>
+                                <div class="card-body p-0">
+                                    <textarea asp-for="DailyReport.ReportContent"
+                                              class="form-control border-0 rounded-0 h-100"
+                                              rows="15"
+                                              placeholder="输入Markdown内容..."
+                                              id="markdown-editor"
+                                              required></textarea>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 预览区 -->
+                        <div class="col-md-6 mb-3">
+                            <div class="card h-100">
+                                <div class="card-header bg-light">预览区</div>
+                                <div class="card-body overflow-auto" id="markdown-preview">
+                                    <div class="text-muted">实时预览将在这里显示...</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <span asp-validation-for="DailyReport.ReportContent" class="text-danger"></span>
+                    <div class="form-text mt-1">
+                        格式提示：**粗体**、*斜体*、# 标题、- 列表项、```代码块```
+                    </div>
+                </div>
+
+                <!-- 附件上传 -->
+                <div class="mb-3">
+                    <label class="form-label fw-bold text-dark">附件上传（可选）</label>
+                    <input type="file" name="Attachments" multiple class="form-control"
+                           accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.txt"
+                           id="attachmentInput">
+                    <div class="form-text mt-1">
+                        支持格式：pdf、doc、docx、xls、xlsx、ppt、pptx、jpg、png、txt，单个文件≤10MB，单次上传不超过5个文件
+                    </div>
+                    <div id="fileList" class="mt-2 d-flex flex-wrap gap-2"></div>
+                </div>
+
+                <div class="d-flex justify-content-between">
+                    <a asp-page="Index" class="btn btn-outline-secondary">返回列表</a>
+                    <button type="submit" class="btn btn-primary">保存项目日报</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <!-- 引入marked.js用于Markdown渲染 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js"></script>
+
+    <script>
+        // 初始化编辑器和预览
+        const editor = document.getElementById('markdown-editor');
+        const preview = document.getElementById('markdown-preview');
+        const reportTitleInput = document.getElementById('reportTitle');
+
+        // 实时预览
+        function updatePreview() {
+            const markdown = editor.value || '<div class="text-muted">实时预览将在这里显示...</div>';
+            preview.innerHTML = DOMPurify.sanitize(marked.parse(markdown));
+        }
+
+        // 初始加载和内容变化时更新预览
+        editor.addEventListener('input', updatePreview);
+        window.addEventListener('load', () => {
+            updatePreview();
+            // 设置当前日期为默认报告日期
+            const today = ToDoTime.todayInBeijing();
+            document.getElementById('reportDate').value = today;
+            document.getElementById('reportDate').setAttribute('max', today);
+            // 默认选中日报
+            document.getElementById('reportTypeSelect').value = "1";
+            // 生成默认标题
+            updateDefaultTitle();
+        });
+
+        // 插入Markdown语法
+        function insertText(prefix, suffix) {
+            const start = editor.selectionStart;
+            const end = editor.selectionEnd;
+            const selectedText = editor.value.substring(start, end);
+
+            // 插入语法标记
+            editor.value =
+                editor.value.substring(0, start) +
+                prefix + selectedText + suffix +
+                editor.value.substring(end);
+
+            // 移动光标到合适位置
+            const cursorPos = start + prefix.length + (selectedText ? selectedText.length : 0);
+            editor.focus();
+            editor.setSelectionRange(cursorPos, cursorPos);
+
+            // 更新预览
+            updatePreview();
+        }
+
+        // 快捷键支持
+        editor.addEventListener('keydown', (e) => {
+            // Ctrl+B 粗体
+            if (e.ctrlKey && e.key === 'b') {
+                e.preventDefault();
+                insertText('**', '**');
+            }
+            // Ctrl+I 斜体
+            if (e.ctrlKey && e.key === 'i') {
+                e.preventDefault();
+                insertText('*', '*');
+            }
+        });
+
+        // 附件处理
+        document.getElementById('attachmentInput').addEventListener('change', function(e) {
+            const fileList = document.getElementById('fileList');
+            fileList.innerHTML = '';
+
+            if (this.files.length === 0) return;
+
+            if (this.files.length > 5) {
+                alert('最多只能上传5个文件');
+                this.value = '';
+                return;
+            }
+
+            Array.from(this.files).forEach(file => {
+                if (file.size > 10 * 1024 * 1024) {
+                    alert(`文件「${file.name}」超过10MB限制`);
+                    this.value = '';
+                    fileList.innerHTML = '';
+                    return;
+                }
+
+                const fileItem = document.createElement('div');
+                fileItem.className = 'bg-light p-2 rounded d-flex align-items-center gap-2';
+                fileItem.innerHTML = `
+                    <i class="fas fa-file"></i>
+                    <span class="flex-grow-1">${file.name}</span>
+                    <span class="text-muted small">${(file.size / 1024).toFixed(1)}KB</span>
+                    <button type="button" class="btn btn-sm btn-danger" onclick="removeFile(this)">
+                        <i class="fas fa-times"></i>
+                    </button>
+                `;
+                fileList.appendChild(fileItem);
+            });
+        });
+
+        // 移除附件（前端临时移除）
+        function removeFile(button) {
+            button.closest('div').remove();
+        }
+
+        // 自动生成标题
+        function updateDefaultTitle() {
+            const projectSelect = document.getElementById('projectSelect');
+            const typeSelect = document.getElementById('reportTypeSelect');
+            const titleInput = document.getElementById('reportTitle');
+            const dateInput = document.getElementById('reportDate');
+            const userName = "@User.Identity?.Name";
+
+            if (!projectSelect.value || !typeSelect.value || !dateInput.value || !userName) {
+                return;
+            }
+
+            const projectName = projectSelect.options[projectSelect.selectedIndex].textContent;
+            const typeText = typeSelect.options[typeSelect.selectedIndex].textContent;
+            const formattedDate = dateInput.value.replace(/-/g, '');
+
+            // 只有当标题为空时才自动生成
+            if (!titleInput.value.trim()) {
+                titleInput.value = `${userName}_${formattedDate}_${projectName}_${typeText}`;
+            }
+        }
+
+        // 监听项目、类型和日期变化，更新标题
+        document.getElementById('projectSelect').addEventListener('change', updateDefaultTitle);
+        document.getElementById('reportTypeSelect').addEventListener('change', updateDefaultTitle);
+        document.getElementById('reportDate').addEventListener('change', updateDefaultTitle);
+
+        // 表单验证（新增标题验证）
+        function validateForm() {
+            const projectId = document.getElementById('projectSelect').value;
+            const content = editor.value.trim();
+            const reportDate = document.getElementById('reportDate').value;
+            const reportType = document.getElementById('reportTypeSelect').value;
+            const reportTitle = reportTitleInput.value.trim(); // 标题验证
+            const today = ToDoTime.todayInBeijing();
+
+            // 验证标题（新增）
+            if (!reportTitle) {
+                alert('报告标题不能为空 ');
+                reportTitleInput.focus();
+                return false;
+            }
+
+            // 验证日期是否超过今天
+            if (reportDate > today) {
+                alert("报告日期不能超过今天");
+                return false;
+            }
+
+            if (!projectId) {
+                alert("请选择项目");
+                return false;
+            }
+
+            if (!reportType) {
+                alert("请选择报告类型");
+                return false;
+            }
+
+            if (!content) {
+                alert("报告内容不能为空");
+                editor.focus();
+                return false;
+            }
+
+            if (!reportDate) {
+                alert("请选择报告日期");
+                return false;
+            }
+
+            return true;
+        }
+    </script>
+</div>
+}

@@ -1,0 +1,61 @@
+// Data/ApplicationDbContext.cs
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
+using ProjectManagement.Models;
+
+
+namespace ProjectManagement.Data
+{
+    public class ApplicationDbContext : IdentityDbContext
+    {
+        public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
+            : base(options)
+        {
+        }
+       
+        public DbSet<ChangeLog> 变更日志表 { get; set; }
+        public DbSet<ProjectManagement.Models.Task> 任务表 { get; set; }
+        public DbSet<Project> 项目表 { get; set; }
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+           
+            // 配置中文表和字段名
+            modelBuilder.Entity<ChangeLog>(entity =>
+            {
+                entity.ToTable("变更日志表");
+
+                // 配置索引
+                entity.HasIndex(c => c.Version, "IX_版本号").IsUnique();
+                entity.HasIndex(c => c.ReleaseDate, "IX_发布日期");
+
+                // 配置与Project的关系
+                entity.HasOne(c => c.关联项目)
+                    .WithMany(p => p.变更日志列表)
+                    .HasForeignKey(c => c.ProjectId)
+                    .OnDelete(DeleteBehavior.SetNull)
+                    .HasConstraintName("FK_变更日志_项目");
+
+                // 配置与Task的关系
+                entity.HasOne(c => c.关联任务)
+                    .WithMany(t => t.变更日志列表)
+                    .HasForeignKey(c => c.TaskId)
+                    .OnDelete(DeleteBehavior.SetNull)
+                    .HasConstraintName("FK_变更日志_任务");
+            });
+
+            modelBuilder.Entity<ProjectManagement.Models.Task>(entity =>
+            {
+                entity.ToTable("任务表");
+                entity.HasIndex(t => t.Title, "IX_任务标题");
+            });
+
+            modelBuilder.Entity<Project>(entity =>
+            {
+                entity.ToTable("项目表");
+                entity.HasIndex(p => p.Name, "IX_项目名称").IsUnique();
+            });
+        }
+    }
+}
