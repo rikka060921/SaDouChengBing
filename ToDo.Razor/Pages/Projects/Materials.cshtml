@@ -17,6 +17,7 @@
     <div class="card-header">上传新资料</div>
     <div class="card-body">
         <form method="post" enctype="multipart/form-data" asp-page-handler="Upload" id="uploadForm">
+            <fieldset disabled="@Model.IsReadOnly">
             <input type="hidden" asp-for="ProjectId" />
             <div class="row g-3 align-items-end">
                 <div class="col-md-3">
@@ -52,6 +53,7 @@
                     <button type="submit" class="btn btn-primary" onclick="return validateUploadForm()">上传资料</button>
                 </div>
             </div>
+            </fieldset>
         </form>
     </div>
 </div>
@@ -105,6 +107,7 @@
                             @if (Model.CanManageAgentPermissions)
                             {
                                 <form method="post" asp-page-handler="ChangeCategory" class="d-flex gap-1">
+                                    <fieldset disabled="@Model.IsReadOnly" class="d-flex gap-1">
                                     <input type="hidden" name="ProjectId" value="@Model.ProjectId" />
                                     <input type="hidden" name="id" value="@item.Id" />
                                     <select name="category" class="form-select form-select-sm" onchange="this.form.submit()">
@@ -125,7 +128,7 @@
                                             </optgroup>
                                         }
                                     </select>
-                                </form>
+                                </fieldset></form>
                             }
                             else
                             {

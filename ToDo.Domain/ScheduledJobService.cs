@@ -292,6 +292,8 @@ public class ScheduledJobService
 
     private async Task<string> RunJobAsync(ScheduledJob job, DateTime reportDate, CancellationToken cancellationToken)
     {
+        if (job.ProjectId.HasValue && !await _context.Project.AnyAsync(p => p.Id == job.ProjectId && !p.IsDeleted && p.Status == ProjectStatus.Active, cancellationToken))
+            return "项目已归档或删除，已跳过；不会补跑。";
         if (job.JobType == ScheduledJobType.PersonalDailySummary)
         {
             var result = await _personalSummaries.GenerateAllAsync(reportDate, cancellationToken);

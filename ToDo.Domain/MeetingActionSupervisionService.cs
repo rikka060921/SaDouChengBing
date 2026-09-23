@@ -51,7 +51,10 @@ public sealed class MeetingActionSupervisionService
             .Where(item => item.IsConfirmed
                 && item.MeetingMinutes != null
                 && !item.MeetingMinutes.IsDeleted
-                && !item.MeetingMinutes.Project.IsDeleted
+                && !item.MeetingMinutes.Project.IsDeleted && item.MeetingMinutes.Project.Status == ProjectStatus.Active
+                && (!item.ProjectId.HasValue || _context.Project.Any(p => p.Id == item.ProjectId && !p.IsDeleted && p.Status == ProjectStatus.Active))
+                && !_context.MeetingMinutesProjects.Any(link => link.MeetingMinutesId == item.MeetingMinutesId
+                    && _context.Project.Any(p => p.Id == link.ProjectId && (p.IsDeleted || p.Status == ProjectStatus.Archived)))
                 && item.MeetingMinutes.ConfirmedAt.HasValue);
         if (meetingMinutesId.HasValue)
             query = query.Where(item => item.MeetingMinutesId == meetingMinutesId.Value);

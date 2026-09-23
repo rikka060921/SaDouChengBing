@@ -69,6 +69,7 @@ public class MaterialsModel : PageModel
     public IReadOnlyList<AgentDefinition> Agents { get; set; } = Array.Empty<AgentDefinition>();
     public List<AgentDocumentPermission> AgentPermissions { get; set; } = new();
     public bool CanManageAgentPermissions { get; set; }
+    public bool IsReadOnly { get; set; }
     public List<(AgentDocumentPermission Permission, string AgentDisplayName, string CategoryDisplayName)> PermissionViewList { get; set; } = new();
     public string PresetCategoryNames { get; set; } = string.Empty;
     public Dictionary<int, bool> DocumentWritePermissions { get; set; } = new();
@@ -85,6 +86,8 @@ public class MaterialsModel : PageModel
 
     public async Task<IActionResult> OnPostUploadAsync()
     {
+        if (!await CanAccessAsync()) return Forbid();
+        await ProjectLifecycleRules.RequireActiveAsync(_context, ProjectId);
         if (!await CanAccessAsync()) return Forbid();
         if (UploadFile == null)
         {
@@ -203,6 +206,8 @@ public class MaterialsModel : PageModel
 
     public async Task<IActionResult> OnPostChangeCategoryAsync(int id, string category)
     {
+        if (!await CanAccessAsync()) return Forbid();
+        await ProjectLifecycleRules.RequireActiveAsync(_context, ProjectId);
         var user = await _userManager.GetUserAsync(User);
         if (user == null || !await CanManageAsync(user)) return Forbid();
         
@@ -299,6 +304,8 @@ public class MaterialsModel : PageModel
     public async Task<IActionResult> OnPostRollbackAsync(int versionId)
     {
         if (!await CanAccessAsync()) return Forbid();
+        await ProjectLifecycleRules.RequireActiveAsync(_context, ProjectId);
+        if (!await CanAccessAsync()) return Forbid();
         var user = await _userManager.GetUserAsync(User);
         if (user == null) return RedirectToPage("/Account/Login");
 
@@ -341,6 +348,8 @@ public class MaterialsModel : PageModel
 
     public async Task<IActionResult> OnPostAiReviseAsync(int documentId, string requirement)
     {
+        if (!await CanAccessAsync()) return Forbid();
+        await ProjectLifecycleRules.RequireActiveAsync(_context, ProjectId);
         if (!await CanAccessAsync()) return Forbid();
         var user = await _userManager.GetUserAsync(User);
         if (user == null) return RedirectToPage("/Account/Login");
@@ -420,6 +429,8 @@ public class MaterialsModel : PageModel
 
     public async Task<IActionResult> OnPostAuditDraftAsync(int draftId, string action)
     {
+        if (!await CanAccessAsync()) return Forbid();
+        await ProjectLifecycleRules.RequireActiveAsync(_context, ProjectId);
         if (!await CanAccessAsync()) return Forbid();
         var user = await _userManager.GetUserAsync(User);
         if (user == null) return RedirectToPage("/Account/Login");
@@ -593,6 +604,8 @@ public class MaterialsModel : PageModel
 
     public async Task<IActionResult> OnPostAddCustomCategoryAsync(string name)
     {
+        if (!await CanAccessAsync()) return Forbid();
+        await ProjectLifecycleRules.RequireActiveAsync(_context, ProjectId);
         var user = await _userManager.GetUserAsync(User);
         if (user == null || !await CanManageAsync(user)) return Forbid();
         try
@@ -617,6 +630,8 @@ public class MaterialsModel : PageModel
 
     public async Task<IActionResult> OnPostDeleteCategoryAsync(int id)
     {
+        if (!await CanAccessAsync()) return Forbid();
+        await ProjectLifecycleRules.RequireActiveAsync(_context, ProjectId);
         var user = await _userManager.GetUserAsync(User);
         if (user == null || !await CanManageAsync(user)) return Forbid();
         try
@@ -665,6 +680,7 @@ public class MaterialsModel : PageModel
     {
         var user = await _userManager.GetUserAsync(User);
         ProjectName = await _context.Project.Where(p => p.Id == ProjectId && !p.IsDeleted).Select(p => p.Name).FirstOrDefaultAsync() ?? string.Empty;
+        IsReadOnly = !await _context.Project.AnyAsync(p => p.Id == ProjectId && !p.IsDeleted && p.Status == ProjectStatus.Active);
         Documents = await _documents.GetDocumentsAsync(ProjectId);
         ProjectCategories = await _categories.GetCategoriesAsync(ProjectId);
 

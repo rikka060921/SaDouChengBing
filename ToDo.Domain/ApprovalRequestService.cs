@@ -385,6 +385,7 @@ public class ApprovalRequestService
     private async Task<string> ExecuteAsync(ApprovalRequest request, int reviewerId, CancellationToken cancellationToken)
     {
         EnsurePayloadIntegrity(request);
+        await ProjectLifecycleRules.RequireActiveAsync(_context, request.ProjectId, cancellationToken);
         if (request.ActionType == RedBlueDecisionDocument)
         {
             var payload = JsonSerializer.Deserialize<GeneratedDocumentPayload>(request.PayloadJson)
@@ -519,7 +520,8 @@ public class ApprovalRequestService
             {
                 if (!Enum.TryParse<ProjectStatus>(payload.Status, true, out var status))
                     throw new InvalidOperationException("项目状态无效，只能是 Active 或 Archived");
-                project.Status = status;
+                if (status != project.Status)
+                    throw new InvalidOperationException("请从项目列表执行归档或恢复，以检查未结束的工作并确认影响。");
             }
             // Project 的 CreatedAt/UpdatedAt 统一按 UTC 保存，显示时再转北京时间。
             project.UpdatedAt = DateTime.UtcNow;

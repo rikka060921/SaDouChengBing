@@ -86,6 +86,7 @@ public class ProjectDocumentService
         var safeName = Path.GetFileName(file.FileName);
         if (string.IsNullOrWhiteSpace(safeName)) throw new InvalidOperationException("文件名无效");
 
+        await ProjectLifecycleRules.RequireActiveAsync(_context, projectId, cancellationToken);
         var uploadRoot = GetSecureUploadRoot(projectId);
         Directory.CreateDirectory(uploadRoot);
         var storageName = $"{Guid.NewGuid():N}_{safeName}";
@@ -143,6 +144,7 @@ public class ProjectDocumentService
         var safeName = Path.GetFileName(file.FileName);
         if (string.IsNullOrWhiteSpace(safeName)) throw new InvalidOperationException("文件名无效");
 
+        await ProjectLifecycleRules.RequireActiveAsync(_context, projectId, cancellationToken);
         var uploadRoot = GetSecureUploadRoot(projectId);
         Directory.CreateDirectory(uploadRoot);
         var storageName = $"{Guid.NewGuid():N}_{safeName}";
@@ -209,6 +211,7 @@ public class ProjectDocumentService
         var bytes = Encoding.UTF8.GetBytes(content);
         if (bytes.Length > 2 * 1024 * 1024) throw new InvalidOperationException("生成资料不能超过 2 MB");
 
+        await ProjectLifecycleRules.RequireActiveAsync(_context, projectId, cancellationToken);
         var uploadRoot = GetSecureUploadRoot(projectId);
         Directory.CreateDirectory(uploadRoot);
         var storageName = $"{Guid.NewGuid():N}_{safeName}";
@@ -262,6 +265,7 @@ public class ProjectDocumentService
         if (string.IsNullOrWhiteSpace(safeName)) throw new InvalidOperationException("草稿文件名无效");
         var bytes = Encoding.UTF8.GetBytes(content ?? string.Empty);
         if (bytes.Length > 2 * 1024 * 1024) throw new InvalidOperationException("草稿不能超过 2 MB");
+        await ProjectLifecycleRules.RequireActiveAsync(_context, projectId, cancellationToken);
         var root = Path.Combine(GetSecureUploadRoot(projectId), "drafts");
         Directory.CreateDirectory(root);
         var storageName = $"{Guid.NewGuid():N}_{safeName}";

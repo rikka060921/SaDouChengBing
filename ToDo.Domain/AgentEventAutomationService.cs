@@ -204,7 +204,7 @@ public sealed class AgentEventAutomationService
                 .SetProperty(item => item.ErrorMessage, "事件分发中断，已恢复等待处理"), cancellationToken);
 
         var stale = await _context.AgentEventExecutions
-            .Where(item => item.Status == AgentEventExecutionStatus.Running
+            .Where(item => (!item.ProjectId.HasValue || _context.Project.Any(p => p.Id == item.ProjectId && !p.IsDeleted && p.Status == ProjectStatus.Active)) && item.Status == AgentEventExecutionStatus.Running
                 && item.LockedAt.HasValue
                 && item.LockedAt < staleBefore)
             .Take(20)
@@ -225,7 +225,7 @@ public sealed class AgentEventAutomationService
     public async Task ResumeResolvedApprovalsAsync(CancellationToken cancellationToken = default)
     {
         var items = await _context.AgentEventExecutions
-            .Where(item => item.Status == AgentEventExecutionStatus.WaitingApproval && item.AiSessionId.HasValue)
+            .Where(item => (!item.ProjectId.HasValue || _context.Project.Any(p => p.Id == item.ProjectId && !p.IsDeleted && p.Status == ProjectStatus.Active)) && item.Status == AgentEventExecutionStatus.WaitingApproval && item.AiSessionId.HasValue)
             .OrderBy(item => item.UpdatedAt)
             .Take(20)
             .ToListAsync(cancellationToken);
@@ -247,7 +247,7 @@ public sealed class AgentEventAutomationService
     {
         var now = AppTime.Now;
         var id = await _context.AgentEventExecutions.AsNoTracking()
-            .Where(item => (item.Status == AgentEventExecutionStatus.Pending || item.Status == AgentEventExecutionStatus.Retrying)
+            .Where(item => (!item.ProjectId.HasValue || _context.Project.Any(p => p.Id == item.ProjectId && !p.IsDeleted && p.Status == ProjectStatus.Active)) && (item.Status == AgentEventExecutionStatus.Pending || item.Status == AgentEventExecutionStatus.Retrying)
                 && item.NextRunAt <= now
                 && item.AttemptCount < item.MaxAttempts)
             .OrderBy(item => item.NextRunAt)
@@ -257,7 +257,7 @@ public sealed class AgentEventAutomationService
         if (!id.HasValue) return null;
 
         var affected = await _context.AgentEventExecutions
-            .Where(item => item.Id == id
+            .Where(item => (!item.ProjectId.HasValue || _context.Project.Any(p => p.Id == item.ProjectId && !p.IsDeleted && p.Status == ProjectStatus.Active)) && item.Id == id
                 && (item.Status == AgentEventExecutionStatus.Pending || item.Status == AgentEventExecutionStatus.Retrying)
                 && item.NextRunAt <= now
                 && item.AttemptCount < item.MaxAttempts)
@@ -287,6 +287,11 @@ public sealed class AgentEventAutomationService
             .Include(execution => execution.RequestedByUser)
             .FirstOrDefaultAsync(execution => execution.Id == executionId, cancellationToken);
         if (item == null || item.Status != AgentEventExecutionStatus.Running) return;
+        if (item.ProjectId.HasValue && !await _context.Project.AnyAsync(p => p.Id == item.ProjectId && !p.IsDeleted && p.Status == ProjectStatus.Active, cancellationToken))
+        {
+            await MarkSkippedAsync(item, ProjectLifecycleRules.ReadOnlyMessage, cancellationToken);
+            return;
+        }
 
         try
         {
@@ -409,7 +414,15 @@ public sealed class AgentEventAutomationService
 
                 var status = AgentEventExecutionStatus.Pending;
                 var error = string.Empty;
-                if (rule.AgentDefinition?.IsEnabled != true)
+                if (eventProjectId.HasValue &&
+                    (!await _context.Project.AnyAsync(p => p.Id == eventProjectId && !p.IsDeleted && p.Status == ProjectStatus.Active, cancellationToken)
+                     || await _context.ProjectActivityRecords.AnyAsync(a => a.ProjectId == eventProjectId
+                         && a.FieldName == "AutomationResumeBoundary" && a.OccurredAt >= message.CreatedAt, cancellationToken)))
+                {
+                    status = AgentEventExecutionStatus.Skipped;
+                    error = "项目已归档，或事件早于最近恢复时间；不补跑。";
+                }
+                else if (rule.AgentDefinition?.IsEnabled != true)
                 {
                     status = AgentEventExecutionStatus.Skipped;
                     error = "Agent 已停用或不存在";

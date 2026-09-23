@@ -934,17 +934,20 @@ namespace ToDo.Context
         }
 
         public override int SaveChanges(bool acceptAllChangesOnSuccess)
-        {
-            PrepareTaskConcurrencyVersions();
-            CaptureProjectActivityRecords();
-            return base.SaveChanges(acceptAllChangesOnSuccess);
-        }
+            => SaveChangesAsync(acceptAllChangesOnSuccess).GetAwaiter().GetResult();
 
-        public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+        public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
         {
+            // MySQL row locks protect the archive/write boundary until the actual save commits.
+            await using var ownedTransaction = Database.CurrentTransaction == null &&
+                Database.ProviderName?.Contains("MySql", StringComparison.OrdinalIgnoreCase) == true
+                ? await Database.BeginTransactionAsync(cancellationToken) : null;
+            await ProjectWriteGuard.ValidateAsync(this, cancellationToken);
             PrepareTaskConcurrencyVersions();
             CaptureProjectActivityRecords();
-            return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+            var count = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+            if (ownedTransaction != null) await ownedTransaction.CommitAsync(cancellationToken);
+            return count;
         }
 
         private void PrepareTaskConcurrencyVersions()

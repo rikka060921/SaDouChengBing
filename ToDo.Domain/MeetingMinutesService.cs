@@ -204,7 +204,7 @@ namespace ToDo.Domain
         #endregion
 
         #region 创建相关
-        public async Task<List<DomainSelectListItem>> GetAccessibleProjects(ApplicationUser currentUser)
+        public async Task<List<DomainSelectListItem>> GetAccessibleProjects(ApplicationUser currentUser, bool activeOnly = false)
         {
             if (currentUser == null) return new List<DomainSelectListItem>();
 
@@ -212,14 +212,14 @@ namespace ToDo.Domain
             if (isSystemAdmin)
             {
                 return await _context.Project
-                    .Where(p => !p.IsDeleted)
+                    .Where(p => !p.IsDeleted && (!activeOnly || p.Status == ProjectStatus.Active))
                     .OrderBy(p => p.Name)
-                    .Select(p => new DomainSelectListItem(p.Name, p.Id.ToString()))
+                    .Select(p => new DomainSelectListItem(p.Name + (p.Status == ProjectStatus.Archived ? "（已归档）" : ""), p.Id.ToString()))
                     .ToListAsync();
             }
 
             return await _context.Project
-                .Where(p => !p.IsDeleted
+                .Where(p => !p.IsDeleted && (!activeOnly || p.Status == ProjectStatus.Active)
                             && (p.LeaderUserId == currentUser.Id
                                 || _context.ProjectUsers.Any(pu => pu.ProjectId == p.Id
                                     && pu.UserId == currentUser.Id
@@ -227,12 +227,13 @@ namespace ToDo.Domain
                                         || pu.ProjectRole == (int)ProjectRole.Admin)))
                 )
                 .OrderBy(p => p.Name)
-                .Select(p => new DomainSelectListItem(p.Name, p.Id.ToString()))
+                .Select(p => new DomainSelectListItem(p.Name + (p.Status == ProjectStatus.Archived ? "（已归档）" : ""), p.Id.ToString()))
                 .ToListAsync();
         }
 
         public async Task<(bool HasPermission, string ErrorMessage)> CheckCreatePermission(ApplicationUser user, Project project)
         {
+            if (project.IsDeleted || project.Status != ProjectStatus.Active) return (false, ProjectLifecycleRules.ReadOnlyMessage);
             bool isSystemAdmin = user.Role == UserRole.systemAdmin;
             bool isProjectAdmin = await _context.ProjectUsers
                 .AnyAsync(pu => pu.ProjectId == project.Id && pu.UserId == user.Id && pu.ProjectRole == (int)ProjectRole.Admin);
@@ -478,6 +479,8 @@ namespace ToDo.Domain
 
         public async Task SaveMeetingMinutes(MeetingMinutes meetingMinutes, List<IFormFile> attachments, string webRootPath, ApplicationUser currentUser)
         {
+            foreach (var projectId in meetingMinutes.MeetingProjects.Select(p => p.ProjectId).Append(meetingMinutes.ProjectId).Distinct())
+                await ProjectLifecycleRules.RequireActiveAsync(_context, projectId);
             ValidateAttachments(attachments);
             var writtenFiles = new List<string>();
             using var transaction = await _context.Database.BeginTransactionAsync();
@@ -658,6 +661,13 @@ namespace ToDo.Domain
                 return Task.FromResult(false);
             }
 
+            if (_context.Project.AsNoTracking().Any(p => p.Id == original.ProjectId && (p.IsDeleted || p.Status == ProjectStatus.Archived))
+                || _context.MeetingMinutesProjects.Any(link => link.MeetingMinutesId == original.Id
+                    && _context.Project.Any(p => p.Id == link.ProjectId && (p.IsDeleted || p.Status == ProjectStatus.Archived))))
+            {
+                errorMsg = ProjectLifecycleRules.ReadOnlyMessage;
+                return Task.FromResult(false);
+            }
             if (AppTime.Now > original.CreatedAt.AddHours(EditWindowHours))
             {
                 errorMsg = $"会议纪要创建已超过{EditWindowHours}小时，任何人都无法再编辑";

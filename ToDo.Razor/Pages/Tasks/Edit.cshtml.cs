@@ -412,6 +412,7 @@ public class EditModel : PageModel
 
     private async Task<bool> CanEditTaskAsync(int projectId, int userId, int? taskId)
     {
+        if (!await _dbcontext.Project.AnyAsync(p => p.Id == projectId && !p.IsDeleted && p.Status == ProjectStatus.Active)) return false;
         var role = await _dbcontext.Users.AsNoTracking()
             .Where(item => item.Id == userId)
             .Select(item => (UserRole?)item.Role)

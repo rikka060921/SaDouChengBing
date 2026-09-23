@@ -95,7 +95,7 @@ public class CreateModel : PageModel
             MeetingMinutes.ProjectIds = new List<int> { ProjectId.Value };
             MeetingMinutes.ProjectId = ProjectId.Value;
         }
-        var accessibleProjectIds = (await _service.GetAccessibleProjects(user))
+        var accessibleProjectIds = (await _service.GetAccessibleProjects(user, activeOnly: true))
             .Select(p => int.Parse(p.Value)).ToList();
         var allDrafts = await _context.MeetingPrepDrafts.AsNoTracking()
             .Where(d => !d.IsDeleted && d.Status == MeetingPrepDraftStatus.Draft)
@@ -321,19 +321,10 @@ public class CreateModel : PageModel
             TencentRecordFileIds = tencentRecordIds
         };
 
-        await _service.SaveMeetingMinutes(entity, Attachments, _webHostEnv.WebRootPath, user);
-
-        // ===== 多项目改造：写入关联表 =====
+        // Save the meeting and all project links in the service's single transaction.
         foreach (var pid in selectedProjectIds)
-        {
-            _context.MeetingMinutesProjects.Add(new MeetingMinutesProject
-            {
-                MeetingMinutesId = entity.Id,
-                ProjectId = pid,
-                IsPrimary = pid == entity.ProjectId
-            });
-        }
-        await _context.SaveChangesAsync();
+            entity.MeetingProjects.Add(new MeetingMinutesProject { ProjectId = pid, IsPrimary = pid == entity.ProjectId });
+        await _service.SaveMeetingMinutes(entity, Attachments, _webHostEnv.WebRootPath, user);
 
         await _eventBus.PublishAsync(
             entity.IsDraft ? "meeting-minutes.draft-created" : "meeting-minutes.published",
@@ -376,7 +367,7 @@ public class CreateModel : PageModel
 
     private async Task LoadProjectOptionsAsync(ApplicationUser user)
     {
-        ProjectOptions = (await _service.GetAccessibleProjects(user))
+        ProjectOptions = (await _service.GetAccessibleProjects(user, activeOnly: true))
             .Select(item => new SelectListItem(item.Text, item.Value)).ToList();
     }
 

@@ -106,8 +106,8 @@ public class DetailsModel : PageModel
         ProjectRole = userId.HasValue && await _dbcontext.ProjectUsers.AnyAsync(item => item.ProjectId == TaskDetail.ProjectId && item.UserId == userId && item.ProjectRole == 0);
         var isProjectLeader = userId.HasValue && TaskDetail.Project?.LeaderUserId == userId.Value;
         var isSystemAdmin = currentUser.Role == UserRole.systemAdmin;
-        CanEdit = ProjectRole || isProjectLeader || isSystemAdmin || (userId.HasValue && TaskDetail.CreatorId == userId);
-        CanReview = TaskReviewService.CanReviewTask(TaskDetail, currentUser, ProjectRole || isProjectLeader || isSystemAdmin);
+        CanEdit = TaskDetail.Project?.Status == ProjectStatus.Active && (ProjectRole || isProjectLeader || isSystemAdmin || (userId.HasValue && TaskDetail.CreatorId == userId));
+        CanReview = TaskDetail.Project?.Status == ProjectStatus.Active && TaskReviewService.CanReviewTask(TaskDetail, currentUser, ProjectRole || isProjectLeader || isSystemAdmin);
         CanUpdateProgress = await new TaskProgressService(_dbcontext).CanUpdateAsync(id, currentUser.Id, HttpContext.RequestAborted);
         ExecutionProgress = TaskDetail.Progress;
         ExpectedTaskVersion = TaskDetail.ConcurrencyVersion;

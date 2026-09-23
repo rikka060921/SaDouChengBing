@@ -253,7 +253,7 @@ namespace ToDo.Razor.Pages.Reports
             if (currentUser == null) return;
 
             // 加载项目选项
-            var domainProjects = await _service.GetAccessibleProjects(currentUser);
+            var domainProjects = await _service.GetAccessibleProjects(currentUser, activeOnly: true);
             ProjectOptions = domainProjects
                 .Select(p => new SelectListItem(p.Text, p.Value))
                 .ToList();

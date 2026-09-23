@@ -181,7 +181,7 @@ public class AgentToolService
                     && !user.IsDeleted && user.Status == UserStatus.Active, cancellationToken))
                     throw new UnauthorizedAccessException("用户已停用，搜索请求未发送");
                 var projectId = session.ProjectId ?? throw new InvalidOperationException("联网搜索必须关联项目");
-                await EnsureProjectAccessAsync(projectId, userId, cancellationToken);
+                await EnsureProjectAccessAsync(projectId, userId, cancellationToken, requireActive: false);
                 // 即使旧版本快照保留搜索权限，管理员撤销当前权限也立即阻止外发。
                 if (!await _context.AgentToolPermissions.AsNoTracking().AnyAsync(permission =>
                     permission.AgentDefinition != null && permission.AgentDefinition.AgentKey == session.AgentKey
@@ -485,10 +485,11 @@ public class AgentToolService
         await _sessions.AddToolMessageAsync(session, call.ToolName, $"高风险操作已创建人工审批请求 #{request.Id}，审批前不会执行写入");
     }
 
-    private async Task EnsureProjectAccessAsync(int projectId, int userId, CancellationToken cancellationToken)
+    private async Task EnsureProjectAccessAsync(int projectId, int userId, CancellationToken cancellationToken, bool requireActive = true)
     {
         var user = await _context.Users.AsNoTracking().FirstOrDefaultAsync(item => item.Id == userId, cancellationToken)
             ?? throw new UnauthorizedAccessException("用户不存在");
+        if (requireActive) await ProjectLifecycleRules.RequireActiveAsync(_context, projectId, cancellationToken);
         if (user.Role == UserRole.systemAdmin) return;
         var allowed = await _context.Project.AsNoTracking().AnyAsync(project => project.Id == projectId
             && !project.IsDeleted

@@ -1,3 +1,6 @@
+@using Microsoft.EntityFrameworkCore
+@using ToDo.Entities
+@inject ToDo.Context.ApplicationDbContext ProjectNavContext
 @{
     var projectId = Convert.ToInt32(ViewData["ProjectId"] ?? 0);
     var activeSection = ViewData["ProjectSection"]?.ToString() ?? string.Empty;
@@ -5,6 +8,13 @@
 
 @if (projectId > 0)
 {
+    @if (await ProjectNavContext.Project.AsNoTracking().AnyAsync(p => p.Id == projectId && p.Status == ProjectStatus.Archived && !p.IsDeleted))
+    {
+        <div class="alert alert-secondary" role="status">
+            项目已归档：历史任务、会议、资料与记录仍可查看，业务内容只读。
+            <a asp-page="/Projects/Index" asp-route-View="archived">前往归档列表</a>，有管理权限的成员可恢复项目。
+        </div>
+    }
     <nav class="project-nav" aria-label="项目导航">
         <a class="@(activeSection == "overview" ? "active" : "")" asp-page="/Projects/Details" asp-route-id="@projectId"><i class="bi bi-grid-1x2"></i>项目概览</a>
         <a class="@(activeSection == "tasks" ? "active" : "")" asp-page="/Tasks/Index" asp-route-projectId="@projectId"><i class="bi bi-check2-square"></i>任务</a>

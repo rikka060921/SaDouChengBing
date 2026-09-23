@@ -66,7 +66,7 @@ public class MeetingPreparationModel : PageModel
             // 加载可访问项目列表（口径与任务列表页一致：负责人或项目成员）
             var accessibleIds = await GetAccessibleProjectIdsAsync(user);
             AvailableProjects = await _context.Project.AsNoTracking()
-                .Where(p => !p.IsDeleted && accessibleIds.Contains(p.Id))
+                .Where(p => !p.IsDeleted && p.Status == ProjectStatus.Active && accessibleIds.Contains(p.Id))
                 .OrderBy(p => p.Name)
                 .Select(p => new ProjectOption { Id = p.Id, Name = p.Name })
                 .ToListAsync();
@@ -88,6 +88,11 @@ public class MeetingPreparationModel : PageModel
 
                 SelectedProjectIds = JsonSerializer.Deserialize<List<int>>(draft.SelectedProjectIdsJson) ?? new();
                 SelectedTaskIds = JsonSerializer.Deserialize<List<int>>(draft.SelectedTaskIdsJson) ?? new();
+                IsReadOnly |= await _context.Project.AnyAsync(p => SelectedProjectIds.Contains(p.Id) && p.Status == ProjectStatus.Archived);
+                if (IsReadOnly)
+                    AvailableProjects = await _context.Project.AsNoTracking()
+                        .Where(p => accessibleIds.Contains(p.Id) && SelectedProjectIds.Contains(p.Id) && !p.IsDeleted)
+                        .Select(p => new ProjectOption { Id = p.Id, Name = p.Name + (p.Status == ProjectStatus.Archived ? "（已归档）" : "") }).ToListAsync();
             }
             else
             {

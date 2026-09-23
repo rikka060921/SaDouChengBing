@@ -393,7 +393,8 @@ public class AgentDispatchService
     // 后台保留原发起人，不自动借用管理员身份接管其任务。
     private IQueryable<ToDoTask> GetDispatchableTasks(int? requestedByUserId = null)
         => _context.ToDoTasks.Where(task => !task.IsDeleted
-            && _context.Project.Any(project => project.Id == task.ProjectId && !project.IsDeleted
+            && !_context.ProjectActivityRecords.Any(a => a.ProjectId == task.ProjectId && a.FieldName == "AutomationResumeBoundary" && a.OccurredAt >= task.UpdatedAt)
+            && _context.Project.Any(project => project.Id == task.ProjectId && !project.IsDeleted && project.Status == ProjectStatus.Active
                 && _context.Users.Any(user => user.Id == (requestedByUserId
                         ?? (task.CreatorId > 0 ? task.CreatorId : project.LeaderUserId))
                     && !user.IsDeleted && user.Status == UserStatus.Active

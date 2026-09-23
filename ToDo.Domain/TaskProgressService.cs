@@ -12,7 +12,7 @@ public sealed class TaskProgressService(ApplicationDbContext context)
         !task.IsDeleted && !task.IsCompleted && task.AssigneeType == TaskAssigneeType.Human
         && (task.Status == TaskStatus.NotStarted || task.Status == TaskStatus.InProgress)
         && (task.AssigneeId == userId || (!task.AssigneeId.HasValue && task.ClaimerId == userId))
-        && task.Project != null && !task.Project.IsDeleted
+        && task.Project != null && !task.Project.IsDeleted && task.Project.Status == ProjectStatus.Active
         && context.Users.Any(user => user.Id == userId && !user.IsDeleted && user.Status == UserStatus.Active
             && (user.Role == UserRole.systemAdmin || task.Project.LeaderUserId == userId
                 || context.ProjectUsers.Any(member => member.ProjectId == task.ProjectId && member.UserId == userId))));

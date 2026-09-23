@@ -228,6 +228,7 @@ builder.Services.AddRateLimiter(options =>
 
 builder.Services.AddRazorPages(options =>
 {
+    options.Conventions.ConfigureFilter(new ToDo.Razor.Filters.ProjectReadOnlyExceptionFilter());
     options.Conventions.AuthorizeFolder("/");
     options.Conventions.AllowAnonymousToPage("/Account/Login");
     options.Conventions.AllowAnonymousToPage("/Account/Lockout");

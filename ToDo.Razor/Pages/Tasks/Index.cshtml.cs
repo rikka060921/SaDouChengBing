@@ -138,9 +138,10 @@ public class IndexModel : PageModel
                 .Select(item => item.ProjectId)
                 .ToListAsync());
         }
+        var activeProjectIds = await _dbcontext.Project.Where(p => accessibleProjectIds.Contains(p.Id) && p.Status == ProjectStatus.Active).Select(p => p.Id).ToListAsync();
         foreach (var task in Tasks)
         {
-            TaskIdToCanEdit[task.Id] = managedProjectIds.Contains(task.ProjectId) || task.CreatorId == userId;
+            TaskIdToCanEdit[task.Id] = activeProjectIds.Contains(task.ProjectId) && (managedProjectIds.Contains(task.ProjectId) || task.CreatorId == userId);
         }
 
         var groups = ProjectId.HasValue
@@ -230,6 +231,7 @@ public class IndexModel : PageModel
 
     private async Task<bool> CanManageProjectAsync(int projectId, int userId)
     {
+        if (!await _dbcontext.Project.AnyAsync(p => p.Id == projectId && !p.IsDeleted && p.Status == ProjectStatus.Active)) return false;
         if (User.IsInRole(nameof(UserRole.systemAdmin))) return true;
         if (await _dbcontext.Project.AsNoTracking().AnyAsync(project =>
             project.Id == projectId && !project.IsDeleted && project.LeaderUserId == userId)) return true;

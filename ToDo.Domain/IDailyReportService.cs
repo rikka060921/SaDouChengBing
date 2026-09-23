@@ -8,7 +8,7 @@ namespace ToDo.Domain
     public interface IDailyReportService
     {
         // 创建相关
-        Task<List<DomainSelectListItem>> GetAccessibleProjects(ApplicationUser currentUser);
+        Task<List<DomainSelectListItem>> GetAccessibleProjects(ApplicationUser currentUser, bool activeOnly = false);
         Task<bool> CanAccessProjectAsync(int projectId, ApplicationUser currentUser);
         Task<bool> CanAccessReportAsync(int reportId, ApplicationUser currentUser);
         Task<Project?> GetDailyReportProject(int projectId);

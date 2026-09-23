@@ -9,7 +9,7 @@ namespace ToDo.Domain
     public interface IMeetingMinutesService
     {
         // 创建相关
-        Task<List<DomainSelectListItem>> GetAccessibleProjects(ApplicationUser currentUser);
+        Task<List<DomainSelectListItem>> GetAccessibleProjects(ApplicationUser currentUser, bool activeOnly = false);
         Task<(bool HasPermission, string ErrorMessage)> CheckCreatePermission(ApplicationUser user, Project project);
         Task<MeetingBriefing?> GetMeetingBriefingAsync(int projectId, ApplicationUser currentUser);
         Task<bool> CanAccessMeetingAsync(MeetingMinutes meeting, ApplicationUser currentUser);

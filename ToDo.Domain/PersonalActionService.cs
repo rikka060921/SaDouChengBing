@@ -28,6 +28,7 @@ public sealed class PersonalActionService(ApplicationDbContext context, Approval
                 || context.ProjectUsers.Any(m => m.ProjectId == p.Id && m.UserId == user.Id)))
             .ToListAsync(ct);
         var projectIds = projects.Select(p => p.Id).ToList();
+        var activeIds = projects.Where(p => p.Status == ProjectStatus.Active).Select(p => p.Id).ToHashSet();
         var adminIds = await context.ProjectUsers.AsNoTracking()
             .Where(m => projectIds.Contains(m.ProjectId) && m.UserId == user.Id && m.ProjectRole == (int)ProjectRole.Admin)
             .Select(m => m.ProjectId).ToListAsync(ct);
@@ -87,7 +88,7 @@ public sealed class PersonalActionService(ApplicationDbContext context, Approval
 
         var receipts = await context.AgentDeliveryReceipts.AsNoTracking().Where(r => taskIds.Contains(r.TaskId))
             .OrderByDescending(r => r.Id).ToListAsync(ct);
-        foreach (var task in tasks.Where(t => t.AssigneeType == TaskAssigneeType.Human
+        foreach (var task in tasks.Where(t => activeIds.Contains(t.ProjectId) && t.AssigneeType == TaskAssigneeType.Human
             && t.Status == TaskStatus.InProgress && t.ReworkCount > 0
             && (t.AssigneeId == user.Id || (t.AssigneeId == null && t.CreatorId == user.Id))))
             TaskSignal(task, $"成果被打回返工，请按审核意见修改后重新提交（累计 {task.ReworkCount} 次）。",
@@ -124,7 +125,10 @@ public sealed class PersonalActionService(ApplicationDbContext context, Approval
 
         var actions = await context.MeetingActionItems.AsNoTracking().Include(a => a.MeetingMinutes)
             .Where(a => a.MeetingMinutes != null && !a.MeetingMinutes.IsDeleted
-                && projectIds.Contains(a.MeetingMinutes.ProjectId)).ToListAsync(ct);
+                && activeIds.Contains(a.MeetingMinutes.ProjectId)
+                && (!a.ProjectId.HasValue || activeIds.Contains(a.ProjectId.Value))
+                && !context.MeetingMinutesProjects.Any(link => link.MeetingMinutesId == a.MeetingMinutesId
+                    && context.Project.Any(p => p.Id == link.ProjectId && (p.IsDeleted || p.Status == ProjectStatus.Archived)))).ToListAsync(ct);
         foreach (var group in actions.Where(a => !a.IsConfirmed && a.SyncStatus.StartsWith("待确认")
             && managed.Contains(a.MeetingMinutes!.ProjectId)).GroupBy(a => a.MeetingMinutesId))
         {
@@ -162,7 +166,7 @@ public sealed class PersonalActionService(ApplicationDbContext context, Approval
         }
 
         // 普通人工任务的临期/逾期也能在同一入口处理，不复制全部任务看板。
-        foreach (var task in tasks.Where(t => t.EndTime.HasValue && t.EndTime < now.Date.AddDays(1)
+        foreach (var task in tasks.Where(t => activeIds.Contains(t.ProjectId) && t.EndTime.HasValue && t.EndTime < now.Date.AddDays(1)
             && t.Status != TaskStatus.PendingConfirmation && t.AgentExecutionStatus != AgentTaskExecutionStatus.WaitingApproval))
         {
             if (actions.Any(a => a.IsConfirmed && a.MatchedTaskId == task.Id

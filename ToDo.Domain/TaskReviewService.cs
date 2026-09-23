@@ -11,7 +11,7 @@ public sealed class TaskReviewService(ApplicationDbContext context)
     public async Task<bool> CanReviewAsync(ToDoTask task, ApplicationUser user)
     {
         var project = await context.Project.AsNoTracking().FirstOrDefaultAsync(p => p.Id == task.ProjectId && !p.IsDeleted);
-        if (project == null) return false;
+        if (project == null || project.Status != ProjectStatus.Active) return false;
         var privileged = user.Role == UserRole.systemAdmin || project.LeaderUserId == user.Id
             || await context.ProjectUsers.AnyAsync(p => p.ProjectId == task.ProjectId && p.UserId == user.Id && p.ProjectRole == (int)ProjectRole.Admin);
         return CanReviewTask(task, user, privileged);

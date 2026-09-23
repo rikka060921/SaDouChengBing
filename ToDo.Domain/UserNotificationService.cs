@@ -107,7 +107,7 @@ public class UserNotificationService
         var tasks = await _context.ToDoTasks.AsNoTracking()
             .Where(t => !t.IsDeleted && !t.IsCompleted
                 && t.Status != ToDo.Entities.TaskStatus.Completed && t.Status != ToDo.Entities.TaskStatus.Cancelled
-                && t.Project != null && !t.Project.IsDeleted && t.EndTime.HasValue && t.EndTime <= dueLimit)
+                && t.Project != null && !t.Project.IsDeleted && t.Project.Status == ProjectStatus.Active && t.EndTime.HasValue && t.EndTime <= dueLimit)
             .ToListAsync(cancellationToken);
         foreach (var task in tasks)
         {

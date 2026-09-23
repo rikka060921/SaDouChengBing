@@ -163,7 +163,7 @@ public sealed class AgentAutomaticAcceptanceService(ApplicationDbContext context
     {
         var user = await context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == work.RequestedByUserId
             && !u.IsDeleted && u.Status == UserStatus.Active, ct);
-        return user != null && await context.Project.AsNoTracking().AnyAsync(p => p.Id == work.ProjectId && !p.IsDeleted
+        return user != null && await context.Project.AsNoTracking().AnyAsync(p => p.Id == work.ProjectId && !p.IsDeleted && p.Status == ProjectStatus.Active
             && (user.Role == UserRole.systemAdmin || p.LeaderUserId == user.Id
                 || context.ProjectUsers.Any(m => m.ProjectId == p.Id && m.UserId == user.Id)), ct);
     }

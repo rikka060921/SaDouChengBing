@@ -450,8 +450,10 @@
 				<div class="card-header bg-light fw-bold">任务评论</div>
 				<div class="card-body">
 					<form method="post" asp-page-handler="AddComment" asp-route-id="@Model.TaskDetail.Id" class="mb-3">
+                        <fieldset disabled="@(Model.TaskDetail.Project?.Status != ProjectStatus.Active)">
 						<textarea asp-for="CommentText" class="form-control mb-2" rows="3" placeholder="记录进展、问题或审核意见"></textarea>
 						<button class="btn btn-primary btn-sm" type="submit">发布评论</button>
+                        </fieldset>
 					</form>
 					@if (Model.Comments.Any())
 					{

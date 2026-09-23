@@ -10,6 +10,29 @@ namespace ToDo.Test;
 
 public class AgentEventAutomationTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Archive_EventDispatchSkipsArchivedAndPreRestoreBacklog(bool restore)
+    {
+        await using var database = await EventDatabase.CreateAsync();
+        await database.Subscriptions.SaveAsync(database.NewRule("manual.test"), database.AdminId);
+        database.Context.EventBusMessages.Add(new EventBusMessage
+        {
+            EventType = "manual.test",
+            PayloadJson = System.Text.Json.JsonSerializer.Serialize(new { projectId = database.ProjectId }),
+            CreatedAt = AppTime.Now.AddMinutes(-10)
+        });
+        await database.Context.SaveChangesAsync();
+        var domain = new ProjectDomain(database.Context, NullLogger<ProjectDomain>.Instance);
+        Assert.True(await domain.SetArchiveStatusAsync(database.ProjectId, true, database.AdminId, UserRole.systemAdmin, true));
+        if (restore) Assert.True(await domain.SetArchiveStatusAsync(database.ProjectId, false, database.AdminId, UserRole.systemAdmin));
+        await database.Automation.DispatchPendingEventsAsync();
+        var execution = await database.Context.AgentEventExecutions.AsNoTracking().SingleAsync();
+        Assert.Equal(AgentEventExecutionStatus.Skipped, execution.Status);
+        Assert.Null(await database.Automation.ClaimNextExecutionAsync());
+    }
+
     [Fact]
     public async Task SaveRule_RejectsAgentInternalEventToPreventTriggerLoop()
     {

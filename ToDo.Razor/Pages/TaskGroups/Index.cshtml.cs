@@ -196,6 +196,7 @@ namespace ToDo.Razor.Pages.TaskGroups
 
         private async Task<bool> CanAccessProjectAsync(int projectId, int userId)
         {
+            if (!await _dbcontext.Project.AnyAsync(p => p.Id == projectId && !p.IsDeleted && p.Status == ProjectStatus.Active)) return false;
             if (User.IsInRole(nameof(UserRole.systemAdmin))) return true;
             if (await _dbcontext.Project.AsNoTracking().AnyAsync(project =>
                 project.Id == projectId && !project.IsDeleted && project.LeaderUserId == userId)) return true;

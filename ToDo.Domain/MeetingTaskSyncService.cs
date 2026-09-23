@@ -1616,6 +1616,10 @@ public class MeetingTaskSyncService
 
     public async Task<bool> CanApproveWritesAsync(MeetingMinutes meeting, ApplicationUser user)
     {
+        if (!await _context.Project.AnyAsync(p => p.Id == meeting.ProjectId && !p.IsDeleted && p.Status == ProjectStatus.Active)
+            || await _context.MeetingMinutesProjects.AnyAsync(link => link.MeetingMinutesId == meeting.Id
+                && _context.Project.Any(p => p.Id == link.ProjectId && (p.IsDeleted || p.Status == ProjectStatus.Archived))))
+            return false;
         if (user.Role == UserRole.systemAdmin) return true;
         if (meeting.Project?.LeaderUserId == user.Id) return true;
         return await _context.ProjectUsers

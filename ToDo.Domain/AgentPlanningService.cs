@@ -34,7 +34,7 @@ public sealed class AgentPlanningService(
         var user = await context.Users.AsNoTracking().FirstOrDefaultAsync(x => x.Id == userId, ct);
         if (user == null || user.IsDeleted || user.Status != UserStatus.Active) return false;
         var project = await context.Project.AsNoTracking().FirstOrDefaultAsync(x => x.Id == task.ProjectId && !x.IsDeleted, ct);
-        if (project == null) return false;
+        if (project == null || project.Status != ProjectStatus.Active) return false;
         if (user.Role == UserRole.systemAdmin || project.LeaderUserId == userId) return true;
         var member = await context.ProjectUsers.AsNoTracking()
             .FirstOrDefaultAsync(x => x.ProjectId == task.ProjectId && x.UserId == userId, ct);
@@ -128,6 +128,7 @@ public sealed class AgentPlanningService(
             .FirstOrDefaultAsync(x => x.Id == workItemId && x.TaskId == taskId, ct)
             ?? throw new InvalidOperationException("执行计划不存在");
         var task = item.Task!;
+        await ProjectLifecycleRules.RequireActiveAsync(context, task.ProjectId, ct);
         var agent = item.AgentDefinition!;
         if (!await CanReviewAsync(task, userId, ct)) throw new UnauthorizedAccessException("无权确认该任务的执行计划");
         if (!IsRunnable(item, task, agent)) throw new InvalidOperationException("任务已结束、重新指派或 Agent 已停用");

@@ -85,14 +85,16 @@ namespace ToDo.Domain
         /// <summary>
         /// 安全地开始事务
         /// </summary>
-        private async Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionSafelyAsync()
+        private async Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionSafelyAsync(bool serializable = false)
         {
             if (IsInMemoryDatabase())
             {
                 // 返回一个空的事务对象
                 return new NullDbContextTransaction();
             }
-            return await _context.Database.BeginTransactionAsync();
+            return serializable
+                ? await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable)
+                : await _context.Database.BeginTransactionAsync();
         }
 
         // 空事务实现
@@ -112,7 +114,7 @@ namespace ToDo.Domain
         /// </summary>
         private async Task SetMySqlSessionVariablesAsync(int userId, string userName, string realName)
         {
-            if (IsInMemoryDatabase())
+            if (_context.Database.ProviderName?.Contains("MySql", StringComparison.OrdinalIgnoreCase) != true)
             {
                 return;
             }
@@ -286,7 +288,7 @@ namespace ToDo.Domain
             int pageIndex = 1,
             int pageSize = 10,
             string? keyword = null,
-            bool? isArchivedFilter = null)
+            bool? isArchivedFilter = false)
         {
             pageIndex = Math.Max(1, pageIndex);
             pageSize = Math.Clamp(pageSize, 1, 100);
@@ -328,8 +330,8 @@ namespace ToDo.Domain
                 currentUserId, currentUserRole, totalCount, pageIndex);
 
             var projects = await query
-                .OrderByDescending(p => p.CreatedAt)
-                .Skip((pageIndex - 1) * pageSize)
+                .OrderByDescending(p => p.CreatedAt).ThenByDescending(p => p.Id)
+                .Skip((int)Math.Min((long)(pageIndex - 1) * pageSize, int.MaxValue))
                 .Take(pageSize)
                 .Select(p => new ProjectListDto
                 {
@@ -390,9 +392,10 @@ namespace ToDo.Domain
             int projectId,
             bool shouldArchive,
             int currentUserId,
-            UserRole currentUserRole)
+            UserRole currentUserRole,
+            bool confirmUnfinishedTasks = false)
         {
-            using var transaction = await BeginTransactionSafelyAsync();
+            using var transaction = await BeginTransactionSafelyAsync(serializable: true);
             try
             {
                 // 1. 获取项目和操作人信息
@@ -423,6 +426,18 @@ namespace ToDo.Domain
                     _logger.LogInformation("项目 {ProjectId} 状态已是 {Status}，无需操作",
                         projectId, targetStatus);
                     return true;
+                }
+
+                if (shouldArchive)
+                {
+                    var check = await ProjectLifecycleRules.CheckArchiveAsync(_context, projectId);
+                    if (!check.CanArchive) throw new InvalidOperationException(string.Join("\n", check.Blockers));
+                    if (check.UnfinishedTasks > 0 && !confirmUnfinishedTasks)
+                        throw new InvalidOperationException($"还有 {check.UnfinishedTasks} 项未完成任务。请确认暂停推进；任务状态与进度不会改变。");
+                }
+                else
+                {
+                    await ResetAutomationWatermarkAsync(projectId);
                 }
 
                 // 4. 安全地设置MySQL会话变量（使用参数化查询）
@@ -467,6 +482,7 @@ namespace ToDo.Domain
                     await transaction.RollbackAsync();
                 }
 
+                if (ex is InvalidOperationException) throw;
                 _logger.LogError(ex, "{Action}项目 {ProjectId} 失败",
                     shouldArchive ? "归档" : "恢复", projectId);
                 return false;
@@ -474,8 +490,54 @@ namespace ToDo.Domain
         }
 
         /// <summary>
-        /// 获取项目状态的中文显示名称
+        /// 恢复只开启后续业务，旧工作与归档期间的事件不会自动补跑。
         /// </summary>
+        private async Task ResetAutomationWatermarkAsync(int projectId)
+        {
+            var now = AppTime.Now;
+            var checkpoint = await _context.ProjectSummaryCheckpoints.SingleOrDefaultAsync(c => c.ProjectId == projectId);
+            if (checkpoint == null)
+            {
+                checkpoint = new ProjectSummaryCheckpoint { ProjectId = projectId };
+                _context.ProjectSummaryCheckpoints.Add(checkpoint);
+            }
+            // Only legacy/inconsistent archived data can contain unfinished jobs: do not revive it on restore.
+            foreach (var work in await _context.AgentWorkItems.Where(w => w.ProjectId == projectId &&
+                w.Status != AgentWorkItemStatus.Completed && w.Status != AgentWorkItemStatus.Failed && w.Status != AgentWorkItemStatus.Cancelled).ToListAsync())
+            {
+                work.Status = AgentWorkItemStatus.Cancelled; work.LockedAt = null; work.CompletedAt = now;
+                work.ErrorMessage = "项目恢复时保留历史，不自动重启旧工作；如需继续请重新委托。"; work.UpdatedAt = now;
+            }
+            foreach (var run in await _context.AgentRunJobs.Where(w => w.ProjectId == projectId &&
+                w.Status != AgentRunJobStatus.Completed && w.Status != AgentRunJobStatus.Failed && w.Status != AgentRunJobStatus.Cancelled).ToListAsync())
+            {
+                run.Status = AgentRunJobStatus.Cancelled; run.LockedAt = null; run.CompletedAt = now;
+                run.ErrorMessage = "项目恢复不自动重启旧运行。"; run.UpdatedAt = now;
+            }
+            foreach (var execution in await _context.AgentEventExecutions.Where(w => w.ProjectId == projectId &&
+                (w.Status == AgentEventExecutionStatus.Pending || w.Status == AgentEventExecutionStatus.Running ||
+                 w.Status == AgentEventExecutionStatus.Retrying || w.Status == AgentEventExecutionStatus.WaitingApproval)).ToListAsync())
+            {
+                execution.Status = AgentEventExecutionStatus.Skipped; execution.LockedAt = null; execution.CompletedAt = now;
+                execution.ErrorMessage = "项目恢复不补跑历史事件。"; execution.UpdatedAt = now;
+            }
+            checkpoint.LastSuccessfulSummaryAt = now;
+            checkpoint.UpdatedAt = now;
+            checkpoint.Version++;
+            foreach (var job in await _context.ScheduledJobs.Where(j => j.ProjectId == projectId).ToListAsync())
+            {
+                var next = now.Date.Add(job.RunAt);
+                job.NextRunAt = next <= now ? next.AddDays(1) : next;
+                job.UpdatedAt = now;
+            }
+            _context.ProjectActivityRecords.Add(new ProjectActivityRecord
+            {
+                ProjectId = projectId, EntityType = ProjectActivityEntityType.Project,
+                EntityId = projectId, ChangeType = ProjectActivityChangeType.Restored,
+                FieldName = "AutomationResumeBoundary", EntityName = "项目恢复", OccurredAt = now
+            });
+        }
+
         private string GetStatusDisplayName(ProjectStatus status)
         {
             return status switch
@@ -1066,8 +1128,8 @@ namespace ToDo.Domain
 
             var totalCount = await query.CountAsync();
             var projects = await query
-                .OrderByDescending(p => p.CreatedAt)
-                .Skip((pageIndex - 1) * pageSize)
+                .OrderByDescending(p => p.CreatedAt).ThenByDescending(p => p.Id)
+                .Skip((int)Math.Min((long)(pageIndex - 1) * pageSize, int.MaxValue))
                 .Take(pageSize)
                 .ToListAsync();
 

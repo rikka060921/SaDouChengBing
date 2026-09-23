@@ -102,6 +102,7 @@ public class AgentWorkQueueService
             || task.Status is TaskStatus.Completed or TaskStatus.Cancelled)
             return null;
 
+        await ProjectLifecycleRules.RequireActiveAsync(_context, task.ProjectId, cancellationToken);
         if (task.AgentDefinition == null || !task.AgentDefinition.IsEnabled)
         {
             await MarkEnqueueFailureAsync(task, "任务绑定的 Agent 不存在或已停用，无法进入执行队列", cancellationToken);
@@ -211,7 +212,8 @@ public class AgentWorkQueueService
         await EnsureSystemAdminAsync(operatedByUserId, cancellationToken);
         var now = AppTime.Now;
         var affected = await _context.AgentWorkItems
-            .Where(item => item.Id == workItemId && item.Status == AgentWorkItemStatus.Paused)
+            .Where(item => item.Id == workItemId && item.Status == AgentWorkItemStatus.Paused
+                && _context.Project.Any(p => p.Id == item.ProjectId && !p.IsDeleted && p.Status == ProjectStatus.Active))
             .ExecuteUpdateAsync(setters => setters
                 .SetProperty(item => item.Status, AgentWorkItemStatus.Pending)
                 .SetProperty(item => item.NextRunAt, now)
@@ -307,10 +309,11 @@ public class AgentWorkQueueService
     {
         var tasks = await _context.ToDoTasks.AsNoTracking()
             .Include(item => item.Project)
-            .Where(item => !item.IsDeleted
+            .Where(item => !item.IsDeleted && item.Project != null && !item.Project.IsDeleted && item.Project.Status == ProjectStatus.Active
                 && item.AssigneeType == TaskAssigneeType.DigitalEmployee
                 && item.AgentDefinitionId.HasValue
                 && item.AgentExecutionStatus == AgentTaskExecutionStatus.Pending
+                && !_context.ProjectActivityRecords.Any(a => a.ProjectId == item.ProjectId && a.FieldName == "AutomationResumeBoundary" && a.OccurredAt >= item.UpdatedAt)
                 && item.Status != TaskStatus.Completed
                 && item.Status != TaskStatus.Cancelled)
             .OrderBy(item => item.UpdatedAt)
@@ -335,7 +338,7 @@ public class AgentWorkQueueService
     public async Task ResumeResolvedApprovalsAsync(CancellationToken cancellationToken = default)
     {
         var candidates = await _context.AgentWorkItems
-            .Where(item => item.Status == AgentWorkItemStatus.WaitingApproval && item.AiSessionId.HasValue)
+            .Where(item => _context.Project.Any(p => p.Id == item.ProjectId && !p.IsDeleted && p.Status == ProjectStatus.Active) && item.Status == AgentWorkItemStatus.WaitingApproval && item.AiSessionId.HasValue)
             .OrderBy(item => item.UpdatedAt)
             .Take(20)
             .ToListAsync(cancellationToken);
@@ -364,7 +367,7 @@ public class AgentWorkQueueService
     {
         var staleBefore = AppTime.Now.Subtract(StaleWorkItemTimeout);
         var staleItems = await _context.AgentWorkItems
-            .Where(item => item.Status == AgentWorkItemStatus.Running
+            .Where(item => _context.Project.Any(p => p.Id == item.ProjectId && !p.IsDeleted && p.Status == ProjectStatus.Active) && item.Status == AgentWorkItemStatus.Running
                 && item.LockedAt.HasValue
                 && item.LockedAt < staleBefore)
             .Take(20)
@@ -401,7 +404,7 @@ public class AgentWorkQueueService
     {
         var now = AppTime.Now;
         var candidate = await _context.AgentWorkItems.AsNoTracking()
-            .Where(item => (item.Status == AgentWorkItemStatus.Pending
+            .Where(item => _context.Project.Any(p => p.Id == item.ProjectId && !p.IsDeleted && p.Status == ProjectStatus.Active) && (item.Status == AgentWorkItemStatus.Pending
                     || (item.Status == AgentWorkItemStatus.Retrying && item.AttemptCount < item.MaxAttempts))
                 && item.NextRunAt <= now
                 && !_context.AgentWorkItems.Any(inFlight =>
@@ -419,7 +422,7 @@ public class AgentWorkQueueService
         if (candidate == null) return null;
 
         var affected = await _context.AgentWorkItems
-            .Where(item => item.Id == candidate.Id
+            .Where(item => _context.Project.Any(p => p.Id == item.ProjectId && !p.IsDeleted && p.Status == ProjectStatus.Active) && item.Id == candidate.Id
                 && (item.Status == AgentWorkItemStatus.Pending
                     || (item.Status == AgentWorkItemStatus.Retrying && item.AttemptCount < item.MaxAttempts))
                 && item.NextRunAt <= now)
@@ -465,6 +468,14 @@ public class AgentWorkQueueService
             .Include(item => item.Task)
             .FirstOrDefaultAsync(item => item.Id == workItemId, cancellationToken);
         if (workItem == null || workItem.Status != AgentWorkItemStatus.Running) return;
+        if (!await _context.Project.AnyAsync(p => p.Id == workItem.ProjectId && !p.IsDeleted && p.Status == ProjectStatus.Active, cancellationToken))
+        {
+            workItem.Status = AgentWorkItemStatus.Paused;
+            workItem.ErrorMessage = ProjectLifecycleRules.ReadOnlyMessage;
+            workItem.LockedAt = null;
+            await _context.SaveChangesAsync(cancellationToken);
+            return;
+        }
         using var activity = _telemetry?.StartConsumer("agent.assignment.process", "assignment", workItem.Id, workItem.ProjectId, workItem.TaskId);
         var stopwatch = Stopwatch.StartNew();
         var stepSucceeded = false;

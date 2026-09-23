@@ -97,7 +97,7 @@ public class IndexModel : PageModel
         Agents = await _registry.GetAllAsync();
         IsSystemAdmin = user.Role == UserRole.systemAdmin;
         RecentSessions = await _sessions.GetRecentAsync(user, 8);
-        var projectQuery = _context.Project.AsNoTracking().Where(item => !item.IsDeleted);
+        var projectQuery = _context.Project.AsNoTracking().Where(item => !item.IsDeleted && item.Status == ProjectStatus.Active);
         if (user.Role != UserRole.systemAdmin)
             projectQuery = projectQuery.Where(project => project.LeaderUserId == user.Id
                 || _context.ProjectUsers.Any(member => member.ProjectId == project.Id && member.UserId == user.Id));

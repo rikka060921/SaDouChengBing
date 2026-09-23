@@ -41,9 +41,9 @@ namespace ToDo.Domain
         }
 
         // 创建相关
-        public async Task<List<DomainSelectListItem>> GetAccessibleProjects(ApplicationUser currentUser)
+        public async Task<List<DomainSelectListItem>> GetAccessibleProjects(ApplicationUser currentUser, bool activeOnly = false)
         {
-            return await ApplyProjectAccess(_context.Project.AsNoTracking().Where(p => !p.IsDeleted), currentUser)
+            return await ApplyProjectAccess(_context.Project.AsNoTracking().Where(p => !p.IsDeleted && (!activeOnly || p.Status == ProjectStatus.Active)), currentUser)
                .OrderBy(p => p.Name)
                .Select(p => new DomainSelectListItem(p.Name, p.Id.ToString()))
                .ToListAsync();
@@ -79,6 +79,7 @@ namespace ToDo.Domain
             if (project == null)
                 return (false, "项目信息不存在");
 
+            if (project.Status != ProjectStatus.Active) return (false, ProjectLifecycleRules.ReadOnlyMessage);
             if (await CanAccessProjectAsync(project.Id, user))
                 return (true, string.Empty);
 
@@ -257,6 +258,9 @@ namespace ToDo.Domain
 
             if (!await CanAccessProjectAsync(original.ProjectId, currentUser))
                 return (false, "你没有该项目的日报访问权限");
+
+            if (!await _context.Project.AnyAsync(p => p.Id == original.ProjectId && !p.IsDeleted && p.Status == ProjectStatus.Active))
+                return (false, ProjectLifecycleRules.ReadOnlyMessage);
 
             // 仅保留创建人判断
             bool isCreator = original.ReporterId == currentUser.Id;
