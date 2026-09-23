@@ -65,7 +65,7 @@
                     <a class="app-nav-link @(currentPage.StartsWith("/Projects", StringComparison.OrdinalIgnoreCase) || currentPage.StartsWith("/TaskGroups", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/Projects/Index"><i class="bi bi-grid-1x2"></i><span>项目管理</span></a>
                     <a class="app-nav-link @(currentPage.StartsWith("/Tasks", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/Tasks/Index"><i class="bi bi-check2-square"></i><span>任务看板</span></a>
                     <a class="app-nav-link @(currentPage.StartsWith("/MeetingMinutes", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/MeetingMinutes/Index"><i class="bi bi-calendar3"></i><span>会议纪要</span></a>
-                    <a class="app-nav-link @(currentPage.StartsWith("/Reports", StringComparison.OrdinalIgnoreCase) || currentPage.StartsWith("/DailySummary", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/Reports/Index"><i class="bi bi-bar-chart"></i><span>日报与报告</span></a>
+                    <a class="app-nav-link @(currentPage.StartsWith("/Reports", StringComparison.OrdinalIgnoreCase) || currentPage.StartsWith("/DailySummary", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/DailySummary/Index"><i class="bi bi-bar-chart"></i><span>工作报告</span></a>
                     <a class="app-nav-link @(currentPage.StartsWith("/Notifications", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/Notifications/Index"><i class="bi bi-bell"></i><span>消息中心</span></a>
                     <a class="app-nav-link @(currentPage.StartsWith("/Approvals", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/Approvals/Index"><i class="bi bi-check2-square"></i><span>审批中心</span></a>
 

@@ -1,0 +1,21 @@
+@{
+    var section = ViewData["WorkReportSection"]?.ToString() ?? "project";
+    var canViewMembers = ViewData["CanViewMemberReports"] is true;
+}
+<nav class="nav nav-pills gap-2 mb-4" aria-label="工作报告视图">
+    <a class="nav-link @(section == "mine" ? "active" : "border")"
+       aria-current="@(section == "mine" ? "page" : null)" asp-page="/DailySummary/Index">
+        <i class="bi bi-person-lines-fill me-1" aria-hidden="true"></i>我的日报
+    </a>
+    @if (canViewMembers)
+    {
+        <a class="nav-link @(section == "team" ? "active" : "border")"
+           aria-current="@(section == "team" ? "page" : null)" asp-page="/Reports/Index" asp-route-tab="team">
+            <i class="bi bi-people-fill me-1" aria-hidden="true"></i>成员日报
+        </a>
+    }
+    <a class="nav-link @(section == "project" ? "active" : "border")"
+       aria-current="@(section == "project" ? "page" : null)" asp-page="/Reports/Index" asp-route-tab="project">
+        <i class="bi bi-folder2-open me-1" aria-hidden="true"></i>项目报告
+    </a>
+</nav>

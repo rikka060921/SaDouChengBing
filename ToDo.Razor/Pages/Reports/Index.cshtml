@@ -2,7 +2,7 @@
 @model ToDo.Razor.Pages.Reports.IndexModel
 @{
     var activeTab = Model.Tab ?? "project";
-    var pageTitle = activeTab == "team" ? "团队日报列表" : "项目日报列表";
+    var pageTitle = activeTab == "team" ? "成员日报列表" : "项目报告列表";
     ViewData["Title"] = pageTitle;
     // 定义隔行颜色（暗→亮交替，加深对比）
     string darkRowColor = "#f2f2f2"; // 深灰色（第一行、第三行等奇数行）
@@ -27,35 +27,26 @@
 </style>
 
 <div class="container mt-4">
-    <nav class="nav nav-pills gap-2 mb-4" aria-label="日报类型切换">
-        <a class="nav-link @(activeTab == "project" ? "active" : "border")" aria-current="page"
-           asp-page="/Reports/Index"
-           asp-route-tab="project">
-            <i class="bi bi-folder2-open me-1"></i>项目日报
-        </a>
-        <a class="nav-link border" asp-page="/DailySummary/Index">
-            <i class="bi bi-person-lines-fill me-1"></i>我的日报
-        </a>
-        @if (Model.IsAnyProjectLeader)
-        {
-            <a class="nav-link @(activeTab == "team" ? "active" : "border")"
-               asp-page="/Reports/Index"
-               asp-route-tab="team">
-                <i class="bi bi-people-fill me-1"></i>团队日报
-            </a>
-        }
-    </nav>
-
+    @{
+        ViewData["WorkReportSection"] = activeTab;
+        ViewData["CanViewMemberReports"] = Model.IsAnyProjectLeader;
+    }
+    <partial name="_WorkReportNav" view-data="ViewData" />
     <!-- 标题与按钮组 -->
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="display-5 fw-bold">@pageTitle</h1>
+        <div>
+            <h1 class="page-heading">@pageTitle</h1>
+            <p class="page-subtitle">@(activeTab == "team"
+                ? "按项目汇总成员每天做了什么，仅展示你有管理权限的项目；原团队日报功能保留。"
+                : "查看与项目相关的日报、周报和月报，与成员个人工作汇总分开管理。")</p>
+        </div>
         <div>
             @if (activeTab == "team")
             {
                 @if (Model.IsAnyProjectLeader)
                 {
                     <button class="btn btn-warning" type="button" data-bs-toggle="modal" data-bs-target="#generateTeamReportModal">
-                        <i class="fas fa-users"></i> 生成团队日报
+                        <i class="fas fa-users"></i> 生成成员日报
                     </button>
                 }
             }
@@ -63,7 +54,7 @@
             {
                 <a asp-page="Charts" class="btn btn-info me-2">图表分析</a>
                 <a asp-page="Create" class="btn btn-success">
-                    <i class="fas fa-plus"></i> 新建项目日报
+                    <i class="fas fa-plus"></i> 新建项目报告
                 </a>
             }
         </div>
@@ -76,11 +67,11 @@
             <div class="modal-dialog">
                 <form class="modal-content" method="post" asp-page-handler="GenerateTeamReport" asp-route-tab="team">
                     <div class="modal-header">
-                        <h5 class="modal-title" id="generateTeamReportLabel">生成团队日报</h5>
+                        <h5 class="modal-title" id="generateTeamReportLabel">生成成员日报</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
                     <div class="modal-body">
-                        <p class="text-muted mb-3">将基于当日各成员的个人日报，按项目汇总生成团队日报（仅项目管理员可见）。</p>
+                        <p class="text-muted mb-3">将基于当日各成员的个人日报，按项目汇总生成成员日报（仅项目管理员可见）。</p>
                         <div class="mb-3">
                             <label class="form-label">项目</label>
                             <select name="projectId" class="form-select" required>
@@ -98,7 +89,7 @@
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
-                        <button type="submit" class="btn btn-warning" onclick="return confirm('确认基于当日已生成的个人日报生成团队日报？')">开始生成</button>
+                        <button type="submit" class="btn btn-warning" onclick="return confirm('确认基于当日已生成的个人日报生成成员日报？')">开始生成</button>
                     </div>
                 </form>
             </div>
@@ -121,12 +112,16 @@
                     @if (activeTab == "team")
                     {
                         <input type="hidden" asp-for="FilterReportType" value="4" />
-                        <input class="form-control" value="团队汇报" disabled />
+                        <input class="form-control" value="成员日报汇总" disabled />
                     }
                     else
                     {
-                        <input type="hidden" asp-for="FilterReportType" value="1" />
-                        <input class="form-control" value="日报" disabled />
+                        <select asp-for="FilterReportType" class="form-select">
+                            <option value="">全部类型</option>
+                            <option value="1">日报</option>
+                            <option value="2">周报</option>
+                            <option value="3">月报</option>
+                        </select>
                     }
                 </div>
                 <div class="col-md-4">
@@ -190,7 +185,7 @@
                             <td>
                                 @(item.ReportType == 1 ? "日报" :
                                   item.ReportType == 2 ? "周报" :
-                                  item.ReportType == 4 ? "团队汇报" : "月报")
+                                  item.ReportType == 4 ? "成员日报" : "月报")
                     </td>
                     <td>@item.ReportDate.ToString("yyyy-MM-dd")</td>
                     <td>
@@ -237,7 +232,7 @@
                                                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                                             </div>
                                             <div class="modal-body">
-                                                确定要删除项目日报 <strong>@item.ReportTitle</strong> 吗？此操作不可恢复。
+                                                确定要删除项目报告 <strong>@item.ReportTitle</strong> 吗？此操作不可恢复。
                                             </div>
                                             <div class="modal-footer">
                                                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
@@ -259,15 +254,15 @@
                         <td colspan="6">
                             <div class="alert alert-info text-center py-5">
                                 <i class="bi bi-folder-open text-muted display-4"></i>
-                                <h4 class="mt-3">暂无符合条件的@(activeTab == "team" ? "团队日报" : "项目日报")</h4>
+                                <h4 class="mt-3">暂无符合条件的@(activeTab == "team" ? "成员日报" : "项目报告")</h4>
                                 <p>
                                     @if (activeTab == "team")
                                     {
-                                        @Html.Raw("您可以点击右上角\"生成团队日报\"按钮开始生成团队日报。")
+                                        @Html.Raw("您可以点击右上角\"生成成员日报\"按钮开始生成成员日报。")
                                     }
                                     else
                                     {
-                                        @Html.Raw("您可以点击上方\"新建项目日报\"按钮开始管理项目日报。")
+                                        @Html.Raw("您可以点击上方\"新建项目报告\"按钮开始管理项目报告。")
                                     }
                                 </p>
                             </div>
@@ -366,7 +361,7 @@
     <script>
         // 权限错误提示
         function showPermissionError(action) {
-            alert('没有权限' + action + '此项目日报，可能是因为：\n1. 您不是创建者\n2. 已超过24小时编辑时限\n3. 您不是项目管理员或系统管理员');
+            alert('没有权限' + action + '此项目报告，可能是因为：\n1. 您不是创建者\n2. 已超过24小时编辑时限\n3. 您不是项目管理员或系统管理员');
         }
     </script>
 }

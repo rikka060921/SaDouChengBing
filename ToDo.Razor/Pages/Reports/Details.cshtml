@@ -1,7 +1,7 @@
 ﻿@page
 @model ToDo.Razor.Pages.Reports.DetailsModel
 @{
-    ViewData["Title"] = "项目日报详情";
+    ViewData["Title"] = Model.DailyReport.ReportType == 4 ? "成员日报详情" : "项目报告详情";
 }
 
 <!-- 引入 FontAwesome 和 Markdown 样式（与会议纪要一致） -->
@@ -18,7 +18,7 @@
 
             <!-- 页面顶部按钮组 -->
             <div class="d-flex justify-content-between align-items-center mb-4">
-                <h1 class="mb-0">项目日报详情</h1>
+                <h1 class="mb-0">@ViewData["Title"]</h1>
               
             </div>
 
@@ -101,7 +101,7 @@
                 <!-- 底部操作区与时间信息（复用会议纪要逻辑） -->
                 <div class="card-footer bg-white d-flex justify-content-between py-3">
                     <div>
-                        <a asp-page="Index" class="btn btn-outline-secondary">返回列表</a>
+                        <a asp-page="Index" asp-route-tab="@(Model.DailyReport.ReportType == 4 ? "team" : "project")" class="btn btn-outline-secondary">返回列表</a>
                     </div>
                     <div class="text-muted small">
                         创建时间: @Model.DailyReport.CreatedAt.ToString("yyyy-MM-dd HH:mm")

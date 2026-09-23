@@ -56,26 +56,19 @@ public class IndexModel : PageModel
     public List<SelectListItem> ProjectOptions { get; set; } = new();
     public List<SelectListItem> ReportTypeOptions { get; set; } = new();
 
+    public static int? ResolveReportType(string? tab, int? selected)
+        => string.Equals(tab, "team", StringComparison.OrdinalIgnoreCase) ? 4
+            : selected is >= 1 and <= 3 ? selected : null;
+
     public async Task<IActionResult> OnGetAsync()
     {
         var currentUser = await _userManager.GetUserAsync(User);
         if (currentUser == null)
             return RedirectToPage("/Account/Login", new { returnUrl = Request.Path + Request.QueryString });
 
-        // 规范化 tab：不是 team 就按 project 处理
-        if (!string.Equals(Tab, "team", StringComparison.OrdinalIgnoreCase))
-            Tab = "project";
-
-        // 团队日报 tab：强制报告类型=团队汇报，且只在有权限时才显示
-        if (string.Equals(Tab, "team", StringComparison.OrdinalIgnoreCase))
-        {
-            FilterReportType = 4;
-        }
-        else
-        {
-            // 项目日报 tab：固定为「日报」类型，不再提供周报/月报/团队汇报下拉选项
-            FilterReportType = 1;
-        }
+        // Keep legacy URLs/storage values; only the user-facing information architecture changes.
+        Tab = string.Equals(Tab, "team", StringComparison.OrdinalIgnoreCase) ? "team" : "project";
+        FilterReportType = ResolveReportType(Tab, FilterReportType);
 
         CurrentUserId = currentUser.Id;
         await LoadFilterOptionsAsync(currentUser);
@@ -91,7 +84,7 @@ public class IndexModel : PageModel
             CurrentPage,
             PageSize,
             currentUser,
-            // 项目日报 Tab：排除团队汇报类型（ReportType=4）
+            // 项目报告 Tab：排除团队汇报类型（ReportType=4）
             excludeTeamReport: string.Equals(Tab, "project", StringComparison.OrdinalIgnoreCase));
 
         DailyReports = items;
@@ -138,7 +131,7 @@ public class IndexModel : PageModel
             .AnyAsync(pu => pu.ProjectId == project.Id && pu.UserId == currentUser.Id && pu.ProjectRole == (int)ProjectRole.Admin);
         if (!isProjectAdmin && currentUser.Role != UserRole.systemAdmin)
         {
-            TempData["ErrorMessage"] = $"仅「{project.Name}」的项目管理员可生成团队日报";
+            TempData["ErrorMessage"] = $"仅「{project.Name}」的项目管理员可生成成员日报";
             return RedirectToPage("./Index", new { tab = Tab });
         }
 
@@ -146,12 +139,12 @@ public class IndexModel : PageModel
         try
         {
             var result = await _personalSummaries.GenerateTeamReportAsync(projectId, date);
-            TempData["SuccessMessage"] = $"团队日报已处理（{date:yyyy-MM-dd}）：{result.ToDisplayText()}";
+            TempData["SuccessMessage"] = $"成员日报已处理（{date:yyyy-MM-dd}）：{result.ToDisplayText()}";
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to generate team report for project {ProjectId}", projectId);
-            TempData["ErrorMessage"] = "团队日报生成失败，请稍后重试";
+            TempData["ErrorMessage"] = "成员日报生成失败，请稍后重试";
         }
 
         return RedirectToPage("./Index", new
@@ -168,7 +161,7 @@ public class IndexModel : PageModel
     {
         if (string.Equals(Tab, "team", StringComparison.OrdinalIgnoreCase))
         {
-            // 团队日报：下拉只列出当前用户作为项目管理员的项目（与团队汇报的可见范围一致）
+            // 成员日报：下拉只列出当前用户作为项目管理员的项目（与团队汇报的可见范围一致）
             IQueryable<Project> projectQuery = _context.Project.AsNoTracking()
                 .Where(p => !p.IsDeleted && p.Status == ProjectStatus.Active);
             if (currentUser.Role != UserRole.systemAdmin)
@@ -196,7 +189,7 @@ public class IndexModel : PageModel
             new("日报", "1"),
             new("周报", "2"),
             new("月报", "3"),
-            new("团队汇报", "4")
+            new("成员日报", "4")
         };
     }
 

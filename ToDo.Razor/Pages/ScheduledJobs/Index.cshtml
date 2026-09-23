@@ -6,8 +6,8 @@
 }
 <div class="container py-3">
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <div><h2 class="mb-1">定时任务</h2><div class="text-muted">项目日报按项目汇总；个人日报按用户独立汇总并单独进行进度记录；团队日报基于个人日报按项目自动汇总生成。</div></div>
-        <div class="d-flex gap-2"><a href="/Reports/Index" class="btn btn-outline-secondary">项目日报</a><a href="/DailySummary/Index" class="btn btn-outline-primary">个人日报</a><a href="/Reports/Index?tab=team" class="btn btn-outline-info">团队日报</a></div>
+        <div><h2 class="mb-1">定时任务</h2><div class="text-muted">项目日报按项目汇总；个人日报按用户独立汇总并单独进行进度记录；成员日报基于个人日报按项目自动汇总生成。</div></div>
+        <div class="d-flex gap-2"><a href="/Reports/Index" class="btn btn-outline-secondary">项目报告</a><a href="/DailySummary/Index" class="btn btn-outline-primary">我的日报</a><a href="/Reports/Index?tab=team" class="btn btn-outline-info">成员日报</a></div>
     </div>
     @if (TempData["SuccessMessage"] != null) { <div class="alert alert-success">@TempData["SuccessMessage"]</div> }
     @if (TempData["ErrorMessage"] != null) { <div class="alert alert-danger">@TempData["ErrorMessage"]</div> }
@@ -16,7 +16,7 @@
     <div class="card shadow-sm mb-4">
         <div class="card-header d-flex align-items-center">
             <span>新增定时报告任务</span>
-            <span class="text-muted small ms-2">（团队汇报会在「每个人的每日报告」执行完毕后自动汇总，无需单独设置）</span>
+            <span class="text-muted small ms-2">（成员日报汇总会在「每个人的每日报告」执行完毕后自动汇总，无需单独设置）</span>
         </div>
         <div class="card-body">
             <form method="post" asp-page-handler="Create">
@@ -74,7 +74,7 @@
                 @foreach (var job in Model.Jobs)
                 {
                     var jobTypeText = job.JobType == ToDo.Entities.ScheduledJobType.TeamDailySummary
-                        ? "团队汇报"
+                        ? "成员日报汇总"
                         : job.JobType == ToDo.Entities.ScheduledJobType.PersonalDailySummary ? "个人日报" : "项目日报";
                     var isEnabled = job.IsEnabled;
                     var toggleBtnClass = isEnabled ? "btn-outline-danger" : "btn-outline-success";
@@ -203,12 +203,12 @@
 
     <div class="card shadow-sm mt-4">
         <div class="card-header d-flex justify-content-between align-items-center">
-            <span>团队汇报汇总进度记录</span>
+            <span>成员日报汇总汇总进度记录</span>
             <span class="small text-muted">基于个人日报自动汇总</span>
         </div>
         <div class="table-responsive">
             <table class="table table-hover mb-0 align-middle">
-                <thead><tr><th>项目</th><th>上次成功汇总</th><th>对应团队汇报</th></tr></thead>
+                <thead><tr><th>项目</th><th>上次成功汇总</th><th>对应成员日报汇总</th></tr></thead>
                 <tbody>
                 @foreach (var checkpoint in Model.TeamReportCheckpoints)
                 {
@@ -224,7 +224,7 @@
                 }
                 @if (Model.TeamReportCheckpoints.Count == 0)
                 {
-                    <tr><td colspan="3" class="text-center text-muted py-4">尚无团队汇报记录</td></tr>
+                    <tr><td colspan="3" class="text-center text-muted py-4">尚无成员日报汇总记录</td></tr>
                 }
                 </tbody>
             </table>

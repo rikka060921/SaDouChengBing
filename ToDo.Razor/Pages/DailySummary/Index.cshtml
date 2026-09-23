@@ -1,28 +1,16 @@
 @page "/DailySummary/Index"
 @model ToDo.Razor.Pages.DailySummary.IndexModel
 @{
-    ViewData["Title"] = "每日情况汇总";
+    ViewData["Title"] = Model.CanGenerateForCurrentUser ? "我的日报" : "成员日报明细";
     Layout = "_Layout";
 }
 
 <div class="container-fluid py-4">
-    <nav class="nav nav-pills gap-2 mb-4" aria-label="日报类型切换">
-        <a class="nav-link border" asp-page="/Reports/Index">
-            <i class="bi bi-folder2-open me-1"></i>项目日报
-        </a>
-        <a class="nav-link active" aria-current="page" asp-page="/DailySummary/Index">
-            <i class="bi bi-person-lines-fill me-1"></i>我的日报
-        </a>
-        @if (Model.IsAnyProjectLeader)
-        {
-            <a class="nav-link border"
-               asp-page="/Reports/Index"
-               asp-route-tab="team">
-                <i class="bi bi-people-fill me-1"></i>团队日报
-            </a>
-        }
-    </nav>
-
+    @{
+        ViewData["WorkReportSection"] = Model.CanGenerateForCurrentUser ? "mine" : "team";
+        ViewData["CanViewMemberReports"] = Model.IsAnyProjectLeader;
+    }
+    <partial name="_WorkReportNav" view-data="ViewData" />
     <!-- 顶部筛选栏（单日期查询 + 生成报告按钮） -->
     <div class="row align-items-center mb-4">
         <div class="col-md-6">
