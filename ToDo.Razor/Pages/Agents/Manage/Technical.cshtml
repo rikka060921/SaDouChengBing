@@ -2,7 +2,7 @@
 @model ToDo.Razor.Pages.Agents.Manage.TechnicalModel
 @using ToDo.Entities
 @{
-    ViewData["Title"] = Model.Id.HasValue ? "编辑 Agent" : "新建 Agent";
+    ViewData["Title"] = "Agent 技术维护";
     Layout = "/Pages/Shared/_Layout.cshtml";
 }
 
@@ -25,7 +25,7 @@
                     {
                         var selected = string.Equals(Model.Input.TemplateKey, template.Key, StringComparison.OrdinalIgnoreCase);
                         <div class="col-lg-4">
-                            <a asp-page="./Edit" asp-route-template="@template.Key"
+                            <a asp-page="./Technical" asp-route-template="@template.Key"
                                class="d-block h-100 p-3 rounded border text-decoration-none @(selected ? "border-primary bg-white shadow-sm" : "border-secondary-subtle bg-white")">
                                 <div class="d-flex justify-content-between gap-2">
                                     <span class="fw-semibold text-dark">@template.Name</span>

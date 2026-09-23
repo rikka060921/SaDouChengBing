@@ -143,6 +143,9 @@ public class AgentToolService
         var descriptor = _toolCatalog.Get(call.ToolName)
             ?? throw new InvalidOperationException($"不支持的 Agent 工具：{call.ToolName}");
         call.ToolName = descriptor.ToolName;
+        var allowedTools = await AgentSessionExecutionPolicy.FormalToolsAsync(_context, session, cancellationToken);
+        if (allowedTools != null && !allowedTools.Contains(call.ToolName))
+            throw new UnauthorizedAccessException("当前任务未明确要求此操作，或任务已失效；工具调用已拦截。");
         AgentToolPermission? permission;
         if (_registry != null)
         {

@@ -1,4 +1,6 @@
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using ToDo.Context;
 using ToDo.Entities;
 
 namespace ToDo.Domain;
@@ -7,6 +9,23 @@ namespace ToDo.Domain;
 public static class AgentSessionExecutionPolicy
 {
     public const string AssistanceKeyPrefix = "assist:";
+
+    // 正式任务的工具边界在每轮暴露、每次调用前重算；继续对话和兼容协议都不能扩大授权。
+    // null 表示历史手动会话，继续沿用其原有工具权限机制。
+    public static async Task<IReadOnlySet<string>?> FormalToolsAsync(ApplicationDbContext context,
+        AiSession session, CancellationToken ct = default)
+    {
+        if (IsTaskAssistance(session)) return new HashSet<string>();
+        var work = await context.AgentWorkItems.AsNoTracking().Include(w => w.Task)
+            .FirstOrDefaultAsync(w => w.AiSessionId == session.Id, ct);
+        if (work == null) return null;
+        var task = work.Task;
+        if (task == null || task.IsDeleted || task.Status is ToDo.Entities.TaskStatus.Completed or ToDo.Entities.TaskStatus.Cancelled
+            || task.AssigneeType != TaskAssigneeType.DigitalEmployee || task.AgentDefinitionId != work.AgentDefinitionId
+            || work.Status != AgentWorkItemStatus.Running)
+            return new HashSet<string>();
+        return AgentTaskIntentMatcher.ForTask(task, work.Prompt, work.PlanFeedback).Tools;
+    }
 
     public static bool IsTaskAssistance(AiSession session)
     {

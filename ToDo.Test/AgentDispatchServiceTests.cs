@@ -10,6 +10,48 @@ namespace ToDo.Test;
 
 public sealed class AgentDispatchServiceTests
 {
+    [Theory]
+    [InlineData("draft", "")]
+    [InlineData("no-read", "读取")]
+    [InlineData("no-tool", "工具")]
+    [InlineData("no-write", "写权限")]
+    [InlineData("disabled", "停用")]
+    [InlineData("composite", "独立任务")]
+    public async Task Dispatch_ExplainsBusinessSpecificMissingRequirements(string scenario, string expected)
+    {
+        await using var db = await DispatchDatabase.CreateAsync();
+        var agent = await db.AddAgentAsync("document-helper", "资料助手", ["document.read", "project.document.write"], [AgentContextSource.Documents]);
+        if (scenario == "disabled") agent.IsEnabled = false;
+        if (scenario != "no-read") db.Context.AgentDocumentPermissions.Add(new()
+        {
+            ProjectId = db.Project.Id, AgentKey = agent.AgentKey, CanRead = true,
+            CanWrite = scenario != "no-write"
+        });
+        if (scenario == "no-write") db.Context.AgentToolPermissions.Add(new()
+        {
+            AgentDefinitionId = agent.Id, ToolName = "project.document.write", IsEnabled = true,
+            ReviewMode = AgentToolReviewMode.HumanApproval
+        });
+        await db.Context.SaveChangesAsync();
+        var title = scenario is "no-tool" or "no-write" ? "把概要设计保存到项目资料库"
+            : scenario == "composite" ? "读取项目文档并创建任务" : "根据需求分析生成概要设计草稿，先给我看，不保存到项目资料";
+        var task = await db.AddTaskAsync(title, TaskPriority.Medium);
+        var result = await db.Dispatch.DispatchTaskAsync(task.Id, db.Admin.Id);
+        if (scenario == "draft")
+        {
+            Assert.True(result.AssignedAutomatically);
+            var work = Assert.Single(await db.Context.AgentWorkItems.ToListAsync());
+            Assert.False(work.RequiresPlan);
+            Assert.Empty(agent.ToolPermissions);
+        }
+        else
+        {
+            Assert.Equal(AgentDispatchDecisionStatus.NoCandidate, result.Decision.Status);
+            Assert.Contains(expected, result.Decision.Explanation);
+            Assert.Empty(await db.Context.AgentWorkItems.ToListAsync());
+        }
+    }
+
     [Fact]
     public void ParseCandidates_LegacyJson_DefaultsNewFeedbackFields()
     {
@@ -185,7 +227,7 @@ public sealed class AgentDispatchServiceTests
         Assert.Equal(AgentDispatchDecisionStatus.NoCandidate, result.Decision.Status);
         Assert.Empty(result.Candidates);
         Assert.Empty(await db.Context.AgentWorkItems.ToListAsync());
-        Assert.Contains("改为人工", result.Decision.Explanation);
+        Assert.Contains("说明希望得到的成果", result.Decision.Explanation);
     }
 
     [Fact]
@@ -225,7 +267,7 @@ public sealed class AgentDispatchServiceTests
     {
         await using var db = await DispatchDatabase.CreateAsync();
         var writer = await db.AddAgentAsync("writer", "文档助手", ["project.document.write"], []);
-        var first = await db.AddTaskAsync("生成概要设计文档", TaskPriority.Medium);
+        var first = await db.AddTaskAsync("生成概要设计文档并保存到项目资料库", TaskPriority.Medium);
         Assert.Empty((await db.Dispatch.DispatchTaskAsync(first.Id, db.Admin.Id)).Candidates);
         db.Context.AgentToolPermissions.Add(new AgentToolPermission
         {
@@ -233,14 +275,14 @@ public sealed class AgentDispatchServiceTests
             ReviewMode = AgentToolReviewMode.HumanApproval
         });
         await db.Context.SaveChangesAsync();
-        var second = await db.AddTaskAsync("生成概要设计文档", TaskPriority.Medium);
+        var second = await db.AddTaskAsync("生成概要设计文档并保存到项目资料库", TaskPriority.Medium);
         Assert.Empty((await db.Dispatch.DispatchTaskAsync(second.Id, db.Admin.Id)).Candidates);
         db.Context.AgentDocumentPermissions.Add(new AgentDocumentPermission
         {
             ProjectId = db.Project.Id, AgentKey = writer.AgentKey, CanRead = true, CanWrite = true
         });
         await db.Context.SaveChangesAsync();
-        var third = await db.AddTaskAsync("生成概要设计文档", TaskPriority.Medium);
+        var third = await db.AddTaskAsync("生成概要设计文档并保存到项目资料库", TaskPriority.Medium);
         Assert.True((await db.Dispatch.DispatchTaskAsync(third.Id, db.Admin.Id)).AssignedAutomatically);
         Assert.Equal(AgentToolReviewMode.HumanApproval, (await db.Context.AgentToolPermissions.SingleAsync()).ReviewMode);
     }

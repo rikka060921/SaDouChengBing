@@ -87,7 +87,8 @@ public class AgentDispatchService
         if (existing != null)
             return new AgentDispatchResult(existing, ParseCandidates(existing.CandidatesJson), existing.Status == AgentDispatchDecisionStatus.AutoAssigned);
 
-        var candidates = await MatchCandidatesAsync(task, cancellationToken);
+        var blockers = new HashSet<string>();
+        var candidates = await MatchCandidatesAsync(task, cancellationToken, blockers);
         var top = candidates.FirstOrDefault();
         if (!forceConfirmation && candidates.Count > 1)
         {
@@ -117,7 +118,8 @@ public class AgentDispatchService
             CandidatesJson = JsonSerializer.Serialize(candidates),
             Explanation = autoAssign && candidates.Count > 1
                 ? $"已从 {candidates.Count} 个职责及授权匹配的 Agent 中，按待处理工作量选择「{top!.AgentName}」；工作量相同时按注册顺序选择，无需人工挑选。"
-                : BuildExplanation(candidates, autoAssign),
+                : candidates.Count == 0 && blockers.Count > 0
+                    ? string.Join("；", blockers) : BuildExplanation(candidates, autoAssign),
             CreatedAt = AppTime.Now,
             UpdatedAt = AppTime.Now,
             ResolvedAt = autoAssign ? AppTime.Now : null
@@ -279,21 +281,24 @@ public class AgentDispatchService
         }
     }
 
-    private async Task<List<AgentDispatchCandidate>> MatchCandidatesAsync(ToDoTask task, CancellationToken cancellationToken)
+    private async Task<List<AgentDispatchCandidate>> MatchCandidatesAsync(ToDoTask task, CancellationToken cancellationToken,
+        ISet<string>? blockers = null)
     {
         var agents = await _context.AgentDefinitions.AsNoTracking()
             .Include(item => item.ToolPermissions)
-            .Where(item => item.IsEnabled && item.CanReceiveTaskDispatch
-                && item.LifecycleStatus != AgentLifecycleStatus.Archived && item.AgentKey != DispatcherAgentKey)
+            .Where(item => item.AgentKey != DispatcherAgentKey)
             .OrderBy(item => item.Id)
             .ToListAsync(cancellationToken);
         var permissions = await _context.AgentDocumentPermissions.AsNoTracking()
             .Where(item => item.ProjectId == task.ProjectId)
             .ToListAsync(cancellationToken);
-        var text = string.Join(' ', task.Title, task.Description ?? string.Empty,
-            string.Join(' ', task.LabelLinks.Where(link => link.Label != null).Select(link => link.Label!.Name)));
-        var intents = AgentTaskIntentMatcher.Recognize(text);
-        if (intents.Count == 0) return [];
+        var intentPolicy = AgentTaskIntentMatcher.ForTask(task);
+        var intents = intentPolicy.Intents;
+        if (intents.Count == 0)
+        {
+            blockers?.Add("暂不能识别任务用途，请说明希望得到的成果；需要保存或创建记录时写明对象和动作");
+            return [];
+        }
 
         var candidates = new List<AgentDispatchCandidate>();
         foreach (var current in agents)
@@ -304,21 +309,37 @@ public class AgentDispatchService
             {
                 var runtime = await new AgentDefinitionSnapshotService(_context)
                     .LoadRuntimeVersionAsync(current, current.StableVersion, cancellationToken);
-                if (runtime == null) continue;
+                if (runtime == null) { blockers?.Add("历史运行版本缺失，请维护人员检查配置历史"); continue; }
                 agent = runtime;
             }
-            if (!agent.CanReceiveTaskDispatch) continue;
             var capabilities = AgentAdministrationService.ParseCapabilities(agent.CapabilitiesJson)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
             if (intents.Any(intent => !intent.Capabilities.Any(capabilities.Contains))) continue;
+            if (!current.IsEnabled || current.LifecycleStatus == AgentLifecycleStatus.Archived
+                || !current.CanReceiveTaskDispatch || !agent.CanReceiveTaskDispatch)
+            {
+                blockers?.Add("匹配用途的 Agent 已停用、归档或未开放自动接单，请管理员检查启用状态");
+                continue;
+            }
             var contexts = AgentAdministrationService.ParseContextSources(agent.ContextSourcesJson);
             var grants = permissions.Where(item => string.Equals(item.AgentKey, agent.AgentKey, StringComparison.OrdinalIgnoreCase)).ToList();
-            if (contexts.Contains(AgentContextSource.Documents) && !grants.Any(item => item.CanRead)) continue;
-            if (intents.Any(intent => intent.RequiresDocuments) &&
-                (!contexts.Contains(AgentContextSource.Documents) || !grants.Any(item => item.CanRead))) continue;
-            if (intents.Any(intent => intent.RequiredTool == "project.document.write") && !grants.Any(item => item.CanWrite)) continue;
-            if (intents.Any(intent => intent.RequiredTool != null &&
-                !agent.ToolPermissions.Any(tool => tool.IsEnabled && tool.ToolName == intent.RequiredTool))) continue;
+            if ((contexts.Contains(AgentContextSource.Documents) || intents.Any(i => i.RequiresDocuments))
+                && (!contexts.Contains(AgentContextSource.Documents) || !grants.Any(item => item.CanRead)))
+            {
+                blockers?.Add("匹配用途但缺少项目资料读取范围，请在技术维护启用资料上下文，并由项目管理员授予分类读取权限");
+                continue;
+            }
+            var missingTools = intentPolicy.Tools.Where(required => !agent.ToolPermissions.Any(t => t.IsEnabled && t.ToolName == required)).ToList();
+            if (missingTools.Count > 0)
+            {
+                blockers?.Add("任务明确要求业务操作或联网，但匹配的 Agent 缺少对应工具，请维护人员核对工具授权");
+                continue;
+            }
+            if (intentPolicy.Tools.Contains("project.document.write") && !grants.Any(item => item.CanWrite))
+            {
+                blockers?.Add("已配置资料写入工具，但缺少当前项目的资料分类写权限，请项目管理员授权");
+                continue;
+            }
 
             var reasons = intents.Select(intent => $"职责匹配：{intent.Label}").ToList();
             reasons.Add("已检查当前项目的数据范围及所需工具授权；实际写入仍按工具规则审批");
@@ -326,6 +347,8 @@ public class AgentDispatchService
             candidates.Add(new AgentDispatchCandidate(current.Id, current.AgentKey, current.Name,
                 0, 0, 0, 0, 0, 0, 0, 0, 0, reasons));
         }
+        if (candidates.Count == 0 && (blockers == null || blockers.Count == 0))
+            blockers?.Add("没有 Agent 同时具备该任务所需职责，请新建对应用途的助手；多个独立用途可拆成独立任务");
         return candidates;
     }
 

@@ -8,26 +8,24 @@ using ToDo.Entities;
 namespace ToDo.Razor.Pages.Agents.Manage;
 
 [Authorize(Roles = "systemAdmin")]
-public class CreateModel(AgentSetupService setup, AgentAdministrationService administration,
+public class CreateModel(AgentSetupService setup,
     UserManager<ApplicationUser> users) : PageModel
 {
     [BindProperty] public int? Id { get; set; }
     [BindProperty] public AgentSetupInput Input { get; set; } = new();
     public IReadOnlyList<AgentPurpose> Purposes => AgentSetupService.Purposes;
 
-    public async Task<IActionResult> OnGetAsync(int? id)
+    public Task<IActionResult> OnGetAsync(int? id)
     {
         Id = id;
-        if (!id.HasValue) return Page();
-        var agent = await administration.GetAsync(id.Value, HttpContext.RequestAborted);
-        if (agent == null) return NotFound();
-        if (!AgentSetupService.IsSimple(agent)) return RedirectToPage("./Edit", new { id });
-        Input = new() { Name = agent.Name, Purpose = agent.TemplateKey[7..], Instructions = agent.Description };
-        return Page();
+        if (!id.HasValue) return Task.FromResult<IActionResult>(Page());
+        // 旧收藏链接也统一进入支持版本检查的业务编辑页，避免覆盖技术配置。
+        return Task.FromResult<IActionResult>(RedirectToPage("./Edit", new { id }));
     }
 
     public async Task<IActionResult> OnPostAsync()
     {
+        if (Id.HasValue) return RedirectToPage("./Edit", new { id = Id.Value });
         if (!ModelState.IsValid) return Page();
         var user = await users.GetUserAsync(User);
         if (user == null) return Challenge();

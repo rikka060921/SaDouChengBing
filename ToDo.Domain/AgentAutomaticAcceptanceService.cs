@@ -26,8 +26,8 @@ public sealed class AgentAutomaticAcceptanceService(ApplicationDbContext context
         if (string.IsNullOrWhiteSpace(output) || output.Trim().Length < 40 || output.Length > 20000)
             return Manual("交付内容过少或超出自动检查范围");
         if (work.StepCount >= work.MaxSteps) return Manual("执行已达到轮数上限，需要确认是否完整交付");
-        var intents = AgentTaskIntentMatcher.Recognize(request);
-        if (intents.Count == 0 || intents.Any(i => i.RequiredTool is not null and not "web.search")
+        var intent = AgentTaskIntentMatcher.ForTask(task, work.Prompt, work.PlanFeedback);
+        if (intent.Intents.Count == 0 || intent.Tools.Any(t => t is not ("web.search" or "report.create"))
             || new[] { "删除", "覆盖", "权限", "付款", "上线", "部署", "发送给客户", "发布到" }.Any(request.Contains))
             return Manual("涉及重要变更或不在普通分析、整理报告的自动验收范围");
         if (!await HasAccessAsync(work, ct)) return Manual("发起人的项目权限已变化");

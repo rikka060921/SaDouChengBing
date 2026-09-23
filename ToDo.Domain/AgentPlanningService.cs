@@ -110,8 +110,7 @@ public sealed class AgentPlanningService(
 
     public static bool RequiresHumanPlan(ToDoTask task, AgentWorkItem item) =>
         item.PlanApprovedByUserId.HasValue || !string.IsNullOrWhiteSpace(item.PlanFeedback)
-        || new[] { "人工确认计划", "先确认计划", "确认计划后", "先给我确认", "approve plan first" }
-            .Any(term => $"{task.Title}\n{task.Description}".Contains(term, StringComparison.OrdinalIgnoreCase));
+        || AgentTaskIntentMatcher.ForTask(task, item.Prompt).ConfirmPlan;
 
     public static bool IsRunnable(AgentWorkItem item, ToDoTask task, AgentDefinition agent) =>
         !task.IsDeleted && task.Status != TaskStatus.Completed && task.Status != TaskStatus.Cancelled

@@ -32,8 +32,11 @@ public sealed partial class AgentFrameworkCompletionTests
         await db.Context.SaveChangesAsync();
         var work = (await db.AssignmentQueue.EnqueueTaskAsync(task.Id, db.Admin.Id, AgentWorkTriggerType.TaskAssigned,
             task.Id, AgentWorkQueueService.BuildAssignmentPrompt(task), $"ordinary:{task.Id}"))!;
-        Assert.Equal(work.Id, await db.AssignmentQueue.ClaimNextAsync());
-        await db.AssignmentQueue.ProcessAsync(work.Id);
+        if (work.RequiresPlan)
+        {
+            Assert.Equal(work.Id, await db.AssignmentQueue.ClaimNextAsync());
+            await db.AssignmentQueue.ProcessAsync(work.Id);
+        }
         return work;
     }
 
@@ -44,15 +47,16 @@ public sealed partial class AgentFrameworkCompletionTests
     }
 
     [Fact]
-    public async Task OrdinaryTask_PlansExecutesAndAcceptsWithoutHuman()
+    public async Task OrdinaryTask_ExecutesAndAcceptsWithoutPlanOrHuman()
     {
         await using var db = await TestDatabase.CreateAsync();
         var work = await OrdinaryWorkAsync(db);
         var planned = await db.Context.AgentWorkItems.AsNoTracking().SingleAsync();
         Assert.Equal(AgentWorkItemStatus.Pending, planned.Status);
-        Assert.NotNull(planned.PlanApprovedAt);
+        Assert.False(planned.RequiresPlan);
+        Assert.Null(planned.PlanApprovedAt);
         Assert.Null(planned.PlanApprovedByUserId);
-        Assert.NotNull(planned.PlanningSessionId);
+        Assert.Null(planned.PlanningSessionId);
         Assert.Empty(await db.Context.AgentDeliveryReceipts.ToListAsync());
         await ExecuteOrdinaryAsync(db, work);
         var task = await db.Context.ToDoTasks.AsNoTracking().SingleAsync();
@@ -70,6 +74,8 @@ public sealed partial class AgentFrameworkCompletionTests
         await db.AssignmentQueue.ProcessAsync(work.Id);
         Assert.Single(await db.Context.AgentDeliveryReceipts.ToListAsync());
         Assert.Equal(1, db.AI.AutomaticReviewCalls);
+        Assert.Equal(1, db.AI.CompletionCalls);
+        Assert.Null((await db.Context.AgentWorkItems.AsNoTracking().SingleAsync()).PlanningSessionId);
         Assert.Equal(1, await db.Context.AgentPerformanceSignals.CountAsync(s => s.EventType == AgentPerformanceEventType.AutomaticallyAccepted));
         Assert.False(await db.Context.AgentPerformanceSignals.AnyAsync(s => s.EventType == AgentPerformanceEventType.HumanAccepted));
     }
@@ -379,9 +385,9 @@ public sealed partial class AgentFrameworkCompletionTests
         Assert.Equal("systemAdmin", authorization.Roles);
         Assert.Equal(new[] { "Instructions", "Name", "Purpose" }, typeof(AgentSetupInput).GetProperties().Select(p => p.Name).Order());
         await using var db = await TestDatabase.CreateAsync();
-        var model = new ToDo.Razor.Pages.Agents.Manage.EditModel(null!, new AgentTemplateCatalog(), new AgentToolCatalog(), null!,
+        var model = new ToDo.Razor.Pages.Agents.Manage.EditModel(null!, null!,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<ToDo.Razor.Pages.Agents.Manage.EditModel>.Instance);
-        var redirect = Assert.IsType<Microsoft.AspNetCore.Mvc.RedirectToPageResult>(await model.OnGetAsync(null, null));
+        var redirect = Assert.IsType<Microsoft.AspNetCore.Mvc.RedirectToPageResult>(await model.OnGetAsync(null));
         Assert.Equal("./Create", redirect.PageName);
     }
 

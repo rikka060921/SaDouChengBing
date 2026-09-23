@@ -87,7 +87,7 @@ public class AgentWorkItem
     [MaxLength(2000)]
     public string ErrorMessage { get; set; } = string.Empty;
 
-    // 迁移前的存量工作项保持原流程；新入队工作项必须先确认计划。
+    // 存量工作项保留原标志；新工作项由统一用途策略判断是否需要规划。
     public bool RequiresPlan { get; set; }
     [Column(TypeName = "text")]
     public string ExecutionPlan { get; set; } = string.Empty;

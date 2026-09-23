@@ -127,7 +127,7 @@ public class AgentWorkQueueService
             TriggerEntityId = triggerEntityId,
             IdempotencyKey = idempotencyKey.Trim().Length > 200 ? idempotencyKey.Trim()[..200] : idempotencyKey.Trim(),
             CauseChainId = string.IsNullOrWhiteSpace(causeChainId) ? Guid.NewGuid().ToString("N") : causeChainId.Trim()[..Math.Min(causeChainId.Trim().Length, 32)],
-            RequiresPlan = true,
+            RequiresPlan = AgentTaskIntentMatcher.ForTask(task, prompt).RequiresPlan,
             Prompt = string.IsNullOrWhiteSpace(prompt) ? BuildAssignmentPrompt(task) : prompt.Trim(),
             Status = AgentWorkItemStatus.Pending,
             NextRunAt = now,
@@ -502,6 +502,17 @@ public class AgentWorkQueueService
                 return;
             }
 
+            if (!workItem.AiSessionId.HasValue && workItem.TriggerType == AgentWorkTriggerType.TaskAssigned
+                && workItem.Prompt.Contains("只有任务描述明确要求把结果写回系统时才允许调用工具", StringComparison.Ordinal))
+            {
+                var currentPrompt = BuildAssignmentPrompt(task);
+                if (workItem.Prompt != currentPrompt)
+                {
+                    workItem.Prompt = currentPrompt;
+                    // 排队期间从只读改为写入/先确认，不能沿用旧的免规划决定。
+                    workItem.RequiresPlan |= AgentTaskIntentMatcher.ForTask(task).RequiresPlan;
+                }
+            }
             if (workItem.RequiresPlan && !workItem.AiSessionId.HasValue
                 && (!workItem.PlanApprovedAt.HasValue || !AgentPlanningService.IsCurrent(workItem, task, workItem.AgentDefinition)))
             {
@@ -892,41 +903,10 @@ public class AgentWorkQueueService
     }
 
     public static bool AllowsWebSearch(ToDoTask task, string? prompt = null)
-    {
-        var source = $"{task.Title}\n{task.Description}\n{prompt}";
-        if (new[] { "禁止联网", "不要联网", "不联网", "不得调用工具", "no web", "offline" }
-            .Any(marker => source.Contains(marker, StringComparison.OrdinalIgnoreCase))) return false;
-        return new[] { "联网", "网上搜索", "网络搜索", "搜索公开", "检索公开", "web search", "search the web" }
-            .Any(marker => source.Contains(marker, StringComparison.OrdinalIgnoreCase));
-    }
+        => AgentTaskIntentMatcher.ForTask(task, prompt).Tools.Contains("web.search");
 
     public static bool AllowsBusinessToolCalls(ToDoTask task, string? workItemPrompt = null, string? planFeedback = null)
-    {
-        var source = $"{task.Title}\n{task.Description ?? string.Empty}\n{planFeedback}";
-        if (!string.IsNullOrWhiteSpace(workItemPrompt)
-            && !workItemPrompt.Contains("只有任务描述明确要求把结果写回系统时才允许调用工具", StringComparison.Ordinal))
-        {
-            source = $"{source}\n{workItemPrompt}";
-        }
-
-        if (string.IsNullOrWhiteSpace(source)) return false;
-
-        var readOnlyMarkers = new[]
-        {
-            "只读", "只读取", "不修改", "不要写入", "不得写入", "禁止写入", "不写回", "不得调用工具",
-            "read-only", "readonly", "do not write", "don't write", "must not write", "without writing"
-        };
-        if (readOnlyMarkers.Any(marker => source.Contains(marker, StringComparison.OrdinalIgnoreCase)))
-            return false;
-
-        var writeMarkers = new[]
-        {
-            "写入", "写回", "添加评论", "新增", "创建", "修改", "更新", "删除", "调整", "指派", "分配", "变更", "提交审批",
-            "生成报告", "生成日报", "生成周报", "保存到", "记录到系统", "同步到系统",
-            "write", "comment", "create", "update", "delete", "assign", "change", "post", "save", "generate report"
-        };
-        return writeMarkers.Any(marker => source.Contains(marker, StringComparison.OrdinalIgnoreCase));
-    }
+        => AgentTaskIntentMatcher.ForTask(task, workItemPrompt, planFeedback).Writes;
 }
 
 public class AgentAutomationHostedService : BackgroundService
