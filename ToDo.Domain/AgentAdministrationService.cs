@@ -46,8 +46,13 @@ public sealed class AgentAdministrationService
         AgentAcceptanceContract acceptanceContract,
         int? changedByUserId = null,
         CancellationToken cancellationToken = default,
-        bool applyImmediately = false)
+        bool applyImmediately = false,
+        int? expectedVersion = null)
     {
+        if (expectedVersion.HasValue && (!changedByUserId.HasValue || !await _context.Users.AsNoTracking()
+            .AnyAsync(u => u.Id == changedByUserId.Value && !u.IsDeleted && u.Status == UserStatus.Active
+                && u.Role == UserRole.systemAdmin, cancellationToken)))
+            throw new UnauthorizedAccessException("只有有效系统管理员可以修改 Agent 高级设置。");
         NormalizeAndValidate(input);
         await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
         var normalizedKey = input.AgentKey.Trim().ToLowerInvariant();
@@ -66,6 +71,8 @@ public sealed class AgentAdministrationService
                 ?? throw new InvalidOperationException("Agent 不存在");
             if (entity.LifecycleStatus == AgentLifecycleStatus.Archived)
                 throw new InvalidOperationException("已归档 Agent 不能修改，请新建配置");
+            if (expectedVersion.HasValue && entity.Version != expectedVersion.Value)
+                throw new InvalidOperationException("配置已被其他人修改，请保留当前输入并重新打开最新配置后再保存。");
             if (!string.Equals(entity.AgentKey, normalizedKey, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("Agent 创建后不能修改 Agent Key");
             keepStableDeployment = entity.IsEnabled

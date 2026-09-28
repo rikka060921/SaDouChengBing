@@ -81,9 +81,12 @@ public sealed class PersonalActionService(ApplicationDbContext context, Approval
             if (task.AssigneeType != TaskAssigneeType.DigitalEmployee || task.AgentAssignmentVersion != item.DispatchVersion
                 || task.ProjectId != item.ProjectId || !(managed.Contains(task.ProjectId) || task.CreatorId == user.Id)) continue;
             TaskSignal(task, item.Status == AgentDispatchDecisionStatus.NoCandidate
-                ? "没有找到职责和项目授权匹配的 Agent，需要调整要求或执行者。" : "该派单需要你确认执行者。",
+                ? string.IsNullOrWhiteSpace(item.Explanation)
+                    ? "没有找到职责和项目授权匹配的 Agent，需要调整要求或执行者。"
+                    : item.Explanation
+                : "该派单需要你确认执行者。",
                 ManagerOr("你创建了这项任务", task.ProjectId), item.CreatedAt,
-                item.Status == AgentDispatchDecisionStatus.NoCandidate, "处理执行者");
+                item.Status == AgentDispatchDecisionStatus.NoCandidate, "查看原因并调整任务");
         }
 
         var receipts = await context.AgentDeliveryReceipts.AsNoTracking().Where(r => taskIds.Contains(r.TaskId))

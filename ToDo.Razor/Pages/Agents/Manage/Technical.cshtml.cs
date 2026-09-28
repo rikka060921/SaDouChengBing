@@ -34,6 +34,9 @@ public class TechnicalModel : PageModel
     public int? Id { get; set; }
 
     [BindProperty]
+    public int ExpectedVersion { get; set; }
+
+    [BindProperty]
     public AgentDefinition Input { get; set; } = NewDefinition();
 
     [BindProperty]
@@ -66,6 +69,7 @@ public class TechnicalModel : PageModel
         var definition = await _service.GetAsync(id.Value);
         if (definition == null) return NotFound();
         Input = definition;
+        ExpectedVersion = definition.Version;
         ContractInput = definition.AcceptanceContract ?? new AgentAcceptanceContract();
         CapabilityTags = string.Join('\n', AgentAdministrationService.ParseCapabilities(definition.CapabilitiesJson));
         ContextSources = AgentAdministrationService.ParseContextSources(definition.ContextSourcesJson).ToList();
@@ -79,6 +83,8 @@ public class TechnicalModel : PageModel
 
     public async Task<IActionResult> OnPostAsync()
     {
+        if (!Id.HasValue) return BadRequest("请先创建 Agent，再修改高级设置。");
+        if (ExpectedVersion < 1) ModelState.AddModelError(string.Empty, "页面缺少配置版本，请重新打开高级设置。");
         ModelState.Remove("Input.ToolPermissions");
         ModelState.Remove("Input.AcceptanceContract");
         ModelState.Remove("Input.TestRuns");
@@ -90,6 +96,7 @@ public class TechnicalModel : PageModel
         try
         {
             var user = await _userManager.GetUserAsync(User);
+            if (user == null) return Challenge();
             var capabilityTags = AgentAdministrationService.SplitTerms(CapabilityTags);
             var saved = await _service.SaveAsync(
                 Id,
@@ -101,8 +108,9 @@ public class TechnicalModel : PageModel
                 ContractInput,
                 user?.Id,
                 HttpContext.RequestAborted,
-                applyImmediately: true);
-            TempData["SuccessMessage"] = $"Agent「{saved.Name}」已保存，当前为{(saved.IsEnabled ? "启用" : "停用")}状态。工具审批规则保持不变。";
+                applyImmediately: true,
+                expectedVersion: ExpectedVersion);
+            TempData["SuccessMessage"] = $"Agent「{saved.Name}」已保存，当前为{(saved.IsEnabled ? "启用" : "停用")}状态。工具风险下限与项目资料授权仍独立生效。";
             return RedirectToPage("./Index");
         }
         catch (Exception ex)
@@ -123,7 +131,7 @@ public class TechnicalModel : PageModel
             AgentContextSource.TaskComments => "当前任务评论",
             AgentContextSource.Meetings => "最近会议纪要",
             AgentContextSource.Documents => "已授权项目资料",
-            AgentContextSource.Reports => "最近日报与报告",
+            AgentContextSource.Reports => "最近工作报告",
             _ => source.ToString()
         };
     }

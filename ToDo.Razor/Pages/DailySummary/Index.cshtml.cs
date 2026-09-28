@@ -87,18 +87,8 @@ namespace ToDo.Razor.Pages.DailySummary
                     ? "我的"
                     : $"{(string.IsNullOrWhiteSpace(targetUser.RealName) ? targetUser.UserName : targetUser.RealName)}的";
 
-                // 判断是否是任一项目的管理员（系统管理员也算）
-                if (currentUser.Role == UserRole.systemAdmin)
-                {
-                    IsAnyProjectLeader = await _context.Project.AsNoTracking()
-                        .AnyAsync(p => !p.IsDeleted && p.Status == ProjectStatus.Active);
-                }
-                else
-                {
-                    IsAnyProjectLeader = await _context.ProjectUsers.AsNoTracking()
-                        .AnyAsync(pu => pu.UserId == currentUser.Id && pu.ProjectRole == (int)ProjectRole.Admin
-                            && !pu.Project.IsDeleted && pu.Project.Status == ProjectStatus.Active);
-                }
+                // 入口反映历史查看权限，不以是否还有活跃项目决定。
+                IsAnyProjectLeader = await ToDo.Domain.MemberReportAccess.Projects(_context, currentUser).AnyAsync();
 
                 // 查询当日汇总主数据
                 Summary = await _context.DailyWorkSummaries

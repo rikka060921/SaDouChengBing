@@ -417,6 +417,25 @@ public sealed class PersonalActionTests
         Assert.Equal(2000, notice.Content.Length);
     }
 
+    [Theory]
+    [InlineData("匹配用途但缺少项目资料读取范围，请项目管理员授予分类读取权限")]
+    [InlineData("")]
+    public async Task DispatchAttention_ShowsSpecificReasonWithSafeFallback(string explanation)
+    {
+        await using var db = await Fixture.CreateAsync();
+        var task = await db.TaskAsync(agent: true);
+        db.Context.AgentDispatchDecisions.Add(new AgentDispatchDecision
+        {
+            TaskId = task.Id, ProjectId = db.Project.Id, DispatchVersion = task.AgentAssignmentVersion,
+            RequestedByUserId = db.Leader.Id, Status = AgentDispatchDecisionStatus.NoCandidate, Explanation = explanation
+        });
+        await db.Context.SaveChangesAsync();
+        var card = Assert.Single(await db.Actions.GetAsync(db.Leader, Now));
+        Assert.Contains(string.IsNullOrWhiteSpace(explanation)
+            ? "没有找到职责和项目授权匹配的 Agent，需要调整要求或执行者。" : explanation, card.Reasons);
+        Assert.Contains(card.Actions, a => a.Label == "查看原因并调整任务" && a.Url == $"/Tasks/Details/{task.Id}");
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         private readonly SqliteConnection connection;

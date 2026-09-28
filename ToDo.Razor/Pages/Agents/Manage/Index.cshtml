@@ -46,9 +46,9 @@
                             </form>
                         }
                         <details class="mt-2 text-start">
-                            <summary class="small text-muted">维护与历史</summary>
+                            <summary class="small text-muted">高级设置与历史</summary>
                             <div class="d-flex flex-wrap gap-2 mt-2">
-                                @if (agent.LifecycleStatus != AgentLifecycleStatus.Archived) { <a asp-page="./Technical" asp-route-id="@agent.Id" class="btn btn-sm btn-outline-secondary">技术维护</a> }
+                                @if (agent.LifecycleStatus != AgentLifecycleStatus.Archived) { <a asp-page="./Technical" asp-route-id="@agent.Id" class="btn btn-sm btn-outline-secondary">高级设置</a> }
                                 @if (agent.LifecycleStatus != AgentLifecycleStatus.Archived) { <a asp-page="./Test" asp-route-id="@agent.Id" class="btn btn-sm btn-outline-secondary">可选测试</a> }
                                 <a asp-page="./Versions" asp-route-id="@agent.Id" class="btn btn-sm btn-outline-secondary">配置历史</a>
                                 @if (agent.IsSystemManaged && agent.ManagedDefinitionVersion < agent.AvailableManagedDefinitionVersion)

@@ -2,17 +2,17 @@
 @model ToDo.Razor.Pages.Agents.Manage.TechnicalModel
 @using ToDo.Entities
 @{
-    ViewData["Title"] = "Agent 技术维护";
+    ViewData["Title"] = "Agent 高级设置";
     Layout = "/Pages/Shared/_Layout.cshtml";
 }
 
 <div class="container py-3">
-    <div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
         <div>
             <h2 class="mb-1">@ViewData["Title"]</h2>
-            <div class="text-muted">维护人员技术配置。普通任务在后台规划和检查，高风险工具仍须人工审批；已有授权不会因简化页面而扩大。</div>
+            <div class="text-muted">供有系统管理员权限的技术人员配置模型、提示词、工具、上下文与交付规则；普通只读任务直接执行，写入按规则规划和审批。</div>
         </div>
-        <a asp-page="./Index" class="btn btn-outline-secondary">返回列表</a>
+        <a asp-page="./Index" class="btn btn-outline-secondary flex-shrink-0">返回列表</a>
     </div>
 
     @if (!Model.Id.HasValue)
@@ -43,8 +43,14 @@
     <div class="alert alert-light border small">联网搜索默认关闭。启用前需在服务器配置搜索密钥，并为此 Agent 开启 web.search 工具和能力标签。搜索词会发送给 Tavily，仅适用于公开资料调研；单个执行会话最多 3 次，每次最多 5 条结果。</div>
     <form method="post">
         <input asp-for="Id" type="hidden" />
+        <input asp-for="ExpectedVersion" type="hidden" />
         <input asp-for="Input.TemplateKey" type="hidden" />
-        <div asp-validation-summary="All" class="text-danger mb-3"></div>
+        <div asp-validation-summary="All" class="text-danger mb-3" role="alert"></div>
+        @if (!ViewData.ModelState.IsValid)
+        {
+            <p class="small">请先复制需要保留的输入，再<a asp-page="./Technical" asp-route-id="@Model.Id">重新打开最新配置</a>，避免覆盖他人的修改。</p>
+        }
+        <div class="alert alert-light border small">日常只改职责和要求？<a asp-page="./Edit" asp-route-id="@Model.Id">返回工作要求</a>。高级设置保存后用于后续执行，不能绕过工具风险下限和项目资料授权。</div>
 
         <div class="card shadow-sm mb-3">
             <div class="card-header"><span class="badge bg-primary me-2">1</span>职责与边界</div>
@@ -79,8 +85,8 @@
             </div>
         </div>
 
-        <details class="card shadow-sm mb-3">
-            <summary class="card-header">模型与执行参数（可选）</summary>
+        <details class="card shadow-sm mb-3" open>
+            <summary class="card-header">模型与执行参数</summary>
             <div class="card-body">
                 <div class="row g-3">
                     <div class="col-md-4">

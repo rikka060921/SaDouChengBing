@@ -598,8 +598,11 @@ namespace ToDo.Domain
                 query = query.Where(dr => dr.ReportDate <= filterEndDate.Value.AddDays(1).AddTicks(-1));
 
             var totalCount = await query.CountAsync();
+            pageSize = Math.Clamp(pageSize, 1, 100);
+            currentPage = NormalizePage(currentPage, totalCount, pageSize);
             var items = await query
                .OrderByDescending(dr => dr.ReportDate)
+               .ThenByDescending(dr => dr.Id)
                .Skip((currentPage - 1) * pageSize)
                .Take(pageSize)
                .ToListAsync();
@@ -607,12 +610,21 @@ namespace ToDo.Domain
             return (items, totalCount);
         }
 
+        public static int NormalizePage(int currentPage, int totalCount, int pageSize)
+            => Math.Clamp(currentPage, 1, Math.Max(1,
+                (int)Math.Ceiling(Math.Max(0, totalCount) / (double)Math.Clamp(pageSize, 1, 100))));
+
 
         public async Task<Dictionary<int, bool>> GetCanDeletePermissions(List<DailyReport> items, ApplicationUser currentUser)
         {
             var result = new Dictionary<int, bool>();
+            var projectIds = items.Select(item => item.ProjectId).Distinct().ToList();
+            var writableProjectIds = await _context.Project.AsNoTracking()
+                .Where(p => projectIds.Contains(p.Id) && !p.IsDeleted && p.Status == ProjectStatus.Active)
+                .Select(p => p.Id).ToListAsync();
             foreach (var item in items)
             {
+                if (!writableProjectIds.Contains(item.ProjectId)) { result[item.Id] = false; continue; }
                 bool within24Hours = (AppTime.Now - item.CreatedAt) <= TimeSpan.FromHours(24);
                 bool isCreator = item.ReporterId == currentUser.Id;
                 bool isProjectAdmin = await _context.ProjectUsers
@@ -644,6 +656,9 @@ namespace ToDo.Domain
 
                 if (!await CanAccessProjectAsync(dailyReport.ProjectId, currentUser))
                     return (false, "你没有该项目的日报访问权限");
+
+                if (dailyReport.Project.Status != ProjectStatus.Active)
+                    return (false, ProjectLifecycleRules.ReadOnlyMessage);
 
                 bool within24Hours = (AppTime.Now - dailyReport.CreatedAt) <= TimeSpan.FromHours(24);
                 if (!within24Hours)

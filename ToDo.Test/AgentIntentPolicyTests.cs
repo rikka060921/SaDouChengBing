@@ -25,6 +25,21 @@ public sealed partial class AgentFrameworkCompletionTests
     [InlineData("整理设计文档，不要修改项目资料。")]
     [InlineData("整理设计文档，不得修改项目资料。")]
     [InlineData("给出创建任务的步骤，仅提供建议。")]
+    [InlineData("分析任务进度，不需要修改任务。")]
+    [InlineData("分析任务进度，不希望自动修改任务。")]
+    [InlineData("整理设计文档，不需要修改项目资料库。")]
+    [InlineData("生成周报，不需要保存到系统。")]
+    [InlineData("生成任务建议，不打算创建任务。")]
+    [InlineData("分析项目，不允许更新项目名称。")]
+    [InlineData("整理任务反馈，不需要发布评论。")]
+    [InlineData("如果项目延期，再修改任务状态。")]
+    [InlineData("待负责人同意后创建任务。")]
+    [InlineData("分析项目风险，引用原话：\"修改任务状态\"。")]
+    [InlineData("分析项目风险，引用原话：“创建任务”。")]
+    [InlineData("分析任务风险，示例代码：```修改任务状态```。")]
+    [InlineData("分析任务风险，原话是 '修改任务状态'。")]
+    [InlineData("分析项目进度，不需要联网搜索。")]
+    [InlineData("生成设计文档，不需要存入项目资料库。")]
     public void ContentRequests_DoNotGrantWriteToolsOrNeedPlanning(string request)
     {
         var task = new ToDoTask { Title = request, CreatorId = 1 };
@@ -232,5 +247,47 @@ public sealed partial class AgentFrameworkCompletionTests
             .Cast<Microsoft.AspNetCore.Authorization.AuthorizeAttribute>());
         Assert.Equal("systemAdmin", authorization.Roles);
         Assert.Equal(new[] { "Description", "Instructions", "Name" }, typeof(AgentProfileInput).GetProperties().Select(p => p.Name).Order());
+    }
+
+    [Fact]
+    public async Task AdvancedSettings_SaveModelAndLimits_RejectStaleVersion()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new AgentAdministrationService(db.Context, new AgentToolCatalog());
+        var created = await new AgentSetupService(service).SaveAsync(null,
+            new() { Name = "技术测试助手", Purpose = "report", Instructions = "保留工作依据" }, db.Admin.Id);
+        var input = (await service.GetAsync(created.Id))!;
+        var oldVersion = input.Version;
+        input.ModelName = "technical-model";
+        input.MaxTokens = 3200;
+        input.MaxTurns = 8;
+        input.TimeoutSeconds = 120;
+        input.Temperature = 0.2;
+        var tools = input.ToolPermissions.Where(t => t.IsEnabled).Select(t => t.ToolName).ToArray();
+        var approvals = input.ToolPermissions.Where(t => t.RequiresApproval || t.ReviewMode == AgentToolReviewMode.HumanApproval).Select(t => t.ToolName).ToArray();
+        var saved = await service.SaveAsync(input.Id, input, AgentAdministrationService.ParseContextSources(input.ContextSourcesJson),
+            AgentAdministrationService.ParseCapabilities(input.CapabilitiesJson), tools, approvals,
+            input.AcceptanceContract ?? new(), db.Admin.Id, applyImmediately: true, expectedVersion: oldVersion);
+        Assert.Equal("technical-model", saved.ModelName);
+        Assert.Equal(3200, saved.MaxTokens);
+        Assert.Equal(8, saved.MaxTurns);
+        Assert.Equal(120, saved.TimeoutSeconds);
+        Assert.Equal(oldVersion + 1, saved.Version);
+        input.ModelName = "stale-page";
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => service.SaveAsync(input.Id, input,
+            AgentAdministrationService.ParseContextSources(input.ContextSourcesJson), AgentAdministrationService.ParseCapabilities(input.CapabilitiesJson),
+            tools, approvals, input.AcceptanceContract ?? new(), db.Admin.Id, applyImmediately: true, expectedVersion: oldVersion));
+        Assert.Contains("配置已被其他人修改", error.Message);
+        Assert.Equal("technical-model", (await service.GetAsync(input.Id))!.ModelName);
+    }
+
+    [Fact]
+    public async Task AdvancedSettings_RejectMemberEvenWithCorrectVersion()
+    {
+        await using var db = await TestDatabase.CreateAsync();
+        var service = new AgentAdministrationService(db.Context, new AgentToolCatalog());
+        var input = (await service.GetAsync(db.Agent.Id))!;
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.SaveAsync(input.Id, input, [], [], [], [],
+            input.AcceptanceContract ?? new(), db.Member.Id, applyImmediately: true, expectedVersion: input.Version));
     }
 }

@@ -66,16 +66,21 @@
                     <a class="app-nav-link @(currentPage.StartsWith("/Tasks", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/Tasks/Index"><i class="bi bi-check2-square"></i><span>任务看板</span></a>
                     <a class="app-nav-link @(currentPage.StartsWith("/MeetingMinutes", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/MeetingMinutes/Index"><i class="bi bi-calendar3"></i><span>会议纪要</span></a>
                     <a class="app-nav-link @(currentPage.StartsWith("/Reports", StringComparison.OrdinalIgnoreCase) || currentPage.StartsWith("/DailySummary", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/DailySummary/Index"><i class="bi bi-bar-chart"></i><span>工作报告</span></a>
-                    <a class="app-nav-link @(currentPage.StartsWith("/Notifications", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/Notifications/Index"><i class="bi bi-bell"></i><span>消息中心</span></a>
+                    @{
+                        var moreOpen = new[] { "/Approvals", "/Agents", "/AiSessions", "/RedBlue", "/Users", "/ScheduledJobs",
+                            "/EventBus", "/Integrations", "/DataGovernance", "/SystemHealth", "/OperationLogs" }
+                            .Any(prefix => currentPage.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+                    }
+                    <details class="app-nav-more" open="@moreOpen">
+                        <summary class="app-nav-link"><i class="bi bi-three-dots"></i><span>@(isSystemAdmin ? "管理与更多" : "更多功能")</span></summary>
+                        <div class="app-nav-label">协作与记录</div>
                     <a class="app-nav-link @(currentPage.StartsWith("/Approvals", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/Approvals/Index"><i class="bi bi-check2-square"></i><span>审批中心</span></a>
-
-                    <div class="app-nav-label">智能协作</div>
                     <a class="app-nav-link @((currentPage.StartsWith("/Agents", StringComparison.OrdinalIgnoreCase) && !currentPage.StartsWith("/Agents/WorkItems", StringComparison.OrdinalIgnoreCase)) || currentPage.StartsWith("/AiSessions", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/Agents/Index"><i class="bi bi-robot"></i><span>Agent中心</span></a>
                     <a class="app-nav-link @(currentPage.StartsWith("/RedBlue", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/RedBlue/Index"><i class="bi bi-shield-shaded"></i><span>红蓝对抗</span></a>
-
-                    <div class="app-nav-label">系统</div>
-                    @if (isSystemAdmin)
-                    {
+                    <a class="app-nav-link @(currentPage.StartsWith("/OperationLogs", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/OperationLogs/Index"><i class="bi bi-journal-text"></i><span>操作日志</span></a>
+                        @if (isSystemAdmin)
+                        {
+                            <div class="app-nav-label">系统管理</div>
                         <a class="app-nav-link @(currentPage.StartsWith("/Users", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/Users/Index"><i class="bi bi-people"></i><span>用户管理</span></a>
                         <a class="app-nav-link @(currentPage.StartsWith("/ScheduledJobs", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/ScheduledJobs/Index"><i class="bi bi-clock-history"></i><span>定时任务</span></a>
                         <a class="app-nav-link @(currentPage.StartsWith("/Agents/WorkItems", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/Agents/WorkItems/Index"><i class="bi bi-cpu"></i><span>Agent执行</span></a>
@@ -83,8 +88,8 @@
                         <a class="app-nav-link @(currentPage.StartsWith("/Integrations", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/Integrations/Index"><i class="bi bi-plug"></i><span>外部接口</span></a>
                         <a class="app-nav-link @(currentPage.StartsWith("/DataGovernance", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/DataGovernance/Index"><i class="bi bi-database-check"></i><span>数据治理</span></a>
                         <a class="app-nav-link @(currentPage.StartsWith("/SystemHealth", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/SystemHealth/Index"><i class="bi bi-heart-pulse"></i><span>系统健康</span></a>
-                    }
-                    <a class="app-nav-link @(currentPage.StartsWith("/OperationLogs", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/OperationLogs/Index"><i class="bi bi-journal-text"></i><span>操作日志</span></a>
+                        }
+                    </details>
                 </nav>
                 <div class="app-sidebar-footer">内部协作工作台</div>
             </aside>

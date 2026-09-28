@@ -37,6 +37,7 @@ public class IndexModel : PageModel
     public List<ApplicationUser> AllUsers { get; set; } = new();
     /// <summary>当前用户是否担任任一项目的负责人（用于显示「生成团队汇报」按钮）</summary>
     public bool IsAnyProjectLeader { get; set; }
+    public bool CanGenerateMemberReports => LeaderProjectOptions.Count > 0;
     /// <summary>用户可生成团队汇报的项目列表（仅其作为负责人的未删除活跃项目）</summary>
     public List<SelectListItem> LeaderProjectOptions { get; set; } = new();
 
@@ -90,7 +91,7 @@ public class IndexModel : PageModel
         DailyReports = items;
         TotalCount = totalCount;
         TotalPages = TotalCount == 0 ? 1 : (int)Math.Ceiling(TotalCount / (double)PageSize);
-        CurrentPage = Math.Clamp(CurrentPage, 1, TotalPages);
+        CurrentPage = DailyReportService.NormalizePage(CurrentPage, TotalCount, PageSize);
 
         var reporterIds = DailyReports.Select(item => item.ReporterId).Distinct().ToList();
         AllUsers = await _userManager.Users
@@ -135,6 +136,12 @@ public class IndexModel : PageModel
             return RedirectToPage("./Index", new { tab = Tab });
         }
 
+        if (project.Status != ProjectStatus.Active)
+        {
+            TempData["ErrorMessage"] = ToDo.Context.ProjectLifecycleRules.ReadOnlyMessage;
+            return RedirectToPage("./Index", new { tab = "team" });
+        }
+
         var date = reportDate?.Date ?? AppTime.Today;
         try
         {
@@ -161,20 +168,11 @@ public class IndexModel : PageModel
     {
         if (string.Equals(Tab, "team", StringComparison.OrdinalIgnoreCase))
         {
-            // 成员日报：下拉只列出当前用户作为项目管理员的项目（与团队汇报的可见范围一致）
-            IQueryable<Project> projectQuery = _context.Project.AsNoTracking()
-                .Where(p => !p.IsDeleted && p.Status == ProjectStatus.Active);
-            if (currentUser.Role != UserRole.systemAdmin)
-            {
-                var adminProjectIds = await _context.ProjectUsers.AsNoTracking()
-                    .Where(pu => pu.UserId == currentUser.Id && pu.ProjectRole == (int)ProjectRole.Admin)
-                    .Select(pu => pu.ProjectId)
-                    .ToListAsync();
-                projectQuery = projectQuery.Where(p => adminProjectIds.Contains(p.Id));
-            }
+            // 历史查询包含归档项目；新生成报告另取活跃项目。
+            var projectQuery = MemberReportAccess.Projects(_context, currentUser).AsNoTracking();
             ProjectOptions = await projectQuery
                 .OrderBy(p => p.Name)
-                .Select(p => new SelectListItem(p.Name, p.Id.ToString()))
+                .Select(p => new SelectListItem(p.Name + (p.Status == ProjectStatus.Archived ? "（已归档）" : ""), p.Id.ToString()))
                 .ToListAsync();
         }
         else
@@ -195,20 +193,9 @@ public class IndexModel : PageModel
 
     private async Task LoadLeaderProjectsAsync(ApplicationUser currentUser)
     {
-        IQueryable<Project> query = _context.Project.AsNoTracking()
-            .Where(p => !p.IsDeleted && p.Status == ProjectStatus.Active);
-        if (currentUser.Role != UserRole.systemAdmin)
-        {
-            // 项目管理员（ProjectRole.Admin）可以生成团队汇报（负责人同时也是管理员）
-            var adminProjectIds = await _context.ProjectUsers.AsNoTracking()
-                .Where(pu => pu.UserId == currentUser.Id && pu.ProjectRole == (int)ProjectRole.Admin)
-                .Select(pu => pu.ProjectId)
-                .ToListAsync();
-            query = query.Where(p => adminProjectIds.Contains(p.Id));
-        }
-
-        var projects = await query.OrderBy(p => p.Name).ToListAsync();
-        IsAnyProjectLeader = projects.Count > 0;
+        var query = MemberReportAccess.Projects(_context, currentUser).AsNoTracking();
+        IsAnyProjectLeader = await query.AnyAsync();
+        var projects = await query.Where(p => p.Status == ProjectStatus.Active).OrderBy(p => p.Name).ToListAsync();
         LeaderProjectOptions = projects
             .Select(p => new SelectListItem(p.Name, p.Id.ToString()))
             .ToList();

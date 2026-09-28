@@ -64,6 +64,12 @@ body {
 
 .app-brand-mobile { display: none; }
 .app-topbar-spacer { flex: 1 1 auto; }
+.app-nav-more { margin-top: 12px; border-top: 1px solid var(--app-line); padding-top: 8px; }
+.app-nav-more > summary { cursor: pointer; list-style: none; }
+.app-nav-more > summary::-webkit-details-marker { display: none; }
+.app-nav-more > summary::after { content: "＋"; margin-left: auto; }
+.app-nav-more[open] > summary::after { content: "－"; }
+.app-nav-more > summary:focus-visible { outline: 2px solid var(--app-blue); outline-offset: 2px; }
 
 .app-menu-toggle,
 .app-topbar-icon {

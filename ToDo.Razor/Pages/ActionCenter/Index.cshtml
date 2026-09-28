@@ -10,7 +10,10 @@
             <p class="page-subtitle mb-1">只处理需要你出手的事，AI 正常执行的工作留在任务看板。</p>
             <div class="small text-muted">严重阻塞与重要决策优先，其次是逾期、今天到期和其他待处理。同一任务已合并。</div>
         </div>
-        <a asp-page="/Tasks/Index" class="btn btn-outline-secondary btn-sm">查看全部任务</a>
+        <div class="d-flex flex-wrap gap-2">
+            <a asp-page="/Approvals/Index" class="btn btn-outline-secondary btn-sm">审批记录</a>
+            <a asp-page="/Tasks/Index" class="btn btn-outline-secondary btn-sm">查看全部任务</a>
+        </div>
     </div>
     @if (Model.MyActiveTaskCount > 0)
     {

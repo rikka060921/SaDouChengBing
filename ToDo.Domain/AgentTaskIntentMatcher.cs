@@ -32,6 +32,9 @@ public static class AgentTaskIntentMatcher
     public static Decision Analyze(string text)
     {
         text ??= string.Empty;
+        // 引用的示例、代码或原话不是业务操作授权；字段的新值仍由执行时读取原始任务。
+        text = Regex.Replace(text, "```[\\s\\S]*?```|`[^`]*`|\"[^\"]*\"|“[^”]*”|‘[^’]*’|「[^」]*」|『[^』]*』|'[^'\\r\\n]*'",
+            " ", RegexOptions.None, TimeSpan.FromMilliseconds(100));
         bool Has(params string[] words) => words.Any(w => text.Contains(w, StringComparison.OrdinalIgnoreCase));
         bool Match(string pattern) => Regex.IsMatch(text, pattern, RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(100));
         var tools = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -40,12 +43,15 @@ public static class AgentTaskIntentMatcher
         var readOnly = Has("只读", "只读取", "不修改", "不要修改", "禁止修改", "不得修改", "不要写入", "不得写入", "禁止写入", "不写回", "不得调用工具",
             "只给建议", "只给出建议", "仅给建议", "仅提供建议", "只要建议", "只给草稿", "先给我看草稿", "先给我看",
             "read-only", "readonly", "do not write", "don't write", "must not write", "without writing");
-        bool Denied(string action) => Match($@"(?:不要|不得|禁止|无需|不必|不能|暂不|不)(?:再|实际|直接)?{action}");
-        var noSave = Denied("(?:保存|写入|写回)");
+        bool Denied(string action) => Match($@"(?:不要|不得|禁止|无需|不必|不能|暂不|不)(?:\s*(?:需要|希望|允许|打算|要求|必需|必須|必须|进行|执行|再|实际|直接|自动))*\s*{action}");
+        // 条件是否成立不能靠关键词猜测。含条件的写入要求先保持只读，需明确后再授权。
+        var conditional = Match(@"如果|假如|假设|假定|除非|若|待.{0,30}后|\b(?:if|unless)\b");
+        var noSave = Denied("(?:保存|写入|写回|存入|记录到|同步到)");
         var noCreate = Denied("(?:创建|新建|新增)");
         bool Save() => !noSave && Has("保存到", "保存至", "存入", "写入", "写回", "记录到系统", "同步到系统", "并保存");
 
-        if (!Has("禁止联网", "不要联网", "不联网", "不得调用工具", "no web", "offline")
+        if (!Denied("(?:联网|网络搜索|网上搜索|搜索公开|检索公开|调用工具)")
+            && !Has("禁止联网", "不要联网", "不联网", "不得调用工具", "no web", "offline")
             && Has("联网", "网络搜索", "网上搜索", "搜索公开", "检索公开", "web search", "search the web"))
         {
             tools.Add("web.search");
@@ -59,7 +65,7 @@ public static class AgentTaskIntentMatcher
             tools.Add(tool);
             intents.Add(new(label, tool == "report.create" ? ["daily-report", "report.create"] : [tool], required ? tool : null));
         }
-        if (!readOnly)
+        if (!readOnly && !conditional)
         {
             if (!Denied("(?:修改|更新|调整|更换|变更)") && Has("修改项目", "更新项目", "项目改名", "项目名称改", "项目名改")
                 && !documents) AddWrite("project.update", "修改项目信息");
@@ -67,7 +73,8 @@ public static class AgentTaskIntentMatcher
                 AddWrite("task.update", "修改现有任务");
             if (!noCreate && Match(@"(?:创建|新建|新增)(?:这|那|上述|以下|的|\d|[一二三四五六七八九十]|个|条|项|子|\s){0,15}任务"))
                 AddWrite("task.create", "创建任务记录");
-            if (documents && !noSave && (Save() || Match(@"(?:修改|更新|覆盖)(?:项目资料|资料库)")))
+            if (documents && !noSave && !Denied("(?:修改|更新|覆盖)")
+                && (Save() || Match(@"(?:修改|更新|覆盖)(?:项目资料|资料库)")))
                 AddWrite("project.document.write", "保存或修改项目资料");
             if (report && !noCreate && (Save() || Has("创建日报", "创建周报", "创建月报", "创建报告")))
                 AddWrite("report.create", "保存工作报告");
