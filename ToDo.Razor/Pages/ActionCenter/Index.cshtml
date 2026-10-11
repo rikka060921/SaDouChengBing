@@ -8,7 +8,7 @@
         <div>
             <h1 class="page-heading">待我处理 <span class="badge rounded-pill bg-light text-dark fs-6">@Model.TotalPending</span></h1>
             <p class="page-subtitle mb-1">只处理需要你出手的事，AI 正常执行的工作留在任务看板。</p>
-            <div class="small text-muted">严重阻塞与重要决策优先，其次是逾期、今天到期和其他待处理。同一任务已合并。</div>
+            <div class="small text-muted">阻塞执行的确认与审批优先，其次是逾期、24 小时内到期和其他事项。同一任务合并展示。</div>
         </div>
         <div class="d-flex flex-wrap gap-2">
             <a asp-page="/Approvals/Index" class="btn btn-outline-secondary btn-sm">审批记录</a>
@@ -32,8 +32,20 @@
     else
     {
         <p class="small text-muted">共 @Model.TotalPending 件事，其中 @Model.UrgentCount 件优先或逾期待处理。处理完成后会自动移出，无需另外勾选。</p>
+        <div class="d-flex flex-wrap gap-2 mb-3" aria-label="待办优先级数量">
+            @for (var priority = 0; priority < Model.PriorityCounts.Length; priority++)
+            {
+                <span class="badge rounded-pill @(priority <= 1 ? "bg-danger" : priority == 2 ? "bg-warning text-dark" : "bg-light text-dark")">@Model.PriorityLabels[priority] @Model.PriorityCounts[priority]</span>
+            }
+        </div>
+        var previousPriority = -1;
         @foreach (var item in Model.Items)
         {
+            if (previousPriority != item.Priority)
+            {
+                previousPriority = item.Priority;
+                <h2 class="h6 mt-4 mb-2">@item.PriorityLabel</h2>
+            }
             var badge = item.Priority switch { 0 => "bg-danger", 1 => "bg-danger", 2 => "bg-warning text-dark", _ => "bg-light text-dark" };
             <article class="card shadow-sm mb-3" data-action-key="@item.Key">
                 <div class="card-body p-3 p-md-4">

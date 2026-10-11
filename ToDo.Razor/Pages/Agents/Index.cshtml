@@ -18,6 +18,20 @@
         </div>
     </div>
     <div asp-validation-summary="All" class="text-danger"></div>
+    <div class="alert @(Model.SearchConfigured ? "alert-info" : "alert-warning") small" role="status">
+        @if (!Model.SearchConfigured)
+        {
+            <span>联网搜索暂不可用：搜索服务尚未启用或缺少密钥。需要公开资料调研的任务，请管理员先配置搜索服务。</span>
+        }
+        else if (Model.IsSystemAdmin)
+        {
+            <span>联网搜索已配置；@(Model.LastSuccessfulSearchAt.HasValue ? $"最近一次成功检索：{Model.LastSuccessfulSearchAt:yyyy-MM-dd HH:mm}" : "目前没有成功检索记录")。配置状态不代表本次一定连通，实际结果以任务工具记录为准。</span>
+        }
+        else
+        {
+            <span>联网搜索已配置；实际能否取得来源，以任务执行结果为准。</span>
+        }
+    </div>
     @if (Model.IsSystemAdmin)
     {
         <details class="mb-3" open="@(!ViewData.ModelState.IsValid)"><summary class="text-muted mb-2">管理员调试（可选）</summary>

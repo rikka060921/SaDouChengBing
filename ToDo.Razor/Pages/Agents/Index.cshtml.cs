@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using ToDo.Context;
 using ToDo.Domain;
 using ToDo.Entities;
@@ -19,8 +20,9 @@ public class IndexModel : PageModel
     private readonly AiSessionService _sessions;
     private readonly ApplicationDbContext _context;
     private readonly ILogger<IndexModel> _logger;
+    private readonly IOptions<AgentWebSearchOptions> _searchOptions;
 
-    public IndexModel(IAgentRegistry registry, AgentRunQueueService runQueue, UserManager<ApplicationUser> userManager, AiSessionService sessions, ApplicationDbContext context, ILogger<IndexModel> logger)
+    public IndexModel(IAgentRegistry registry, AgentRunQueueService runQueue, UserManager<ApplicationUser> userManager, AiSessionService sessions, ApplicationDbContext context, ILogger<IndexModel> logger, IOptions<AgentWebSearchOptions> searchOptions)
     {
         _registry = registry;
         _runQueue = runQueue;
@@ -28,6 +30,7 @@ public class IndexModel : PageModel
         _sessions = sessions;
         _context = context;
         _logger = logger;
+        _searchOptions = searchOptions;
     }
 
     public IReadOnlyList<AgentDefinition> Agents { get; set; } = Array.Empty<AgentDefinition>();
@@ -39,6 +42,8 @@ public class IndexModel : PageModel
     public List<Project> Projects { get; set; } = new();
     public List<ToDoTask> Tasks { get; set; } = new();
     public bool IsSystemAdmin { get; set; }
+    public bool SearchConfigured { get; private set; }
+    public DateTime? LastSuccessfulSearchAt { get; private set; }
 
     [BindProperty] public string AgentKey { get; set; } = "project-workbench";
     [BindProperty, StringLength(8000, ErrorMessage = "Agent 指令不能超过 8000 个字符")] public string Prompt { get; set; } = string.Empty;
@@ -79,9 +84,12 @@ public class IndexModel : PageModel
                 ModelState.AddModelError(nameof(TaskId), "该 Agent 必须选择任务");
             if (definition?.RequiresProject == true && !ProjectId.HasValue && !TaskId.HasValue)
                 ModelState.AddModelError(nameof(ProjectId), "该 Agent 必须选择项目");
+            if (!_searchOptions.Value.IsConfigured
+                && AgentTaskIntentMatcher.ForTask(new ToDoTask { Title = Prompt ?? string.Empty, CreatorId = user.Id }).Tools.Contains("web.search"))
+                ModelState.AddModelError(nameof(Prompt), "联网搜索服务尚未启用或缺少密钥，请管理员配置后再提交，不会改用模型记忆冒充搜索结果");
             if (!ModelState.IsValid) return Page();
 
-            var job = await _runQueue.EnqueueNewAsync(AgentKey, Prompt.Trim(), user, ProjectId, TaskId, HttpContext.RequestAborted);
+            var job = await _runQueue.EnqueueNewAsync(AgentKey, Prompt!.Trim(), user, ProjectId, TaskId, HttpContext.RequestAborted);
             return RedirectToPage("/AiSessions/Details", new { id = job.AiSessionId });
         }
         catch (Exception ex)
@@ -96,6 +104,11 @@ public class IndexModel : PageModel
     {
         Agents = await _registry.GetAllAsync();
         IsSystemAdmin = user.Role == UserRole.systemAdmin;
+        SearchConfigured = _searchOptions.Value.IsConfigured;
+        if (SearchConfigured && IsSystemAdmin)
+            LastSuccessfulSearchAt = await _context.AgentToolCalls.AsNoTracking()
+                .Where(call => call.ToolName == "web.search" && call.Status == AgentToolCallStatus.Executed)
+                .MaxAsync(call => (DateTime?)call.CompletedAt);
         RecentSessions = await _sessions.GetRecentAsync(user, 8);
         var projectQuery = _context.Project.AsNoTracking().Where(item => !item.IsDeleted && item.Status == ProjectStatus.Active);
         if (user.Role != UserRole.systemAdmin)

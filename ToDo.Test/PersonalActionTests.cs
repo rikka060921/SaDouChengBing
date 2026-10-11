@@ -27,6 +27,33 @@ public sealed class PersonalActionTests
     }
 
     [Fact]
+    public void Merge_UsesRollingTwentyFourHours_AndBlockingActionWithoutDeadlineComesFirst()
+    {
+        PersonalActionSignal Signal(string key, DateTime? deadline, bool critical = false)
+            => new(key, key, "项目", "需处理", "负责人", Now, deadline, critical, new("处理", "/Tasks/Details/1"));
+        var cards = PersonalActionService.Merge([
+            Signal("after-window", Now.AddHours(25)), Signal("next-day-near", Now.AddHours(23)),
+            Signal("overdue", Now.AddMinutes(-1)), Signal("blocking-confirmation", null, true)
+        ], Now);
+        Assert.Equal(new[] { "blocking-confirmation", "overdue", "next-day-near", "after-window" },
+            cards.Select(card => card.Key));
+        Assert.Equal("24 小时内到期", cards[2].PriorityLabel);
+    }
+
+    [Fact]
+    public async Task NextDayDeadline_UsesSameTwentyFourHourWindowAsNotification()
+    {
+        await using var db = await Fixture.CreateAsync();
+        var task = await db.TaskAsync(deadline: Now.AddHours(23));
+        var card = Assert.Single(await db.Actions.GetAsync(db.Owner, Now));
+        Assert.Equal($"task:{task.Id}", card.Key);
+        Assert.Equal(2, card.Priority);
+        Assert.Equal(task.EndTime, card.CreatedAt);
+        await new UserNotificationService(db.Context).GenerateTaskRemindersAsync(Now);
+        Assert.Equal(db.Owner.Id, (await db.Context.UserNotifications.SingleAsync()).UserId);
+    }
+
+    [Fact]
     public async Task HumanReviewAndUnconfirmedMeeting_AppearWithActionableLinks()
     {
         await using var db = await Fixture.CreateAsync();
@@ -274,6 +301,7 @@ public sealed class PersonalActionTests
         await db.Context.SaveChangesAsync();
         var card = Assert.Single(await db.Actions.GetAsync(db.Leader, Now));
         Assert.Single(card.Reasons);
+        Assert.Equal(0, card.Priority);
         Assert.Contains("#execution-plan", card.Actions.Single().Url);
         var decision = await db.Context.AgentDispatchDecisions.SingleAsync();
         decision.DispatchVersion = task.AgentAssignmentVersion;

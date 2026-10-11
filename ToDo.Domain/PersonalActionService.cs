@@ -12,7 +12,7 @@ public sealed record PersonalActionCard(string Key, string Title, string Project
     DateTime CreatedAt, DateTime? Deadline, IReadOnlyList<string> Reasons, IReadOnlyList<string> WhyMe,
     IReadOnlyList<PersonalActionLink> Actions)
 {
-    public string PriorityLabel => Priority switch { 0 => "优先处理", 1 => "已逾期", 2 => "今天处理", _ => "待处理" };
+    public string PriorityLabel => Priority switch { 0 => "优先处理", 1 => "已逾期", 2 => "24 小时内到期", _ => "待处理" };
 }
 
 /// <summary>只读派生清单：权限过滤后按业务对象合并，不另外维护一套待办状态。</summary>
@@ -63,7 +63,7 @@ public sealed class PersonalActionService(ApplicationDbContext context, Approval
             if (item.Status == AgentWorkItemStatus.WaitingPlanConfirmation
                 && (managed.Contains(task.ProjectId) || task.CreatorId == user.Id || task.ReviewerId == user.Id))
                 TaskSignal(task, "执行计划需要你确认后才能继续。", ManagerOr("你是任务创建人或审核人", task.ProjectId),
-                    item.CreatedAt, label: "查看执行计划", url: $"/Tasks/Details/{task.Id}#execution-plan");
+                    item.CreatedAt, true, "查看执行计划", $"/Tasks/Details/{task.Id}#execution-plan");
             if (item.Status == AgentWorkItemStatus.Failed && latestWorkIds.Contains(item.Id)
                 && task.AgentExecutionStatus == AgentTaskExecutionStatus.Failed
                 && (managed.Contains(task.ProjectId) || task.CreatorId == user.Id || task.ReviewerId == user.Id
@@ -86,7 +86,7 @@ public sealed class PersonalActionService(ApplicationDbContext context, Approval
                     : item.Explanation
                 : "该派单需要你确认执行者。",
                 ManagerOr("你创建了这项任务", task.ProjectId), item.CreatedAt,
-                item.Status == AgentDispatchDecisionStatus.NoCandidate, "查看原因并调整任务");
+                true, "查看原因并调整任务");
         }
 
         var receipts = await context.AgentDeliveryReceipts.AsNoTracking().Where(r => taskIds.Contains(r.TaskId))
@@ -122,7 +122,7 @@ public sealed class PersonalActionService(ApplicationDbContext context, Approval
             if (task != null && task.ProjectId != item.ProjectId) continue;
             signals.Add(new(task == null ? $"approval:{item.Id}" : $"task:{task.Id}", task?.Title ?? item.Summary,
                 names[item.ProjectId], $"需要授权：{item.Summary}", "你有该操作的审批资格", item.RequestedAt,
-                task?.EndTime, item.RiskLevel == AgentRiskLevel.High,
+                task?.EndTime, true,
                 new("审查敏感操作", $"/Approvals/Index?requestId={item.Id}#approval-{item.Id}")));
         }
 
@@ -169,7 +169,7 @@ public sealed class PersonalActionService(ApplicationDbContext context, Approval
         }
 
         // 普通人工任务的临期/逾期也能在同一入口处理，不复制全部任务看板。
-        foreach (var task in tasks.Where(t => activeIds.Contains(t.ProjectId) && t.EndTime.HasValue && t.EndTime < now.Date.AddDays(1)
+        foreach (var task in tasks.Where(t => activeIds.Contains(t.ProjectId) && t.EndTime.HasValue && t.EndTime <= now.AddHours(24)
             && t.Status != TaskStatus.PendingConfirmation && t.AgentExecutionStatus != AgentTaskExecutionStatus.WaitingApproval))
         {
             if (actions.Any(a => a.IsConfirmed && a.MatchedTaskId == task.Id
@@ -178,8 +178,8 @@ public sealed class PersonalActionService(ApplicationDbContext context, Approval
             if (task.AssigneeType == TaskAssigneeType.DigitalEmployee && !overdue) continue;
             var responsible = task.AssigneeType == TaskAssigneeType.Human ? task.AssigneeId ?? task.CreatorId : task.CreatorId;
             if (responsible != user.Id && !(overdue && managed.Contains(task.ProjectId))) continue;
-            TaskSignal(task, overdue ? "任务已超过截止时间，请更新进展或处理阻塞。" : "任务今天到期，请确认能否按时完成。",
-                ManagerOr("你是这项任务的当前负责人", task.ProjectId), task.CreatedAt, label: "更新任务进展");
+            TaskSignal(task, overdue ? "任务已超过截止时间，请更新进展或处理阻塞。" : "任务将在 24 小时内到期，请确认能否按时完成。",
+                ManagerOr("你是这项任务的当前负责人", task.ProjectId), task.EndTime!.Value, label: "更新任务进展");
         }
         return Merge(signals, now);
     }
@@ -190,7 +190,7 @@ public sealed class PersonalActionService(ApplicationDbContext context, Approval
             var ordered = group.OrderByDescending(s => s.Critical).ThenBy(s => s.CreatedAt).ToList();
             var first = ordered[0];
             var deadline = group.Min(s => s.Deadline);
-            var priority = group.Any(s => s.Critical) ? 0 : deadline < now ? 1 : deadline < now.Date.AddDays(1) ? 2 : 3;
+            var priority = group.Any(s => s.Critical) ? 0 : deadline < now ? 1 : deadline <= now.AddHours(24) ? 2 : 3;
             return new PersonalActionCard(group.Key, first.Title, first.ProjectName, priority, group.Min(s => s.CreatedAt),
                 deadline, ordered.Select(s => s.Reason).Distinct().ToList(), ordered.Select(s => s.WhyMe).Distinct().ToList(),
                 ordered.Select(s => s.Action).DistinctBy(a => a.Url).ToList());

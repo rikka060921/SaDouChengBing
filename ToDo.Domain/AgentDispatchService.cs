@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using ToDo.Context;
 using ToDo.Entities;
 
@@ -40,19 +41,22 @@ public class AgentDispatchService
     private readonly IEventBus _eventBus;
     private readonly AgentOutcomeService _outcomes;
     private readonly ILogger<AgentDispatchService>? _logger;
+    private readonly IOptions<AgentWebSearchOptions>? _searchOptions;
 
     public AgentDispatchService(
         ApplicationDbContext context,
         AgentWorkQueueService workQueue,
         IEventBus eventBus,
         AgentOutcomeService outcomes,
-        ILogger<AgentDispatchService>? logger = null)
+        ILogger<AgentDispatchService>? logger = null,
+        IOptions<AgentWebSearchOptions>? searchOptions = null)
     {
         _context = context;
         _workQueue = workQueue;
         _eventBus = eventBus;
         _outcomes = outcomes;
         _logger = logger;
+        _searchOptions = searchOptions;
     }
 
     public async Task<AgentDispatchResult> DispatchTaskAsync(
@@ -294,6 +298,11 @@ public class AgentDispatchService
             .ToListAsync(cancellationToken);
         var intentPolicy = AgentTaskIntentMatcher.ForTask(task);
         var intents = intentPolicy.Intents;
+        if (intentPolicy.Tools.Contains("web.search") && _searchOptions is { Value.IsConfigured: false })
+        {
+            blockers?.Add("联网搜索服务尚未启用或缺少有效密钥，请管理员先配置搜索服务，再编辑并保存任务以重新匹配 Agent");
+            return [];
+        }
         if (intents.Count == 0)
         {
             blockers?.Add("暂不能识别任务用途，请说明希望得到的成果；需要保存或创建记录时写明对象和动作");

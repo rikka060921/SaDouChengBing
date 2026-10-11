@@ -16,6 +16,8 @@ public sealed class IndexModel(ApplicationDbContext context, UserManager<Applica
     public IReadOnlyList<PersonalActionCard> Items { get; set; } = [];
     public int TotalPending { get; set; }
     public int UrgentCount { get; set; }
+    public int[] PriorityCounts { get; } = new int[4];
+    public string[] PriorityLabels { get; } = ["优先处理", "已逾期", "24 小时内到期", "待处理"];
     public int MyActiveTaskCount { get; set; }
     public const int PageSize = 30;
     [BindProperty(SupportsGet = true)] public int PageNumber { get; set; } = 1;
@@ -30,6 +32,7 @@ public sealed class IndexModel(ApplicationDbContext context, UserManager<Applica
         var cards = await new PersonalActionService(context, approvals).GetAsync(user, AppTime.Now, HttpContext.RequestAborted);
         TotalPending = cards.Count;
         UrgentCount = cards.Count(c => c.Priority <= 1);
+        foreach (var card in cards) PriorityCounts[card.Priority]++;
         PageNumber = Math.Clamp(PageNumber, 1, TotalPages);
         Items = cards.Skip((PageNumber - 1) * PageSize).Take(PageSize).ToList();
         return Page();

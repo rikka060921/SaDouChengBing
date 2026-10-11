@@ -28,6 +28,15 @@ public sealed class AgentWebSearchTests
         new(new HttpClient(handler), Options.Create(new AgentWebSearchOptions { Enabled = enabled, ApiKey = key }));
 
     [Theory]
+    [InlineData(false, "test-key", false)]
+    [InlineData(true, "", false)]
+    [InlineData(true, "  ", false)]
+    [InlineData(true, "invalid key", false)]
+    [InlineData(true, "test-key", true)]
+    public void ConfiguredStatusMatchesRuntimeGate(bool enabled, string key, bool expected)
+        => Assert.Equal(expected, new AgentWebSearchOptions { Enabled = enabled, ApiKey = key }.IsConfigured);
+
+    [Theory]
     [InlineData(false, "test-key")]
     [InlineData(true, "")]
     public async Task UnconfiguredDoesNotSendNetworkRequest(bool enabled, string key)

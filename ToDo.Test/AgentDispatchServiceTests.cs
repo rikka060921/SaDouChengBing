@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using ToDo.Context;
 using ToDo.Domain;
 using ToDo.Entities;
@@ -10,6 +11,21 @@ namespace ToDo.Test;
 
 public sealed class AgentDispatchServiceTests
 {
+    [Fact]
+    public async Task SearchTaskWithoutProviderConfig_WaitsForActionBeforeQueueing()
+    {
+        await using var db = await DispatchDatabase.CreateAsync();
+        var task = await db.AddTaskAsync("联网搜索公开资料并列出来源", TaskPriority.Medium);
+        var dispatch = new AgentDispatchService(db.Context, null!, new StubEventBus(),
+            new AgentOutcomeService(db.Context), searchOptions: Options.Create(new AgentWebSearchOptions()));
+
+        var result = await dispatch.DispatchTaskAsync(task.Id, db.Admin.Id);
+
+        Assert.Equal(AgentDispatchDecisionStatus.NoCandidate, result.Decision.Status);
+        Assert.Contains("联网搜索服务尚未启用", result.Decision.Explanation);
+        Assert.Empty(await db.Context.AgentWorkItems.ToListAsync());
+    }
+
     [Theory]
     [InlineData("draft", "")]
     [InlineData("no-read", "读取")]

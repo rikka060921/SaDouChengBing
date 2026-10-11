@@ -14,6 +14,8 @@ public sealed class AgentWebSearchOptions
     public string ApiKey { get; set; } = string.Empty;
     public int MaxResults { get; set; } = 5;
     public int TimeoutSeconds { get; set; } = 15;
+    public bool IsConfigured => Enabled && !string.IsNullOrWhiteSpace(ApiKey)
+        && ApiKey.Length <= 512 && !ApiKey.Trim().Any(char.IsWhiteSpace);
 }
 
 public sealed record AgentSearchHit(string Title, string Url, string Snippet);
@@ -32,10 +34,8 @@ public sealed class AgentWebSearchService(HttpClient client, IOptions<AgentWebSe
     public async Task<AgentSearchResult> SearchAsync(string query, int maxResults, CancellationToken cancellationToken = default)
     {
         var settings = options.Value;
-        if (!settings.Enabled || string.IsNullOrWhiteSpace(settings.ApiKey))
+        if (!settings.IsConfigured)
             throw new InvalidOperationException("联网搜索尚未配置：请由管理员配置 AgentWebSearch:Enabled 和 ApiKey");
-        if (settings.ApiKey.Trim().Any(char.IsWhiteSpace) || settings.ApiKey.Length > 512)
-            throw new InvalidOperationException("搜索服务密钥格式无效，请检查配置");
         query = query.Trim();
         if (query.Length is < 2 or > 300 || query.Any(char.IsControl))
             throw new InvalidOperationException("搜索词必须为 2—300 字的单行公开主题关键词");
