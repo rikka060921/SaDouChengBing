@@ -5,6 +5,7 @@ param(
     [string]$SiteName = 'ToDo',
     [string]$AppPoolName = 'ToDo',
     [string]$SiteRoot = 'C:\inetpub\ToDo',
+    [ValidateRange(1, 1000)]
     [int]$KeepReleases = 3,
     [string]$HealthCheckUrl = 'http://127.0.0.1/health/ready',
     [string]$HealthCheckHost = '',
@@ -192,9 +193,29 @@ catch {
     throw $deploymentError
 }
 
-Get-ChildItem $releasesPath -Directory |
-    Sort-Object Name -Descending |
-    Select-Object -Skip $KeepReleases |
-    Remove-Item -Recurse -Force -Confirm:$false
+$releaseRoot = [System.IO.Path]::GetFullPath($releasesPath).TrimEnd([char[]]@('\', '/'))
+$activeRelease = [System.IO.Path]::GetFullPath(
+    [Environment]::ExpandEnvironmentVariables([string](Get-Website -Name $SiteName).PhysicalPath)
+).TrimEnd([char[]]@('\', '/'))
+foreach ($oldRelease in @(Get-ChildItem -LiteralPath $releasesPath -Directory |
+    Sort-Object Name -Descending | Select-Object -Skip $KeepReleases)) {
+    $oldPath = [System.IO.Path]::GetFullPath($oldRelease.FullName).TrimEnd([char[]]@('\', '/'))
+    $oldParent = [System.IO.Path]::GetDirectoryName($oldPath).TrimEnd([char[]]@('\', '/'))
+    if (-not [string]::Equals($oldParent, $releaseRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing to clean a release outside '$releaseRoot': $oldPath"
+    }
+    if ([string]::Equals($oldPath, $activeRelease, [StringComparison]::OrdinalIgnoreCase) -or
+        ($oldRelease.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+        Write-Warning "Skipped active or linked release: $oldPath"
+        continue
+    }
+    try {
+        Remove-Item -LiteralPath $oldPath -Recurse -Force -Confirm:$false -ErrorAction Stop
+    }
+    catch {
+        # A locked historical release does not invalidate the already running, health-checked deployment.
+        Write-Warning "Old release cleanup skipped for '$oldPath': $($_.Exception.Message)"
+    }
+}
 
 Write-Host "Deployed $Branch to $releasePath"
