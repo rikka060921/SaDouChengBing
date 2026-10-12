@@ -1,0 +1,114 @@
+[
+  {
+    "key": "sadou-2025-07-prototype",
+    "period": "2025-07",
+    "sortDate": "2025-07-18",
+    "title": "ToDo 项目雏形",
+    "summary": "代码库开始记录项目、用户和任务等基础实体，形成 Razor 页面和首次 EF Core 迁移。这里的日期是代码提交日期，不代表正式上线。",
+    "sources": "Git: 5a02987, 9b46f23, a564107; 文档: docs/设计：概要设计说明书.md"
+  },
+  {
+    "key": "sadou-2025-08-core",
+    "period": "2025-08",
+    "sortDate": "2025-08-16",
+    "title": "基础协作功能扩展",
+    "summary": "任务搜索、权限与归档持续调整，会议纪要和项目报告进入代码库。",
+    "sources": "Git: 49dc7f4, 7ab9f3a, 91a2bc7, 9fa5ce9"
+  },
+  {
+    "key": "sadou-2025-09-11-maintenance",
+    "period": "2025-09—11",
+    "sortDate": "2025-11-21",
+    "title": "早期功能维护",
+    "summary": "可见提交以缺陷修复、日志和筛选调整为主；提交记录不足以推断期间连续投入或阶段验收结果。",
+    "sources": "Git: 730e6a0; 同期 Git 提交索引"
+  },
+  {
+    "key": "sadou-2026-02-03-ai-split",
+    "period": "2026-02—03",
+    "sortDate": "2026-03-09",
+    "title": "子任务与 AI 拆分探索",
+    "summary": "一键生成子任务和 AI 拆分任务的实现进入代码库，为后来从会议内容生成可执行任务提供基础。",
+    "sources": "Git: d0e9283, 1604028"
+  },
+  {
+    "key": "sadou-2026-04-requirements",
+    "period": "2026-04",
+    "sortDate": "2026-04-07",
+    "title": "团队协作需求整理",
+    "summary": "需求分析文档整理了团队协作、项目管理的业务背景和分阶段目标；文档日期不等于功能上线日期。",
+    "sources": "文档: docs/需求：需求分析说明书.md（落款 2026-04-07）"
+  },
+  {
+    "key": "sadou-2026-07-workflow",
+    "period": "2026-07",
+    "sortDate": "2026-07-19",
+    "title": "协作工作流成形",
+    "summary": "任务审核与返工、评论通知、父子任务、会议待办和历史版本等功能进入代码库。",
+    "sources": "Git: 161d91c"
+  },
+  {
+    "key": "sadou-2026-07-agent-foundation",
+    "period": "2026-07",
+    "sortDate": "2026-07-20",
+    "title": "Agent 与自动化第二阶段",
+    "summary": "Agent 中心、会话、事件总线、红蓝对抗、定时日报和项目资料版本管理建立，并推进 IIS 部署配置。最初的外部接口仍是占位能力。",
+    "sources": "Git: 4db866a, c2d6d7c; 文档: docs/第二阶段功能说明.md"
+  },
+  {
+    "key": "sadou-2026-08-reports",
+    "period": "2026-08",
+    "sortDate": "2026-08-02",
+    "title": "项目与个人日报分离",
+    "summary": "项目自动日报与个人每日工作报告分开生成，按实际变化记录汇总水位；无变化时跳过空报告。",
+    "sources": "Git: 7367122, 6af17a0"
+  },
+  {
+    "key": "sadou-2026-08-agent-runtime",
+    "period": "2026-08",
+    "sortDate": "2026-08-23",
+    "title": "Agent 从展示转向实际执行",
+    "summary": "事件触发、后台队列、自动调度与原生工具调用逐步建立；任务可由 Agent 接单、执行和提交结果，工具仍受权限与审批约束。",
+    "sources": "Git: dba2c04, 9318017, 28fe121, e6d9d8c"
+  },
+  {
+    "key": "sadou-2026-08-action-center",
+    "period": "2026-08",
+    "sortDate": "2026-08-31",
+    "title": "统一待办和证据化交付",
+    "summary": "统一待我处理入口、结构化验收与 Agent 运行可靠性加固进入代码库，减少普通成功事件对成员的打扰。",
+    "sources": "Git: 80264d6, 10289dc"
+  },
+  {
+    "key": "sadou-2026-09-search",
+    "period": "2026-09",
+    "sortDate": "2026-09-16",
+    "title": "按用途调度和受控联网搜索",
+    "summary": "Agent 调度规则简化，并加入执行计划与受控公开资料搜索；配置与真实搜索结果须分别验收。",
+    "sources": "Git: 043f75f; 文档: docs/Agent计划与联网搜索-2026-09-16.md"
+  },
+  {
+    "key": "sadou-2026-09-simplify-meetings",
+    "period": "2026-09",
+    "sortDate": "2026-09-21",
+    "title": "小团队流程与会议证据完善",
+    "summary": "Agent 创建和自动验收流程收敛；会议原话建立溯源要求，会议可关联多个项目，并修复相关迁移问题。",
+    "sources": "Git: e46de6d, 56b4861, 01123fc, dcea4c4"
+  },
+  {
+    "key": "sadou-2026-09-project-report-ux",
+    "period": "2026-09",
+    "sortDate": "2026-09-28",
+    "title": "项目收纳、工作报告与操作体验",
+    "summary": "活跃项目和归档项目分离，工作报告导航统一，并持续优化小团队操作体验，同时保留 Agent 高级配置。",
+    "sources": "Git: bd2d983, 06e7d5b"
+  },
+  {
+    "key": "sadou-2026-10-deployment",
+    "period": "2026-10",
+    "sortDate": "2026-10-11",
+    "title": "正式试用前的导航和部署完善",
+    "summary": "工作台导航与联网搜索状态提示调整；增加 IIS 搜索密钥配置脚本，修复旧版本目录被占用时的清理失败。服务器搜索全链路效果仍需真实执行验证。",
+    "sources": "Git: 8bc2da7, 545aa3e, 99a3de7"
+  }
+]

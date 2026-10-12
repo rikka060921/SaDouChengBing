@@ -3145,6 +3145,61 @@ namespace ToDo.Context.Migrations
                     b.ToTable("project_document_chunks");
                 });
 
+            modelBuilder.Entity("ToDo.Entities.ProjectHistoryEntry", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("ImportedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int>("ImportedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Period")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("SortDate")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("SourceKey")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("varchar(80)");
+
+                    b.Property<string>("Sources")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("varchar(1000)");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("varchar(2000)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("varchar(160)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId", "SortDate");
+
+                    b.HasIndex("ProjectId", "SourceKey")
+                        .IsUnique();
+
+                    b.ToTable("project_history_entries");
+                });
+
             modelBuilder.Entity("ToDo.Entities.ProjectSummaryCheckpoint", b =>
                 {
                     b.Property<int>("Id")
@@ -4609,6 +4664,17 @@ namespace ToDo.Context.Migrations
                         .IsRequired();
 
                     b.Navigation("Document");
+                });
+
+            modelBuilder.Entity("ToDo.Entities.ProjectHistoryEntry", b =>
+                {
+                    b.HasOne("Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Project");
                 });
 
             modelBuilder.Entity("ToDo.Entities.ProjectSummaryCheckpoint", b =>

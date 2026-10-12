@@ -19,8 +19,22 @@ public sealed class MigrationSafetyTests
         var migrations = context.Database.GetMigrations().ToList();
         Assert.Contains("20260826081313_InitDB", migrations);
         Assert.DoesNotContain("20260919102504_InitDB", migrations);
-        Assert.Equal("20260919105130_AddMeetingMultiProjectSupport", migrations[^1]);
+        Assert.Contains("20260919105130_AddMeetingMultiProjectSupport", migrations);
+        Assert.All(migrations.SkipWhile(id => id != "20260919105130_AddMeetingMultiProjectSupport")
+            .Skip(1), id => Assert.False(id.EndsWith("_InitDB", StringComparison.Ordinal)));
         Assert.Single(migrations, id => id.EndsWith("_InitDB", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ProjectHistoryUpgrade_OnlyCreatesItsOwnTable()
+    {
+        using var context = MultiProjectContext();
+        var script = context.GetService<IMigrator>().GenerateScript(
+            "20260919105130_AddMeetingMultiProjectSupport", "20261012152006_AddProjectHistoryTimeline");
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(script, "CREATE TABLE", System.Text.RegularExpressions.RegexOptions.IgnoreCase));
+        Assert.Contains("CREATE TABLE `project_history_entries`", script);
+        Assert.DoesNotContain("DROP TABLE", script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("DELETE FROM", script, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

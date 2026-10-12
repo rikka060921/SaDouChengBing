@@ -1,0 +1,56 @@
+@page
+@model ToDo.Razor.Pages.Projects.HistoryModel
+@{
+    ViewData["Title"] = "项目历程";
+    ViewData["ProjectId"] = Model.ProjectId;
+    ViewData["ProjectSection"] = "history";
+}
+<div class="container py-3">
+    <partial name="_ProjectNav" view-data="ViewData" />
+    <div class="mb-4">
+        <h1 class="page-heading">@Model.ProjectName · 项目历程</h1>
+        <p class="page-subtitle">按原始发生时间查看有来源的历史节点。补录时间与原始时间分开，不把旧提交伪装成任务或会议。</p>
+    </div>
+    @if (TempData["HistoryMessage"] is string message)
+    {
+        <div class="alert alert-success" role="status">@message</div>
+    }
+    @if (Model.Entries.Count == 0)
+    {
+        <div class="alert alert-info">暂无历史节点。项目正常任务和会议仍在各自页面管理。</div>
+    }
+    else
+    {
+        <ol class="list-unstyled">
+            @foreach (var entry in Model.Entries)
+            {
+                <li class="card shadow-sm mb-3">
+                    <div class="card-body">
+                        <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                            <span class="badge bg-primary">@entry.Period</span>
+                            <h2 class="h5 mb-0">@entry.Title</h2>
+                        </div>
+                        <p class="mb-2">@entry.Summary</p>
+                        <div class="small text-muted">来源：@entry.Sources</div>
+                        <div class="small text-muted mt-1">历史补录于 @entry.ImportedAt.ToString("yyyy-MM-dd HH:mm")</div>
+                    </div>
+                </li>
+            }
+        </ol>
+    }
+    @if (Model.CanImport)
+    {
+        <details class="card shadow-sm mt-4">
+            <summary class="card-header">维护历史节点（项目管理员）</summary>
+            <form method="post" asp-page-handler="Import" class="card-body">
+                <input type="hidden" asp-for="ProjectId" />
+                <label asp-for="ImportJson" class="form-label">JSON 节点列表</label>
+                <textarea asp-for="ImportJson" class="form-control font-monospace" rows="8" maxlength="50000"
+                    placeholder='[{"key":"phase-2025-07","period":"2025-07","sortDate":"2025-07-16","title":"项目雏形","summary":"可核查的变化","sources":"Git 5a02987"}]'></textarea>
+                <span asp-validation-for="ImportJson" class="text-danger"></span>
+                <div class="form-text">每次最多 50 条；同项目相同 key 重复导入会跳过。请填写可核查来源，不录密码或原始敏感资料。</div>
+                <button type="submit" class="btn btn-primary mt-3">导入历史节点</button>
+            </form>
+        </details>
+    }
+</div>

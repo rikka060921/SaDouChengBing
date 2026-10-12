@@ -77,6 +77,7 @@ namespace ToDo.Context
         public DbSet<DocumentCategory> DocumentCategories { get; set; }
         public DbSet<AiDocumentDraft> AiDocumentDrafts { get; set; }
         public DbSet<ProjectActivityRecord> ProjectActivityRecords { get; set; }
+        public DbSet<ProjectHistoryEntry> ProjectHistoryEntries { get; set; }
         public DbSet<ProjectSummaryCheckpoint> ProjectSummaryCheckpoints { get; set; }
         public DbSet<UserSummaryCheckpoint> UserSummaryCheckpoints { get; set; }
         public DbSet<MeetingAgenda> MeetingAgendas { get; set; }
@@ -780,6 +781,19 @@ namespace ToDo.Context
 
             modelBuilder.Entity<ProjectActivityRecord>()
                 .HasIndex(item => new { item.EntityType, item.EntityId });
+
+            modelBuilder.Entity<ProjectHistoryEntry>()
+                .HasOne(item => item.Project)
+                .WithMany()
+                .HasForeignKey(item => item.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<ProjectHistoryEntry>()
+                .HasIndex(item => new { item.ProjectId, item.SourceKey })
+                .IsUnique();
+
+            modelBuilder.Entity<ProjectHistoryEntry>()
+                .HasIndex(item => new { item.ProjectId, item.SortDate });
 
             modelBuilder.Entity<ProjectSummaryCheckpoint>()
                 .HasOne(item => item.Project)
