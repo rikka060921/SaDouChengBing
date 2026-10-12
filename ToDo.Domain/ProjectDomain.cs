@@ -1031,6 +1031,12 @@ namespace ToDo.Domain
                 return false;
             }
 
+            if (project.Status != ProjectStatus.Active)
+            {
+                _logger.LogWarning("用户 {UserId} 更换项目 {ProjectId} 负责人失败：项目已归档", currentUserId, projectId);
+                return false;
+            }
+
             if (currentUserRole != UserRole.systemAdmin && project.LeaderUserId != currentUserId)
             {
                 _logger.LogWarning("用户 {UserId} 更换项目 {ProjectId} 负责人失败：无权限（需系统管理员或原负责人）",
@@ -1039,7 +1045,7 @@ namespace ToDo.Domain
             }
 
             var newLeader = await _context.ApplicationUser
-                .FirstOrDefaultAsync(u => u.Id == newLeaderUserId && u.Status == UserStatus.Active);
+                .FirstOrDefaultAsync(u => u.Id == newLeaderUserId && !u.IsDeleted && u.Status == UserStatus.Active);
             if (newLeader == null)
             {
                 _logger.LogWarning("用户 {UserId} 更换项目 {ProjectId} 负责人失败：新负责人不存在或不活跃",
@@ -1065,11 +1071,15 @@ namespace ToDo.Domain
             {
                 var oldLeaderId = project.LeaderUserId;
                 project.LeaderUserId = newLeaderUserId;
-                await _context.SaveChangesAsync();
-
+                project.UpdatedAt = DateTime.UtcNow;
                 var newLeaderProjectUser = project.ProjectUsers.First(pu => pu.UserId == newLeaderUserId);
                 newLeaderProjectUser.ProjectRole = (int)ProjectRole.Admin;
+                newLeaderProjectUser.IsProjectAdmin = true;
                 await _context.SaveChangesAsync();
+
+                await LogProjectOperationAsync(OperationType.更新, projectId, currentUserId,
+                    beforeState: $"项目负责人: {oldLeaderId}",
+                    afterState: $"项目负责人: {newLeaderUserId}");
 
                 _logger.LogInformation("用户 {UserId} 成功将项目 {ProjectId} 负责人从 {OldLeaderId} 更换为 {NewLeaderId}",
                     currentUserId, projectId, oldLeaderId, newLeaderUserId);

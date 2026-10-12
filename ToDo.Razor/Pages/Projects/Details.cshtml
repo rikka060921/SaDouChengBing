@@ -47,6 +47,8 @@
                             <dd class="col-sm-8">@AppTime.ToBeijingTime(Model.Project.CreatedAt).ToString("yyyy-MM-dd HH:mm")</dd>
                             <dt class="col-sm-4">创建人</dt>
                             <dd class="col-sm-8">@Model.Project.CreatedByUserName</dd>
+                            <dt class="col-sm-4">项目负责人</dt>
+                            <dd class="col-sm-8">@Model.Project.LeaderUserName</dd>
 
                             <dt class="col-sm-4">关联任务</dt>
                             <dd class="col-sm-8">@Model.TaskCount 个</dd>
@@ -201,6 +203,26 @@
                         <i class="bi bi-plus"></i> 添加成员
                     </button>
                 </div>
+            }
+
+            @if (Model.CanChangeLeader)
+            {
+                <form method="post" asp-page-handler="ChangeLeader" class="row g-2 align-items-end mt-3">
+                    <input type="hidden" name="id" value="@Model.Project.Id" />
+                    <div class="col-md-5">
+                        <label for="newLeaderUserId" class="form-label">移交项目负责人</label>
+                        <select id="newLeaderUserId" name="newLeaderUserId" class="form-select" required>
+                            <option value="">选择项目成员</option>
+                            @foreach (var member in Model.Members.Where(item => item.UserId != Model.Project.LeaderUserId))
+                            {
+                                <option value="@member.UserId">@member.RealName (@member.UserName)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-auto">
+                        <button type="submit" class="btn btn-outline-primary">确认移交</button>
+                    </div>
+                </form>
             }
         </div>
     </div>

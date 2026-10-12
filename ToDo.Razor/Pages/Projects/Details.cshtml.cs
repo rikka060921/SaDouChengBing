@@ -52,6 +52,8 @@ namespace ToDo.Razor.Pages.Projects
 
         // 当前用户是否是系统管理员
         public bool IsCurrentUserSystemAdmin => CurrentUserRole == UserRole.systemAdmin;
+        public bool CanChangeLeader => Project.Status == ProjectStatus.Active
+            && (IsCurrentUserSystemAdmin || Project.LeaderUserId == CurrentUserId);
 
         public class AddMemberInput
         {
@@ -184,6 +186,29 @@ namespace ToDo.Razor.Pages.Projects
                 await LoadPageData(id);
                 return Page();
             }
+        }
+
+        public async Task<IActionResult> OnPostChangeLeaderAsync(int id, int newLeaderUserId)
+        {
+            if (CurrentUserId <= 0) return Challenge();
+            if (newLeaderUserId <= 0)
+            {
+                ModelState.AddModelError(string.Empty, "请选择新负责人");
+                await LoadPageData(id);
+                return Page();
+            }
+
+            var changed = await _projectDomain.UpdateProjectLeaderAsync(
+                id, newLeaderUserId, CurrentUserId, CurrentUserRole);
+            if (!changed)
+            {
+                ModelState.AddModelError(string.Empty, "负责人移交失败；请确认项目未归档、目标是活跃成员且你有移交权限");
+                await LoadPageData(id);
+                return Page();
+            }
+
+            TempData["SuccessMessage"] = "项目负责人已更新";
+            return RedirectToPage(new { id });
         }
 
         [BindProperty]
