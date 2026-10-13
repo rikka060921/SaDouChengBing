@@ -28,6 +28,10 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div><h1 class="page-heading">会议纪要</h1><div class="page-subtitle">从会议记录到行动项，再到持续督办。</div></div>
         <div class="d-flex gap-2"><a asp-page="Supervision" asp-route-projectId="@Model.FilterProjectId" class="btn btn-outline-secondary"><i class="bi bi-radar"></i> 督办中心</a>
+        @if (Model.FilterProjectId.HasValue)
+        {
+            <a asp-page="/Projects/Archives" asp-route-projectId="@Model.FilterProjectId" asp-route-kind="meeting" class="btn btn-outline-secondary">历史会议</a>
+        }
         @if (Model.CanCreate)
         {
             <a asp-page="Create" asp-route-projectId="@Model.FilterProjectId" class="btn btn-primary">

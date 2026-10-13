@@ -247,6 +247,8 @@ body {
 .task-block .table th { color: #82909a; font-size: 11px; font-weight: 700; }
 .task-block .table td, .task-block .table th { padding: 11px 18px; border-color: #edf0f2; }
 
+.project-archive-body { white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; font-size: 1rem; line-height: 1.75; }
+
 @media (max-width: 991.98px) {
     .app-brand-mobile { display: inline-flex; }
     .app-menu-toggle { display: inline-grid; }

@@ -1,0 +1,61 @@
+@page
+@model ToDo.Razor.Pages.Projects.ArchivesModel
+@{
+    ViewData["Title"] = "历史档案";
+    ViewData["ProjectId"] = Model.ProjectId;
+    ViewData["ProjectSection"] = "archives";
+}
+<div class="container py-3">
+    <partial name="_ProjectNav" view-data="ViewData" />
+    <h1 class="page-heading">@Model.ProjectName · 历史档案</h1>
+    <p class="page-subtitle">保留旧记录的内容、状态和来源。本页只读，不计入当前任务，不重新催办、派单或验收。</p>
+    <div class="d-flex flex-wrap gap-2 mb-4">
+        <a asp-page="Archives" asp-route-projectId="@Model.ProjectId" asp-route-kind="task" class="btn @(Model.Kind == "task" ? "btn-primary" : "btn-outline-primary")">历史任务</a>
+        <a asp-page="Archives" asp-route-projectId="@Model.ProjectId" asp-route-kind="meeting" class="btn @(Model.Kind == "meeting" ? "btn-primary" : "btn-outline-primary")">历史会议</a>
+        <a asp-page="Materials" asp-route-projectId="@Model.ProjectId" class="btn btn-outline-secondary">原始资料与附件</a>
+    </div>
+    @if (Model.Error is not null)
+    {
+        <div class="alert alert-danger" role="alert">@Model.Error</div>
+    }
+    else if (Model.Archive is null)
+    {
+        <div class="alert alert-info">暂无历史档案。管理员可在项目资料上传校验过的 project-history-archive.json；已有任务和会议不受影响。</div>
+    }
+    else if (Model.Selected is { } record)
+    {
+        <a asp-page="Archives" asp-route-projectId="@Model.ProjectId" asp-route-kind="@Model.Kind" class="btn btn-light mb-3">返回档案列表</a>
+        <article class="card shadow-sm">
+            <div class="card-body">
+                <h2 class="h4">@record.Title</h2>
+                <div class="d-flex flex-wrap gap-3 text-muted small mb-3">
+                    <span>原记录日期：@(string.IsNullOrEmpty(record.DateLabel) ? "未导出，不推测" : record.DateLabel)</span>
+                    <span>原责任人 / 记录人：@(string.IsNullOrEmpty(record.Owner) ? "未记录" : record.Owner)</span>
+                    <span>原状态：@(string.IsNullOrEmpty(record.Status) ? "未记录" : record.Status)</span>
+                </div>
+                <div class="alert alert-secondary small">来源：@record.SourceLabel<br />内容快照补录于 @Model.Archive.RecordedAt.ToOffset(TimeSpan.FromHours(8)).ToString("yyyy-MM-dd HH:mm")。原状态不代表当前验收结论。</div>
+                <pre class="project-archive-body">@record.Body</pre>
+                @if (!string.IsNullOrEmpty(record.SourceUrl))
+                {
+                    <a href="@record.SourceUrl" class="btn btn-outline-secondary">查看原记录（需原项目权限）</a>
+                }
+            </div>
+        </article>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead><tr><th>标题</th><th>原记录日期</th><th>原责任人 / 记录人</th><th>原状态</th><th>操作</th></tr></thead>
+                <tbody>
+                @foreach (var item in Model.Records)
+                {
+                    <tr><td>@item.Title</td><td>@(string.IsNullOrEmpty(item.DateLabel) ? "未导出" : item.DateLabel)</td><td>@item.Owner</td><td>@item.Status</td>
+                        <td><a asp-page="Archives" asp-route-projectId="@Model.ProjectId" asp-route-kind="@Model.Kind" asp-route-key="@item.Key" class="btn btn-sm btn-outline-primary">查看档案</a></td></tr>
+                }
+                </tbody>
+            </table>
+        </div>
+        <p class="small text-muted">共 @Model.Records.Count 条。历史内容缺少的信息保持缺失，不根据聊天补造原话、责任承诺或完成证明。</p>
+    }
+</div>

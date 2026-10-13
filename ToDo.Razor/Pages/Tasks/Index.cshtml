@@ -23,6 +23,7 @@
             {
                 @if (Model.ProjectId.HasValue)
                 {
+                    <a asp-page="/Projects/Archives" asp-route-projectId="@Model.ProjectId" asp-route-kind="task" class="btn btn-outline-secondary">历史任务</a>
                     <a asp-page="Edit" asp-route-projectId="@Model.ProjectId" class="btn btn-primary">新建任务</a>
                 }
                 else

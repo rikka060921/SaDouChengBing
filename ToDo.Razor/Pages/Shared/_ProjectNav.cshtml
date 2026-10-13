@@ -20,6 +20,7 @@
         <a class="@(activeSection == "tasks" ? "active" : "")" asp-page="/Tasks/Index" asp-route-projectId="@projectId"><i class="bi bi-check2-square"></i>任务</a>
         <a class="@(activeSection == "materials" ? "active" : "")" asp-page="/Projects/Materials" asp-route-projectId="@projectId"><i class="bi bi-folder2-open"></i>项目资料</a>
         <a class="@(activeSection == "history" ? "active" : "")" asp-page="/Projects/History" asp-route-projectId="@projectId"><i class="bi bi-clock-history"></i>项目历程</a>
+        <a class="@(activeSection == "archives" ? "active" : "")" asp-page="/Projects/Archives" asp-route-projectId="@projectId"><i class="bi bi-archive"></i>历史档案</a>
         <a class="@(activeSection == "preparation" ? "active" : "")" asp-page="/Projects/MeetingPreparation" asp-route-projectId="@projectId"><i class="bi bi-clipboard2-check"></i>会议准备</a>
         <a class="@(activeSection == "minutes" ? "active" : "")" asp-page="/MeetingMinutes/Index" asp-route-filterProjectId="@projectId"><i class="bi bi-journal-text"></i>会议纪要</a>
     </nav>
