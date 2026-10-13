@@ -95,6 +95,78 @@ Test-Case 'linked source directories are rejected before traversal' {
     Check $failed 'Linked source directory was accepted'
     Check (!(Test-Path -LiteralPath (Join-Path $target 'linked\private.txt'))) 'External linked content was copied'
 }
+Test-Case 'nine nested roots restore directly without creating intermediate document copies' {
+    $release=Join-Path $case 'eight\release';$root=$release+'\App_Data';$nested=$root
+    for($i=0;$i -lt 9;$i++) { $nested += '\App_Data' }
+    $name=('f' * 170) + '.docx'
+    $source=$nested+'\ProjectDocuments\19\'+$name
+    $seed=Join-Path $case 'eight\seed.txt';Write-Fixture $seed 'deep-original'
+    [ToDoRuntime.NativeFiles]::CreateDirectory([ToDoRuntime.NativeFiles]::Parent($source))
+    [ToDoRuntime.NativeFiles]::Copy($seed,$source)
+    Check ($source.Length -gt 260) 'Fixture did not exceed MAX_PATH'
+    $result=Repair-ToDoRuntimeNesting -ReleasePath $release
+    $canonical=$root+'\ProjectDocuments\19\'+$name
+    Check ($result.NestedDirectories -eq 9 -and $result.Copied -eq 1) 'Recovery recopied nested branches'
+    Check ([ToDoRuntime.NativeFiles]::Hash($canonical) -eq [ToDoRuntime.NativeFiles]::Hash($source)) 'Long original was not restored faithfully'
+    $cursor=$root
+    for($i=1;$i -lt 9;$i++) {
+        $cursor += '\App_Data'
+        Check (![ToDoRuntime.NativeFiles]::Exists($cursor+'\ProjectDocuments')) 'Recovery created intermediate duplicate files'
+    }
+    $again=Repair-ToDoRuntimeNesting -ReleasePath $release
+    Check ($again.Copied -eq 0 -and $again.Identical -eq 1) 'Long-path recovery is not idempotent'
+}
+Test-Case 'long source and destination paths support Unicode, overwrite and hash verification' {
+    $source=Join-Path $case 'nine\old';$target=Join-Path $case 'nine\new'
+    $relative=('segment-' + ('a' * 62) + '\') * 4 + ([string][char]0x7EAA) + ('b' * 210) + '.json'
+    $file=$source+'\'+$relative;$destination=$target+'\'+$relative
+    $seed=Join-Path $case 'nine\seed.txt';Write-Fixture $seed 'long-original'
+    [ToDoRuntime.NativeFiles]::CreateDirectory([ToDoRuntime.NativeFiles]::Parent($file))
+    [ToDoRuntime.NativeFiles]::Copy($seed,$file)
+    Check ($file.Length -gt 500 -and $destination.Length -gt 500) 'Long-path fixtures are too short'
+    $result=Copy-ToDoRuntimeDirectory $source $target
+    Check ($result.Copied -eq 1) 'Long-path copy failed'
+    Check ([ToDoRuntime.NativeFiles]::Hash($file) -eq [ToDoRuntime.NativeFiles]::Hash($destination)) 'Long-path hash mismatch'
+    $replacement=Join-Path $case 'nine\replacement.txt';Write-Fixture $replacement 'updated-source'
+    [ToDoRuntime.NativeFiles]::Move($replacement,$file)
+    $result=Copy-ToDoRuntimeDirectory $source $target
+    Check ($result.Copied -eq 1) 'Long-path overwrite failed'
+    Check ([ToDoRuntime.NativeFiles]::Hash($file) -eq [ToDoRuntime.NativeFiles]::Hash($destination)) 'Long-path overwrite hash mismatch'
+    $leftovers=@([ToDoRuntime.NativeFiles]::Children([ToDoRuntime.NativeFiles]::Parent($destination)) | Where-Object { $_.Name -like '__todo-*.tmp' })
+    Check ($leftovers.Count -eq 0) 'Managed temporary files were left behind'
+}
+Test-Case 'excluded duplicate-root junction is rejected rather than traversed or hidden' {
+    $source=Join-Path $case 'ten\old';$target=Join-Path $case 'ten\new';$outside=Join-Path $case 'ten\outside'
+    Write-Fixture (Join-Path $outside 'private.txt') 'must-not-copy'
+    New-Item -ItemType Directory -Path $source -Force | Out-Null
+    New-Item -ItemType Junction -Path (Join-Path $source 'App_Data') -Target $outside | Out-Null
+    $failed=$false
+    try { Copy-ToDoRuntimeDirectory $source $target -ExcludeRootDirectoryName 'App_Data' | Out-Null } catch { $failed=$true }
+    Check $failed 'Excluded junction was accepted'
+    Check (!(Test-Path -LiteralPath $target)) 'Rejected linked source wrote a destination'
+}
+Test-Case 'destination junction is rejected before writing outside the destination' {
+    $source=Join-Path $case 'eleven\old';$target=Join-Path $case 'eleven\new';$outside=Join-Path $case 'eleven\outside'
+    Write-Fixture (Join-Path $source 'linked\new.txt') 'must-not-write'
+    New-Item -ItemType Directory -Path $target,$outside -Force | Out-Null
+    New-Item -ItemType Junction -Path (Join-Path $target 'linked') -Target $outside | Out-Null
+    $failed=$false
+    try { Copy-ToDoRuntimeDirectory $source $target | Out-Null } catch { $failed=$true }
+    Check $failed 'Destination junction was accepted'
+    Check (!(Test-Path -LiteralPath (Join-Path $outside 'new.txt'))) 'Linked external destination was written'
+}
+Test-Case 'atomic no-replace publication preserves a file created concurrently' {
+    $target=Join-Path $case 'twelve\current.txt'
+    $temporary=Join-Path $case ('twelve\__todo-'+[guid]::NewGuid().ToString('N')+'.tmp')
+    Write-Fixture $temporary 'older-recovery-content'
+    Write-Fixture $target 'concurrent-upload'
+    $before=[ToDoRuntime.NativeFiles]::Hash($target);$failed=$false
+    try { [ToDoRuntime.NativeFiles]::Move($temporary,$target,$false) } catch {$failed=$true}
+    Check $failed 'No-replace publication overwrote an existing file'
+    Check ([ToDoRuntime.NativeFiles]::Hash($target) -eq $before) 'Concurrent file was changed'
+    Check ([ToDoRuntime.NativeFiles]::IsFile($temporary)) 'Failed publication removed the recoverable temporary file'
+    [ToDoRuntime.NativeFiles]::DeleteTemporary($temporary)
+}
 foreach($path in @('ToDoRuntimeData.ps1','Repair-ToDoIisRuntimeFiles.ps1','Deploy-ToDo-Iis.ps1','Test-ToDoIisRuntimeFiles.ps1')) {
     $tokens=$null;$errors=$null
     [Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot $path),[ref]$tokens,[ref]$errors) | Out-Null

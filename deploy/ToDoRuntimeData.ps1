@@ -1,19 +1,11 @@
 Set-StrictMode -Version Latest
+if (!('ToDoRuntime.NativeFiles' -as [type])) {
+    Add-Type -Path (Join-Path $PSScriptRoot 'ToDoRuntimeNative.cs') -ErrorAction Stop
+}
 
 function Assert-ToDoRuntimeDirectory {
     param([string]$Path)
-    $cursor = [IO.Path]::GetFullPath($Path)
-    while ($cursor) {
-        if (Test-Path -LiteralPath $cursor) {
-            $item = Get-Item -LiteralPath $cursor -Force
-            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
-                throw "Linked runtime paths are not supported: $cursor"
-            }
-        }
-        $parent = [IO.Path]::GetDirectoryName($cursor)
-        if ($parent -eq $cursor) { break }
-        $cursor = $parent
-    }
+    [ToDoRuntime.NativeFiles]::AssertNoReparse($Path)
 }
 
 function Copy-ToDoRuntimeDirectory {
@@ -21,10 +13,11 @@ function Copy-ToDoRuntimeDirectory {
     param(
         [Parameter(Mandatory)][string]$Source,
         [Parameter(Mandatory)][string]$Destination,
-        [ValidateSet('SourceWins','KeepExisting')][string]$ExistingFilePolicy = 'SourceWins'
+        [ValidateSet('SourceWins','KeepExisting')][string]$ExistingFilePolicy = 'SourceWins',
+        [string]$ExcludeRootDirectoryName
     )
-    $sourceRoot = [IO.Path]::GetFullPath($Source).TrimEnd([char[]]@('\','/'))
-    $destinationRoot = [IO.Path]::GetFullPath($Destination).TrimEnd([char[]]@('\','/'))
+    $sourceRoot = [ToDoRuntime.NativeFiles]::FullPath($Source).TrimEnd([char[]]@('\','/'))
+    $destinationRoot = [ToDoRuntime.NativeFiles]::FullPath($Destination).TrimEnd([char[]]@('\','/'))
     $separator = [IO.Path]::DirectorySeparatorChar
     $sourcePrefix = $sourceRoot + $separator
     $destinationPrefix = $destinationRoot + $separator
@@ -33,33 +26,39 @@ function Copy-ToDoRuntimeDirectory {
     }
     Assert-ToDoRuntimeDirectory $sourceRoot
     Assert-ToDoRuntimeDirectory $destinationRoot
-    if (!(Test-Path -LiteralPath $sourceRoot -PathType Container)) { throw "Source directory is missing: $sourceRoot" }
-    $items = [Collections.Generic.List[IO.FileInfo]]::new()
+    if (![ToDoRuntime.NativeFiles]::IsDirectory($sourceRoot)) { throw "Source directory is missing: $sourceRoot" }
+    $items = [Collections.Generic.List[string]]::new()
     $pending = [Collections.Generic.Stack[string]]::new()
     $pending.Push($sourceRoot)
     while ($pending.Count) {
-        foreach ($item in @(Get-ChildItem -LiteralPath $pending.Pop() -Force -ErrorAction Stop)) {
-            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        $directory = $pending.Pop()
+        foreach ($item in [ToDoRuntime.NativeFiles]::Children($directory)) {
+            if ($item.IsReparsePoint) {
                 throw 'Runtime source contains linked files or directories.'
             }
-            if ($item.PSIsContainer) { $pending.Push($item.FullName) }
-            else { $items.Add($item) }
+            if ($item.IsDirectory) {
+                # Recovery handles each duplicate root level separately. Never copy
+                # the next App_Data/uploads branch back into the canonical root.
+                if ($directory -eq $sourceRoot -and $item.Name -eq $ExcludeRootDirectoryName) { continue }
+                $pending.Push($item.FullName)
+            }
+            else { $items.Add($item.FullName) }
         }
     }
-    New-Item -ItemType Directory -Path $destinationRoot -Force | Out-Null
+    [ToDoRuntime.NativeFiles]::CreateDirectory($destinationRoot)
     $copied = 0; $identical = 0; $preserved = 0
     foreach ($file in $items) {
-        $sourceFile = [IO.Path]::GetFullPath($file.FullName)
+        $sourceFile = [ToDoRuntime.NativeFiles]::FullPath($file)
         if (!$sourceFile.StartsWith($sourcePrefix, [StringComparison]::OrdinalIgnoreCase)) { throw 'Runtime source escaped its root.' }
         Assert-ToDoRuntimeDirectory $sourceFile
         $relative = $sourceFile.Substring($sourcePrefix.Length)
-        $target = [IO.Path]::GetFullPath((Join-Path $destinationRoot $relative))
+        $target = [ToDoRuntime.NativeFiles]::FullPath($destinationPrefix + $relative)
         if (!$target.StartsWith($destinationPrefix, [StringComparison]::OrdinalIgnoreCase)) { throw 'Runtime destination escaped its root.' }
         Assert-ToDoRuntimeDirectory $target
-        if (Test-Path -LiteralPath $target -PathType Container) { throw "Runtime file destination is a directory: $relative" }
-        $sourceHash = (Get-FileHash -LiteralPath $sourceFile -Algorithm SHA256 -ErrorAction Stop).Hash
-        if (Test-Path -LiteralPath $target -PathType Leaf) {
-            $targetHash = (Get-FileHash -LiteralPath $target -Algorithm SHA256 -ErrorAction Stop).Hash
+        if ([ToDoRuntime.NativeFiles]::IsDirectory($target)) { throw "Runtime file destination is a directory: $relative" }
+        $sourceHash = [ToDoRuntime.NativeFiles]::Hash($sourceFile)
+        if ([ToDoRuntime.NativeFiles]::IsFile($target)) {
+            $targetHash = [ToDoRuntime.NativeFiles]::Hash($target)
             if ($sourceHash -eq $targetHash) { $identical++; continue }
             if ($ExistingFilePolicy -eq 'KeepExisting') {
                 $preserved++
@@ -67,16 +66,31 @@ function Copy-ToDoRuntimeDirectory {
                 continue
             }
         }
-        New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($target)) -Force | Out-Null
-        $temporary = $target + '.runtime-copy-' + [guid]::NewGuid().ToString('N') + '.tmp'
+        $parent = [ToDoRuntime.NativeFiles]::Parent($target)
+        [ToDoRuntime.NativeFiles]::CreateDirectory($parent)
+        $temporary = $parent + '\__todo-' + [guid]::NewGuid().ToString('N') + '.tmp'
         try {
-            Copy-Item -LiteralPath $sourceFile -Destination $temporary -ErrorAction Stop
-            if ((Get-FileHash -LiteralPath $temporary -Algorithm SHA256).Hash -ne $sourceHash) { throw "Runtime copy hash mismatch: $relative" }
-            Move-Item -LiteralPath $temporary -Destination $target -Force -ErrorAction Stop
+            [ToDoRuntime.NativeFiles]::Copy($sourceFile, $temporary)
+            if ([ToDoRuntime.NativeFiles]::Hash($temporary) -ne $sourceHash) { throw "Runtime copy hash mismatch: $relative" }
+            try {
+                [ToDoRuntime.NativeFiles]::Move($temporary, $target, $ExistingFilePolicy -eq 'SourceWins')
+            }
+            catch {
+                # A live upload may create the canonical file while recovery copies.
+                # The no-replace move protects it atomically, not just by an earlier check.
+                if ($ExistingFilePolicy -ne 'KeepExisting' -or ![ToDoRuntime.NativeFiles]::IsFile($target)) { throw }
+                Assert-ToDoRuntimeDirectory $target
+                if ([ToDoRuntime.NativeFiles]::Hash($target) -eq $sourceHash) { $identical++ }
+                else {
+                    $preserved++
+                    Write-Warning "Preserved a concurrently created runtime file; review both copies: $relative"
+                }
+                continue
+            }
             $copied++
         }
         finally {
-            if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -ErrorAction Stop }
+            if ([ToDoRuntime.NativeFiles]::Exists($temporary)) { [ToDoRuntime.NativeFiles]::DeleteTemporary($temporary) }
         }
     }
     [pscustomobject]@{Copied=$copied;Identical=$identical;PreservedDifferent=$preserved}
@@ -85,24 +99,24 @@ function Copy-ToDoRuntimeDirectory {
 function Repair-ToDoRuntimeNesting {
     [CmdletBinding(SupportsShouldProcess)]
     param([Parameter(Mandatory)][string]$ReleasePath)
-    $release = [IO.Path]::GetFullPath($ReleasePath)
+    $release = [ToDoRuntime.NativeFiles]::FullPath($ReleasePath)
     Assert-ToDoRuntimeDirectory $release
     $copied = 0; $identical = 0; $preserved = 0; $nestedDirectories = 0
     foreach ($relative in @('App_Data', 'wwwroot\uploads')) {
         $root = Join-Path $release $relative
-        if (!(Test-Path -LiteralPath $root -PathType Container)) { continue }
+        if (![ToDoRuntime.NativeFiles]::IsDirectory($root)) { continue }
         $name = Split-Path $root -Leaf
         $candidate = Join-Path $root $name
-        for ($depth=1; $depth -le 16 -and (Test-Path -LiteralPath $candidate -PathType Container); $depth++) {
+        for ($depth=1; $depth -le 64 -and [ToDoRuntime.NativeFiles]::IsDirectory($candidate); $depth++) {
             $nestedDirectories++
             Assert-ToDoRuntimeDirectory $candidate
             if ($PSCmdlet.ShouldProcess($root, "Copy only missing files from nested runtime directory $candidate")) {
-                $result = Copy-ToDoRuntimeDirectory -Source $candidate -Destination $root -ExistingFilePolicy KeepExisting
+                $result = Copy-ToDoRuntimeDirectory -Source $candidate -Destination $root -ExistingFilePolicy KeepExisting -ExcludeRootDirectoryName $name
                 $copied += $result.Copied; $identical += $result.Identical; $preserved += $result.PreservedDifferent
             }
-            $candidate = Join-Path $candidate $name
+            $candidate = $candidate + '\' + $name
         }
-        if (Test-Path -LiteralPath $candidate -PathType Container) { throw 'Runtime nesting exceeds the recovery depth limit; no directories were deleted.' }
+        if ([ToDoRuntime.NativeFiles]::IsDirectory($candidate)) { throw 'Runtime nesting exceeds the recovery depth limit; no directories were deleted.' }
     }
     [pscustomobject]@{NestedDirectories=$nestedDirectories;Copied=$copied;Identical=$identical;PreservedDifferent=$preserved}
 }
