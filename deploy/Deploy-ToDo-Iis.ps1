@@ -13,6 +13,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'ToDoRuntimeData.ps1')
 
 function Invoke-Native {
     param([string]$FilePath, [string[]]$Arguments)
@@ -121,34 +122,6 @@ finally {
     Pop-Location
 }
 
-# Keep uploaded files and Data Protection keys outside the Git checkout.
-if (Test-Path $currentPath) {
-    $oldWebConfig = Join-Path $currentPath 'web.config'
-    if (Test-Path $oldWebConfig) {
-        Copy-Item -Path $oldWebConfig -Destination (Join-Path $releasePath 'web.config') -Force
-    }
-    foreach ($relativePath in @('App_Data', 'wwwroot\uploads')) {
-        $oldPath = Join-Path $currentPath $relativePath
-        if (Test-Path $oldPath) {
-            Copy-Item -Path $oldPath -Destination (Join-Path $releasePath $relativePath) -Recurse -Force
-        }
-    }
-}
-
-# The application writes Data Protection keys and uploaded files at runtime.
-$appPoolIdentity = "IIS AppPool\$AppPoolName"
-foreach ($relativePath in @('App_Data', 'wwwroot\uploads')) {
-    $writablePath = Join-Path $releasePath $relativePath
-    New-Item -ItemType Directory -Force -Path $writablePath | Out-Null
-    Invoke-Native 'icacls.exe' @(
-        $writablePath,
-        '/grant',
-        "${appPoolIdentity}:(OI)(CI)M",
-        '/T',
-        '/C'
-    )
-}
-
 $previousPath = $currentPath
 $physicalPathChanged = $false
 try {
@@ -158,6 +131,30 @@ try {
             Stop-WebAppPool -Name $AppPoolName
         }
         Wait-WebAppPoolState -Name $AppPoolName -ExpectedState 'Stopped'
+    }
+
+    # Copy runtime contents after stopping writers. Copying the directory itself
+    # into an existing publish directory creates App_Data/App_Data or uploads/uploads.
+    if (Test-Path -LiteralPath $currentPath) {
+        $oldWebConfig = Join-Path $currentPath 'web.config'
+        if (Test-Path -LiteralPath $oldWebConfig) {
+            Copy-Item -LiteralPath $oldWebConfig -Destination (Join-Path $releasePath 'web.config') -Force
+        }
+        foreach ($relativePath in @('App_Data', 'wwwroot\uploads')) {
+            $oldPath = Join-Path $currentPath $relativePath
+            if (Test-Path -LiteralPath $oldPath -PathType Container) {
+                Copy-ToDoRuntimeDirectory -Source $oldPath -Destination (Join-Path $releasePath $relativePath) | Out-Null
+            }
+        }
+        # Recover only absent files from any legacy nested copy in the NEW release.
+        Repair-ToDoRuntimeNesting -ReleasePath $releasePath | Out-Null
+    }
+
+    $appPoolIdentity = "IIS AppPool\$AppPoolName"
+    foreach ($relativePath in @('App_Data', 'wwwroot\uploads')) {
+        $writablePath = Join-Path $releasePath $relativePath
+        New-Item -ItemType Directory -Force -Path $writablePath | Out-Null
+        Invoke-Native 'icacls.exe' @($writablePath, '/grant', "${appPoolIdentity}:(OI)(CI)M", '/T', '/C')
     }
 
     Set-ItemProperty "IIS:\Sites\$SiteName" -Name physicalPath -Value $releasePath
