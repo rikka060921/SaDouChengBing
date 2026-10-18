@@ -43,11 +43,22 @@ public class MeetingPreparationModel : PageModel
     public int DraftId { get; set; }
 
     public int? CurrentDraftId { get; set; }
+    /// <summary>会议标题（原草稿标题）</summary>
     public string DraftTitle { get; set; } = string.Empty;
+    /// <summary>会议地点</summary>
+    public string DraftLocation { get; set; } = string.Empty;
+    /// <summary>会议时间</summary>
+    public DateTime? MeetingTime { get; set; }
+    /// <summary>会议内容（勾选任务汇总，可手工再编辑）</summary>
+    public string DraftContent { get; set; } = string.Empty;
     public List<ProjectOption> AvailableProjects { get; set; } = new();
     public List<int> SelectedProjectIds { get; set; } = new();
     public List<int> SelectedTaskIds { get; set; } = new();
     public List<MeetingPrepTaskRow> CurrentTasks { get; set; } = new();
+    /// <summary>责任人筛选项：所选项目的全部人工成员</summary>
+    public List<string> ProjectMemberNames { get; set; } = new();
+    /// <summary>责任人筛选项：数字员工（Agent 助手）</summary>
+    public List<string> AgentNames { get; set; } = new();
     /// <summary>上次会议至今已完成的任务，按项目分组（projectId → 列表）</summary>
     public Dictionary<int, List<MeetingPrepTaskRow>> RecentlyCompletedByProject { get; set; } = new();
     public bool IsReadOnly { get; set; }
@@ -78,25 +89,31 @@ public class MeetingPreparationModel : PageModel
                     .FirstOrDefaultAsync(d => d.Id == DraftId && !d.IsDeleted);
                 if (draft == null) return NotFound();
 
-                // 仅创建者或系统管理员可编辑
-                var canEdit = draft.CreatorId == user.Id || user.Role == UserRole.systemAdmin;
-                if (!canEdit) return Forbid();
-
                 CurrentDraftId = draft.Id;
                 DraftTitle = draft.Title;
-                IsReadOnly = draft.Status == MeetingPrepDraftStatus.Finalized;
+                DraftLocation = draft.Location ?? string.Empty;
+                MeetingTime = draft.MeetingTime ?? AppTime.Today;
+                DraftContent = draft.Content ?? string.Empty;
 
                 SelectedProjectIds = JsonSerializer.Deserialize<List<int>>(draft.SelectedProjectIdsJson) ?? new();
                 SelectedTaskIds = JsonSerializer.Deserialize<List<int>>(draft.SelectedTaskIdsJson) ?? new();
+
+                // 可编辑：创建者、系统管理员、或草稿所选任一项目的负责人/管理员；其他人只读浏览
+                var canEdit = draft.CreatorId == user.Id || user.Role == UserRole.systemAdmin
+                    || await IsProjectAdminAsync(SelectedProjectIds, user);
+                IsReadOnly = draft.Status == MeetingPrepDraftStatus.Finalized || !canEdit;
+
                 IsReadOnly |= await _context.Project.AnyAsync(p => SelectedProjectIds.Contains(p.Id) && p.Status == ProjectStatus.Archived);
                 if (IsReadOnly)
+                    // 只读浏览时按草稿实际所选项目展示（不看访问范围），保证查看内容与草稿一致
                     AvailableProjects = await _context.Project.AsNoTracking()
-                        .Where(p => accessibleIds.Contains(p.Id) && SelectedProjectIds.Contains(p.Id) && !p.IsDeleted)
+                        .Where(p => SelectedProjectIds.Contains(p.Id) && !p.IsDeleted)
                         .Select(p => new ProjectOption { Id = p.Id, Name = p.Name + (p.Status == ProjectStatus.Archived ? "（已归档）" : "") }).ToListAsync();
             }
             else
             {
-                // 新建：默认勾选当前项目
+                // 新建：默认勾选当前项目，会议时间默认今天
+                MeetingTime = AppTime.Today;
                 if (ProjectId > 0 && AvailableProjects.Any(p => p.Id == ProjectId))
                 {
                     SelectedProjectIds = new List<int> { ProjectId };
@@ -108,6 +125,8 @@ public class MeetingPreparationModel : PageModel
             // 加载过滤任务
             CurrentTasks = await LoadFilteredTasksAsync(SelectedProjectIds);
             RecentlyCompletedByProject = await LoadRecentlyCompletedTasksAsync(SelectedProjectIds);
+            ProjectMemberNames = await LoadProjectMemberNamesAsync(SelectedProjectIds);
+            AgentNames = await LoadAgentNamesAsync();
 
             return Page();
         }
@@ -132,7 +151,27 @@ public class MeetingPreparationModel : PageModel
 
         var tasks = await LoadFilteredTasksAsync(validProjectIds);
         var completedByProject = await LoadRecentlyCompletedTasksAsync(validProjectIds);
-        return new JsonResult(new { success = true, tasks, recentlyCompletedByProject = completedByProject });
+        // 状态/优先级以字符串下发，供前端筛选与徽章使用（枚举默认会被序列化成数字）
+        var taskPayload = tasks.Select(t => new
+        {
+            id = t.Id,
+            title = t.Title,
+            status = t.Status.ToString(),
+            priority = t.Priority.ToString(),
+            projectName = t.ProjectName,
+            assigneeName = t.AssigneeName,
+            deadline = t.DeadlineAt?.ToString("yyyy-MM-dd"),
+            isOverdue = t.IsOverdue,
+            isNearDeadline = t.IsNearDeadline
+        }).ToList();
+        return new JsonResult(new
+        {
+            success = true,
+            tasks = taskPayload,
+            members = await LoadProjectMemberNamesAsync(validProjectIds),
+            agents = await LoadAgentNamesAsync(),
+            recentlyCompletedByProject = completedByProject
+        });
     }
 
     /// <summary>保存草稿（新建或更新）</summary>
@@ -151,7 +190,13 @@ public class MeetingPreparationModel : PageModel
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
 
             if (string.IsNullOrWhiteSpace(data.Title))
-                return new JsonResult(new { success = false, message = "草稿标题不能为空" });
+                return new JsonResult(new { success = false, message = "会议标题不能为空" });
+            if (data.Title.Trim().Length > 200)
+                return new JsonResult(new { success = false, message = "会议标题不能超过200个字符" });
+            if (!string.IsNullOrWhiteSpace(data.Location) && data.Location.Trim().Length > 200)
+                return new JsonResult(new { success = false, message = "会议地点不能超过200个字符" });
+            if (string.IsNullOrWhiteSpace(data.Content))
+                return new JsonResult(new { success = false, message = "会议内容不能为空，请勾选任务或手工填写会议内容" });
             if (data.ProjectIds == null || data.ProjectIds.Length == 0)
                 return new JsonResult(new { success = false, message = "请至少选择一个项目" });
 
@@ -205,12 +250,18 @@ public class MeetingPreparationModel : PageModel
                     .FirstOrDefaultAsync(d => d.Id == data.DraftId && !d.IsDeleted);
                 if (draft == null)
                     return new JsonResult(new { success = false, message = "草稿不存在" });
-                if (draft.CreatorId != user.Id && user.Role != UserRole.systemAdmin)
+                // 可编辑：创建者、系统管理员、或草稿所选任一项目的负责人/管理员
+                var canEdit = draft.CreatorId == user.Id || user.Role == UserRole.systemAdmin
+                    || await IsProjectAdminAsync(JsonSerializer.Deserialize<List<int>>(draft.SelectedProjectIdsJson) ?? new(), user);
+                if (!canEdit)
                     return new JsonResult(new { success = false, message = "无编辑权限" });
                 if (draft.Status == MeetingPrepDraftStatus.Finalized)
                     return new JsonResult(new { success = false, message = "草稿已定稿，不可修改" });
 
                 draft.Title = data.Title.Trim();
+                draft.Location = string.IsNullOrWhiteSpace(data.Location) ? null : data.Location.Trim();
+                draft.MeetingTime = data.MeetingTime;
+                draft.Content = string.IsNullOrWhiteSpace(data.Content) ? null : data.Content;
                 draft.SelectedProjectIdsJson = JsonSerializer.Serialize(validProjectIds);
                 draft.SelectedTaskIdsJson = JsonSerializer.Serialize(tasks.Select(t => t.Id).ToList());
                 draft.TaskSnapshotJson = JsonSerializer.Serialize(taskSnapshot);
@@ -224,6 +275,9 @@ public class MeetingPreparationModel : PageModel
                 var draft = new MeetingPrepDraft
                 {
                     Title = data.Title.Trim(),
+                    Location = string.IsNullOrWhiteSpace(data.Location) ? null : data.Location.Trim(),
+                    MeetingTime = data.MeetingTime,
+                    Content = string.IsNullOrWhiteSpace(data.Content) ? null : data.Content,
                     CreatorId = user.Id,
                     Status = MeetingPrepDraftStatus.Draft,
                     SelectedProjectIdsJson = JsonSerializer.Serialize(validProjectIds),
@@ -234,6 +288,27 @@ public class MeetingPreparationModel : PageModel
                 };
                 _context.MeetingPrepDrafts.Add(draft);
                 await _context.SaveChangesAsync();
+
+                // ===== 生成会前准备后，通知所选项目的成员（创建者除外），归入「事件通知」 =====
+                var memberIds = await LoadProjectMemberIdsAsync(validProjectIds);
+                memberIds.Remove(user.Id);
+                if (memberIds.Count > 0)
+                {
+                    var creatorName = user.RealName ?? user.UserName;
+                    var timeText = data.MeetingTime.HasValue
+                        ? $"，会议时间 {data.MeetingTime.Value:yyyy-MM-dd HH:mm}"
+                        : string.Empty;
+                    var locationText = string.IsNullOrWhiteSpace(draft.Location)
+                        ? string.Empty
+                        : $"，会议地点 {draft.Location}";
+                    await new UserNotificationService(_context).NotifyManyAsync(
+                        memberIds,
+                        "会前准备已生成",
+                        $"{creatorName} 生成了会前准备「{draft.Title}」{timeText}{locationText}，共选 {tasks.Count} 个任务。",
+                        "MeetingPrep",
+                        "/Projects/MeetingPreparationList");
+                }
+
                 return new JsonResult(new { success = true, draftId = draft.Id });
             }
         }
@@ -268,6 +343,67 @@ public class MeetingPreparationModel : PageModel
             .ToListAsync();
         return asLeader.Concat(asMember).ToHashSet();
     }
+
+    /// <summary>判断用户是否为指定项目中任一项目的负责人或管理员（与删除权限口径一致）</summary>
+    private async Task<bool> IsProjectAdminAsync(IEnumerable<int> projectIds, ApplicationUser user)
+    {
+        var ids = projectIds?.Distinct().ToList() ?? new List<int>();
+        if (ids.Count == 0) return false;
+
+        return await _context.Project.AsNoTracking()
+            .AnyAsync(p => ids.Contains(p.Id) && !p.IsDeleted && (p.LeaderUserId == user.Id
+                || _context.ProjectUsers.Any(pu => pu.ProjectId == p.Id && pu.UserId == user.Id && pu.ProjectRole == (int)ProjectRole.Admin)));
+    }
+
+    /// <summary>所选项目的全部人工成员显示名（含项目负责人），供责任人筛选项使用</summary>
+    private async Task<List<string>> LoadProjectMemberNamesAsync(IEnumerable<int> projectIds)
+    {
+        var ids = projectIds?.Distinct().ToList() ?? new List<int>();
+        if (ids.Count == 0) return new List<string>();
+
+        var names = await _context.ProjectUsers.AsNoTracking()
+            .Where(pu => ids.Contains(pu.ProjectId)
+                && !pu.User.IsDeleted && pu.User.Status == UserStatus.Active)
+            .Select(pu => pu.User.RealName ?? pu.User.UserName ?? string.Empty)
+            .ToListAsync();
+
+        var leaderNames = await _context.Project.AsNoTracking()
+            .Where(p => ids.Contains(p.Id) && !p.LeaderUser.IsDeleted && p.LeaderUser.Status == UserStatus.Active)
+            .Select(p => p.LeaderUser.RealName ?? p.LeaderUser.UserName ?? string.Empty)
+            .ToListAsync();
+
+        return names.Concat(leaderNames).Where(n => !string.IsNullOrWhiteSpace(n)).Distinct().OrderBy(n => n).ToList();
+    }
+
+    /// <summary>所选项目的全部人工成员用户ID（含项目负责人），供通知接收人使用</summary>
+    private async Task<List<int>> LoadProjectMemberIdsAsync(IEnumerable<int> projectIds)
+    {
+        var ids = projectIds?.Distinct().ToList() ?? new List<int>();
+        if (ids.Count == 0) return new List<int>();
+
+        var memberIds = await _context.ProjectUsers.AsNoTracking()
+            .Where(pu => ids.Contains(pu.ProjectId)
+                && !pu.User.IsDeleted && pu.User.Status == UserStatus.Active)
+            .Select(pu => pu.UserId)
+            .ToListAsync();
+
+        var leaderIds = await _context.Project.AsNoTracking()
+            .Where(p => ids.Contains(p.Id))
+            .Select(p => p.LeaderUserId)
+            .ToListAsync();
+
+        return memberIds.Concat(leaderIds).Where(id => id > 0).Distinct().ToList();
+    }
+
+    /// <summary>数字员工（Agent 助手）显示名，供责任人筛选项使用</summary>
+    private async Task<List<string>> LoadAgentNamesAsync()
+        => await _context.AgentDefinitions.AsNoTracking()
+            .Where(a => a.IsEnabled)
+            .Select(a => a.Name)
+            .Where(n => n != null && n != string.Empty)
+            .Distinct()
+            .OrderBy(n => n)
+            .ToListAsync();
 
     /// <summary>加载过滤任务：仅展示未开始、进行中、待审核的任务；排序：逾期→临近截止3天→普通→待审核，组内按截止日期升序</summary>
     private async Task<List<MeetingPrepTaskRow>> LoadFilteredTasksAsync(IEnumerable<int> projectIds)
@@ -391,6 +527,9 @@ public class MeetingPreparationModel : PageModel
     {
         public int DraftId { get; set; }
         public string Title { get; set; } = string.Empty;
+        public string? Location { get; set; }
+        public DateTime? MeetingTime { get; set; }
+        public string? Content { get; set; }
         public int[]? ProjectIds { get; set; }
         public int[]? TaskIds { get; set; }
     }

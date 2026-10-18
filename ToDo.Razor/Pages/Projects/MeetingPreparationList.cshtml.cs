@@ -95,8 +95,8 @@ public class MeetingPreparationListModel : PageModel
                 || SafeDeserializeList(d.SelectedProjectIdsJson).Any(pid => participatoryArr.Contains(pid))
             ).ToList();
 
-        // 额外按 FilterProjectId 过滤：如果传入，只保留包含该项目的草稿
-        if (FilterProjectId.HasValue)
+        // 额外按 FilterProjectId 过滤：仅在传入有效项目ID（>0）时，只保留包含该项目的草稿
+        if (FilterProjectId is > 0)
         {
             drafts = drafts.Where(d => SafeDeserializeList(d.SelectedProjectIdsJson).Contains(FilterProjectId.Value)).ToList();
         }
@@ -105,6 +105,7 @@ public class MeetingPreparationListModel : PageModel
         {
             Id = d.Id,
             Title = d.Title,
+            MeetingTime = d.MeetingTime,
             Status = d.Status,
             StatusText = d.Status == MeetingPrepDraftStatus.Draft ? "草稿" : "已定稿",
             CreatedAt = d.CreatedAt,
@@ -173,6 +174,7 @@ public class MeetingPreparationListModel : PageModel
     {
         public int Id { get; set; }
         public string Title { get; set; } = string.Empty;
+        public DateTime? MeetingTime { get; set; }
         public MeetingPrepDraftStatus Status { get; set; }
         public string StatusText { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }

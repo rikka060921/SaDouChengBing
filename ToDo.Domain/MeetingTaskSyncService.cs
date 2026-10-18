@@ -401,6 +401,10 @@ public class MeetingTaskSyncService
             resultItems.Add(item);
         }
 
+        // ===== 待审核任务补充识别：会上明确"验收通过/完成"的待审核任务，
+        // 主解析可能没识别出口头结论，这里再用 AI 逐条判定并补任务变更行动项（确认后才真正写入） =====
+        await AppendPendingReviewJudgementsAsync(meeting, allowedProjectIds, sourceText, resultItems);
+
         foreach (var pItem in parseItems)
         {
             var name = pItem.AssigneeName?.Trim();
@@ -424,6 +428,106 @@ public class MeetingTaskSyncService
         }
 
         return MeetingSyncResult.Successful(meeting.AiSummary ?? string.Empty, resultItems);
+    }
+
+    /// <summary>
+    /// 待审核任务补充识别：会议关联项目中处于"待审核"的任务，会议明确认可成果（通过/完成）
+    /// 时补一条"待审核 → 已完成"的任务变更行动项；被否定/要求重做的补"打回返工"。
+    /// 只是生成建议，用户在详情页确认后才真正走验收流程。
+    /// </summary>
+    private async Task AppendPendingReviewJudgementsAsync(
+        MeetingMinutes meeting,
+        IReadOnlyCollection<int> allowedProjectIds,
+        string sourceText,
+        List<MeetingActionItem> resultItems)
+    {
+        var pendingTasks = await _context.ToDoTasks
+            .Include(t => t.Assignee)
+            .Where(t => allowedProjectIds.Contains(t.ProjectId)
+                && !t.IsDeleted
+                && t.Status == ToDo.Entities.TaskStatus.PendingConfirmation)
+            .Take(30)
+            .ToListAsync();
+        if (pendingTasks.Count == 0) return;
+
+        var existingByTaskId = resultItems
+            .Where(i => i.MatchedTaskId.HasValue)
+            .GroupBy(i => i.MatchedTaskId!.Value)
+            .ToDictionary(g => g.Key, g => g.First());
+
+        // 主解析已经给出明确状态结论（AfterStatus 不是"待审核"）的不再送判
+        var candidates = pendingTasks
+            .Where(t => !existingByTaskId.TryGetValue(t.Id, out var item)
+                || string.IsNullOrEmpty(item.AfterStatus)
+                || item.AfterStatus == "PendingConfirmation")
+            .ToList();
+        if (candidates.Count == 0) return;
+
+        var meetingText = $"{sourceText}\n{meeting.AiSummary ?? string.Empty}";
+        var judgements = await JudgeTasksByMeetingContentAsync(
+            meetingText,
+            candidates.Select(t => (t.Id, t.Title)).ToList());
+        if (judgements == null || judgements.Count == 0) return;
+
+        foreach (var judgement in judgements)
+        {
+            var task = candidates.FirstOrDefault(t => t.Id == judgement.TaskId);
+            if (task == null) continue;
+
+            var approved = judgement.Discussed && !judgement.Rejected && !judgement.Changed;
+            var rejected = !approved && judgement.Rejected && !judgement.Changed;
+            if (!approved && !rejected) continue;   // 有变更或没提到 → 不自动处理
+
+            var afterStatus = approved ? "Completed" : "InProgress";
+            var changeDescription = approved
+                ? "会议验收通过，状态：待审核 → 已完成"
+                : "会议验收未通过，打回返工，状态：待审核 → 进行中";
+
+            if (existingByTaskId.TryGetValue(task.Id, out var existing))
+            {
+                // 主解析已匹配到该任务但没识别出验收结论，直接补上
+                if (string.IsNullOrEmpty(existing.BeforeStatus)) existing.BeforeStatus = "PendingConfirmation";
+                existing.AfterStatus = afterStatus;
+                existing.TaskStatus = afterStatus;
+                existing.ChangeDescription = changeDescription;
+                existing.SyncMessage = $"确认后更新已有任务「{task.Title}」，变更内容：{changeDescription}";
+                continue;
+            }
+
+            var assigneeText = task.AssigneeType == TaskAssigneeType.DigitalEmployee
+                ? (task.AgentName ?? "数字员工")
+                : task.Assignee?.RealName;
+
+            var item = new MeetingActionItem
+            {
+                MeetingMinutesId = meeting.Id,
+                ProjectId = task.ProjectId,
+                Title = task.Title,
+                Description = string.Empty,
+                Content = task.Title,
+                Priority = task.Priority.ToString(),
+                GroupName = null,
+                TaskStatus = afterStatus,
+                AssigneeText = assigneeText,
+                AssigneeId = task.AssigneeId,
+                Deadline = task.EndTime,
+                MatchedTaskId = task.Id,
+                ActionType = "TaskChange",
+                BeforeStatus = "PendingConfirmation",
+                AfterStatus = afterStatus,
+                BeforeAssigneeId = task.AssigneeId,
+                AfterAssigneeId = task.AssigneeId,
+                BeforeDeadline = task.EndTime,
+                AfterDeadline = task.EndTime,
+                BeforePriority = task.Priority.ToString(),
+                AfterPriority = task.Priority.ToString(),
+                ChangeDescription = changeDescription,
+                SyncStatus = "待确认更新",
+                SyncMessage = $"确认后更新已有任务「{task.Title}」，变更内容：{changeDescription}"
+            };
+            _context.MeetingActionItems.Add(item);
+            resultItems.Add(item);
+        }
     }
 
     public async Task<MeetingSyncResult> ConfirmAsync(int meetingId, int operatorId)
@@ -938,7 +1042,7 @@ public class MeetingTaskSyncService
 会议内容：
 {meetingText}
 
-待审核任务列表：
+待验收任务列表（均已提交成果、等待验收结论）：
 [
 {taskListJson}
 ]
@@ -951,6 +1055,7 @@ public class MeetingTaskSyncService
 注意：
 - 会议未提及的任务：discussed=false, rejected=false, changed=false
 - 只是总结汇报已完成成果、确认按计划推进：discussed=true, rejected=false, changed=false
+- 会议明确认可成果、同意通过、确认完成、同意结项（如""通过了""""验收通过""""没问题，就这么定了""）：discussed=true, rejected=false, changed=false
 
 仅返回JSON数组，不要任何其他文字：
 [{{""taskId"": 1, ""discussed"": true, ""rejected"": false, ""changed"": false}}]";
@@ -1175,6 +1280,7 @@ public class MeetingTaskSyncService
         {
             "状态", "标记为完成", "改为已完成", "进入进行中", "改为进行中",
             "重新开始", "恢复任务", "取消任务", "待审核",
+            "通过了", "已通过", "审核通过", "验收通过", "通过验收", "验收完成", "确认完成", "同意结项",
             "NotStarted", "InProgress", "Completed", "Cancelled", "PendingConfirmation"
         };
         return markers.Any(marker => text.Contains(marker, StringComparison.OrdinalIgnoreCase));

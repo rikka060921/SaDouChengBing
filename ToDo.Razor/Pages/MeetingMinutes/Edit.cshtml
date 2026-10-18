@@ -139,8 +139,8 @@
 		<!-- 附件管理 -->
 		<div class="mb-3">
 			<label class="form-label fw-bold text-dark">附件（可选）</label>
-			<input type="file" name="NewAttachments" multiple class="form-control" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.txt" id="attachmentInput" disabled="@Model.IsReadOnly">
-			<div class="form-text mt-1">支持格式：pdf、doc、docx、xls、xlsx、ppt、pptx、jpg、png、txt，单个文件≤10MB，单次上传不超过5个文件</div>
+			<input type="file" name="NewAttachments" multiple class="form-control" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.txt,.md" id="attachmentInput" disabled="@Model.IsReadOnly">
+			<div class="form-text mt-1">支持格式：pdf、doc、docx、xls、xlsx、ppt、pptx、jpg、png、txt、md（Markdown），单个文件≤10MB，单次上传不超过5个文件</div>
 
 			@if (Model.ExistingAttachments != null && Model.ExistingAttachments.Any())
 			{
@@ -280,7 +280,7 @@
 			for (const file of Array.from(this.files)) {
 				if (file.size > 10 * 1024 * 1024) { alert(`文件「${file.name}」超过10MB限制`); this.value = ''; return; }
 				const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
-				if (!['.pdf','.doc','.docx','.xls','.xlsx','.ppt','.pptx','.jpg','.jpeg','.png','.txt'].includes(ext)) { alert(`文件「${file.name}」格式不支持`); this.value = ''; return; }
+				if (!['.pdf','.doc','.docx','.xls','.xlsx','.ppt','.pptx','.jpg','.jpeg','.png','.txt','.md'].includes(ext)) { alert(`文件「${file.name}」格式不支持`); this.value = ''; return; }
 			}
 		});
 

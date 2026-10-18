@@ -235,7 +235,7 @@ public class EditModel : PageModel
 
         var allowedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".jpg", ".jpeg", ".png", ".txt"
+            ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".jpg", ".jpeg", ".png", ".txt", ".md"
         };
 
         foreach (var file in NewAttachments)

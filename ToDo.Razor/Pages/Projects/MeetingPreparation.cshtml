@@ -7,6 +7,14 @@
     ViewData["ProjectSection"] = "preparation";
 }
 
+<style>
+    /* 任务列表：表头字号大于数据行，突出层次 */
+    #taskTable thead th { font-size: 1.0625rem; }
+    #taskTable tbody td { font-size: 0.875rem; }
+    /* 表头下方的分类筛选行 */
+    #taskTable thead tr.filter-row th { padding: .25rem .3rem; font-weight: normal; vertical-align: middle; }
+</style>
+
 <partial name="_ProjectNav" view-data="ViewData" />
 
 @if (!string.IsNullOrWhiteSpace(Model.LoadError))
@@ -19,55 +27,84 @@
         <div>
             <div class="app-eyebrow">MEETING PREP</div>
             <h1 class="h2 mb-2">@(Model.DraftId > 0 ? "编辑会前准备草稿" : "会前准备")</h1>
-            <p class="text-muted mb-0">勾选需要讨论的项目和任务，保存后可反复修改，开会前随时编辑。</p>
+            <p class="text-muted mb-0">填写会议信息，勾选需要讨论的任务，会议内容自动汇总，保存后可反复修改。</p>
         </div>
-        <a href="/Projects/MeetingPreparationList?filterProjectId=@Model.ProjectId" class="btn btn-outline-secondary">
+        <a href="/Projects/MeetingPreparationList@(Model.ProjectId > 0 ? $"?filterProjectId={Model.ProjectId}" : string.Empty)" class="btn btn-outline-secondary">
             <i class="bi bi-list-ul me-1"></i>草稿列表
         </a>
     </div>
 
     <div class="card mb-4">
-        <div class="card-header"><h5 class="mb-0"><span class="text-danger">*</span> 草稿标题</h5></div>
+        <div class="card-header"><h5 class="mb-0"><i class="bi bi-file-earmark-text me-1"></i>会议文档</h5></div>
         <div class="card-body">
-            <input type="text" id="draftTitle" class="form-control form-control-lg"
-                   value="@Model.DraftTitle" placeholder="请输入会前准备草稿标题"
-                   @(Model.IsReadOnly ? "readonly" : "") />
-            <input type="hidden" id="draftId" value="@(Model.CurrentDraftId ?? 0)" />
-        </div>
-    </div>
-
-    <div class="card mb-4">
-        <div class="card-header">
-            <h5 class="mb-0">选择项目 <span class="text-muted small">（勾选后下方任务列表实时刷新，支持跨项目）</span></h5>
-        </div>
-        <div class="card-body">
-            <div class="d-flex flex-wrap gap-3">
-                @foreach (var project in Model.AvailableProjects)
+            <div class="mb-3">
+                <label class="form-label"><span class="text-danger">*</span> 会议标题</label>
+                <input type="text" id="draftTitle" class="form-control form-control-lg"
+                       value="@Model.DraftTitle" placeholder="请输入会议标题" maxlength="200"
+                       @(Model.IsReadOnly ? "readonly" : "") />
+                <input type="hidden" id="draftId" value="@(Model.CurrentDraftId ?? 0)" />
+            </div>
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">会议地点</label>
+                    <input type="text" id="draftLocation" class="form-control"
+                           value="@Model.DraftLocation" placeholder="如：3 号会议室 / 线上腾讯会议" maxlength="200"
+                           @(Model.IsReadOnly ? "readonly" : "") />
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">会议时间</label>
+                    <input type="datetime-local" id="meetingTime" class="form-control"
+                           value="@(Model.MeetingTime?.ToString("yyyy-MM-ddTHH:mm"))"
+                           @(Model.IsReadOnly ? "readonly" : "") />
+                </div>
+            </div>
+            <div class="mb-2 d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <label class="form-label mb-0"><span class="text-danger">*</span> 会议内容 <span class="text-muted small">（由勾选任务按项目自动汇总，可手工编辑）</span></label>
+                @if (!Model.IsReadOnly)
                 {
-                    var isChecked = Model.SelectedProjectIds.Contains(project.Id);
-                    <div class="form-check form-check-inline">
-                        <input type="checkbox" class="form-check-input project-checkbox"
-                               id="project-@project.Id" value="@project.Id"
-                               @(isChecked ? "checked" : "")
-                               @(Model.IsReadOnly ? "disabled" : "") />
-                        <label class="form-check-label" for="project-@project.Id">@project.Name</label>
-                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btnRegenerateContent">
+                        <i class="bi bi-arrow-repeat me-1"></i>重新汇总
+                    </button>
                 }
             </div>
+            <textarea id="draftContent" class="form-control" rows="14"
+                      placeholder="勾选下方任务后自动汇总到这里" @(Model.IsReadOnly ? "readonly" : "")>@Model.DraftContent</textarea>
+            <div class="form-text" id="contentHint"></div>
         </div>
     </div>
 
     <div class="card mb-4">
         <div class="card-header d-flex justify-content-between align-items-center cursor-pointer"
-             data-bs-toggle="collapse" data-bs-target="#taskListCollapse" aria-expanded="false">
-            <h5 class="mb-0">任务列表 <span class="text-muted small">（仅展示未开始、进行中、待审核、逾期任务）</span></h5>
+             data-bs-toggle="collapse" data-bs-target="#prepSourceCollapse" aria-expanded="false">
+            <h5 class="mb-0">选择项目与任务 <span class="text-muted small">（勾选后自动汇总到会议内容）</span></h5>
             <div class="d-flex gap-2 align-items-center">
                 <span class="text-muted small" id="taskCount">@Model.CurrentTasks.Count 条</span>
                 <i class="bi bi-chevron-down"></i>
             </div>
         </div>
-        <div class="collapse" id="taskListCollapse">
-            <div class="card-body p-0">
+        <div class="collapse" id="prepSourceCollapse">
+            <div class="card-body">
+                <div class="text-muted small mb-2">选择项目（勾选后下方任务列表实时刷新，支持跨项目）</div>
+                <div class="d-flex flex-wrap gap-3 mb-3">
+                    @foreach (var project in Model.AvailableProjects)
+                    {
+                        var isChecked = Model.SelectedProjectIds.Contains(project.Id);
+                        <div class="form-check form-check-inline">
+                            <input type="checkbox" class="form-check-input project-checkbox"
+                                   id="project-@project.Id" value="@project.Id"
+                                   @(isChecked ? "checked" : "")
+                                   @(Model.IsReadOnly ? "disabled" : "") />
+                            <label class="form-check-label" for="project-@project.Id">@project.Name</label>
+                        </div>
+                    }
+                </div>
+
+                <hr class="my-3" />
+
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-muted small">任务列表（仅展示未开始、进行中、待审核、逾期任务）</span>
+                    <span class="text-muted small" id="taskFilterHint"></span>
+                </div>
                 <div class="table-responsive">
                     <table class="table table-hover w-100 mb-0" id="taskTable">
                         <thead>
@@ -79,6 +116,56 @@
                                 <th>优先级</th>
                                 <th>截止时间</th>
                                 <th>责任人</th>
+                            </tr>
+                            <tr class="filter-row">
+                                <th></th>
+                                <th><input type="text" class="form-control form-control-sm" id="taskFilterTitle" placeholder="搜索标题" /></th>
+                                <th>
+                                    <select class="form-select form-select-sm" id="taskFilterProject">
+                                        <option value="">全部</option>
+                                        @foreach (var project in Model.AvailableProjects)
+                                        {
+                                            <option value="@project.Name">@project.Name</option>
+                                        }
+                                    </select>
+                                </th>
+                                <th>
+                                    <select class="form-select form-select-sm" id="taskFilterStatus">
+                                        <option value="">全部</option>
+                                        <option value="NotStarted">未开始</option>
+                                        <option value="InProgress">进行中</option>
+                                        <option value="PendingConfirmation">待审核</option>
+                                        <option value="Overdue">逾期</option>
+                                    </select>
+                                </th>
+                                <th>
+                                    <select class="form-select form-select-sm" id="taskFilterPriority">
+                                        <option value="">全部</option>
+                                        <option value="High">High</option>
+                                        <option value="Medium">Medium</option>
+                                        <option value="Low">Low</option>
+                                    </select>
+                                </th>
+                                <th>
+                                    <select class="form-select form-select-sm" id="taskFilterDue">
+                                        <option value="">全部</option>
+                                        <option value="overdue">已逾期</option>
+                                        <option value="soon">7天内截止</option>
+                                    </select>
+                                </th>
+                                <th>
+                                    <select class="form-select form-select-sm" id="taskFilterAssignee">
+                                        <option value="">全部</option>
+                                        @foreach (var member in Model.ProjectMemberNames)
+                                        {
+                                            <option value="@member">@member</option>
+                                        }
+                                        @foreach (var agent in Model.AgentNames)
+                                        {
+                                            <option value="@agent">@agent</option>
+                                        }
+                                    </select>
+                                </th>
                             </tr>
                         </thead>
                         <tbody id="taskTableBody">
@@ -92,7 +179,9 @@
                                 {
                                     var isChecked = Model.SelectedTaskIds.Contains(task.Id);
                                 var rowClass = task.IsOverdue ? "table-danger" : task.IsNearDeadline ? "table-warning" : "";
-                                <tr class="@rowClass" data-task-id="@task.Id">
+                                <tr class="@rowClass" data-task-id="@task.Id" data-project-name="@task.ProjectName" data-task-title="@task.Title"
+                                    data-status="@task.Status" data-priority="@task.Priority" data-due="@(task.DeadlineAt?.ToString("yyyy-MM-dd"))"
+                                    data-overdue="@(task.IsOverdue ? "1" : "0")" data-assignee="@task.AssigneeName">
                                     <td>@if (!Model.IsReadOnly) { <text><input type="checkbox" class="form-check-input task-checkbox" value="@task.Id" @(isChecked ? "checked" : "") /></text> }</td>
                                     <td>@task.Title</td>
                                     <td class="text-muted small">@task.ProjectName</td>
@@ -111,7 +200,7 @@
                 </div>
                 @if (!Model.IsReadOnly)
                 {
-                    <div class="px-3 pb-3">
+                    <div class="mt-3">
                         <button type="button" class="btn btn-sm btn-outline-secondary" id="btnSelectAllTasks">
                             <i class="bi bi-check2-all me-1"></i>全选
                         </button>
@@ -198,6 +287,50 @@
     (function() {
         const token = document.getElementById('antiforgeryToken').value;
         const isReadOnly = @Json.Serialize(Model.IsReadOnly);
+        // 已存内容视为"已手工确认"，勾选变化不覆盖；新建/空内容则自动汇总
+        let contentEdited = @Json.Serialize(!string.IsNullOrWhiteSpace(Model.DraftContent));
+
+        function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+        function escapeAttr(s) { return escapeHtml(s).replace(/"/g, '&quot;'); }
+
+        // ===== 会议内容：按项目分组汇总勾选任务 =====
+        function buildContent() {
+            const groups = new Map();
+            document.querySelectorAll('#taskTableBody tr[data-task-id]').forEach(tr => {
+                const cb = tr.querySelector('.task-checkbox');
+                if (!cb || !cb.checked) return;
+                const pname = tr.dataset.projectName || '未归属项目';
+                if (!groups.has(pname)) groups.set(pname, []);
+                groups.get(pname).push(tr.dataset.taskTitle || '');
+            });
+            const lines = [];
+            groups.forEach((titles, pname) => {
+                lines.push(`【${pname}】`);
+                titles.forEach(t => lines.push(`- ${t}`));
+                lines.push('');
+            });
+            return lines.join('\n').trim();
+        }
+
+        function regenerateContent() {
+            const el = document.getElementById('draftContent');
+            if (el) el.value = buildContent();
+            contentEdited = false;
+            updateContentHint();
+        }
+
+        function updateContentHint() {
+            const hint = document.getElementById('contentHint');
+            if (!hint) return;
+            hint.textContent = contentEdited
+                ? '当前内容已手工编辑，勾选变化不会覆盖；需要按勾选重新生成请点「重新汇总」。'
+                : '内容由当前勾选任务自动汇总，勾选变化会实时更新。';
+        }
+
+        function maybeAutoGenerate() {
+            if (contentEdited) { updateContentHint(); return; }
+            regenerateContent();
+        }
 
         // 勾选项目 → AJAX刷新任务
         async function refreshTasks() {
@@ -206,7 +339,11 @@
             if (checked.length === 0) {
                 document.getElementById('taskTableBody').innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">请勾选项目查看任务</td></tr>';
                 document.getElementById('taskCount').textContent = '0 条';
+                rebuildFilterOptions();
+                rebuildAssigneeOptions([], []);
+                applyTaskFilters();
                 renderCompletedByProject(null, []);
+                maybeAutoGenerate();
                 return;
             }
             const qs = checked.map(id => `projectIds=${id}`).join('&');
@@ -230,7 +367,9 @@
                             : t.status === 'InProgress'
                                 ? '<span class="badge bg-primary">进行中</span>'
                                 : '<span class="badge bg-secondary">未开始</span>';
-                        return `<tr class="${rowClass}" data-task-id="${t.id}">
+                        return `<tr class="${rowClass}" data-task-id="${t.id}" data-project-name="${escapeAttr(t.projectName)}" data-task-title="${escapeAttr(t.title)}"
+                            data-status="${escapeAttr(t.status)}" data-priority="${escapeAttr(t.priority)}" data-due="${escapeAttr(t.deadline || '')}"
+                            data-overdue="${t.isOverdue ? '1' : '0'}" data-assignee="${escapeAttr(t.assigneeName)}">
                             <td><input type="checkbox" class="form-check-input task-checkbox" value="${t.id}" ${checked} /></td>
                             <td>${escapeHtml(t.title)}</td>
                             <td class="text-muted small">${escapeHtml(t.projectName)}</td>
@@ -242,7 +381,11 @@
                     }).join('');
                 }
                 document.getElementById('taskCount').textContent = (data.tasks?.length || 0) + ' 条';
+                rebuildFilterOptions();
+                rebuildAssigneeOptions(data.members, data.agents);
+                applyTaskFilters();
                 renderCompletedByProject(data.recentlyCompletedByProject, checked);
+                maybeAutoGenerate();
             } catch (e) { alert('加载任务失败，请重试'); }
         }
 
@@ -296,30 +439,135 @@
             totalEl.textContent = total + ' 项';
         }
 
-        function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+        // ===== 任务列表分类筛选：表头下方下拉框 =====
+        const FILTER_IDS = ['taskFilterTitle', 'taskFilterProject', 'taskFilterStatus', 'taskFilterPriority', 'taskFilterDue', 'taskFilterAssignee'];
+
+        function taskRows() {
+            return Array.from(document.querySelectorAll('#taskTableBody tr[data-task-id]'));
+        }
+
+        // 项目 / 责任人 下拉选项按当前行重建，尽量保留已选值
+        function rebuildSelectFromRows(selectId, dataKey, allLabel) {
+            const sel = document.getElementById(selectId);
+            if (!sel) return;
+            const prev = sel.value;
+            const vals = new Set();
+            taskRows().forEach(tr => {
+                const v = tr.dataset[dataKey];
+                if (v && v !== '-') vals.add(v);
+            });
+            sel.innerHTML = `<option value="">${allLabel}</option>`
+                + Array.from(vals).sort().map(v => `<option value="${escapeAttr(v)}">${escapeHtml(v)}</option>`).join('');
+            sel.value = vals.has(prev) ? prev : '';
+        }
+
+        function rebuildFilterOptions() {
+            rebuildSelectFromRows('taskFilterProject', 'projectName', '全部');
+        }
+
+        // 责任人选项 = 所选项目的全部成员 + 数字员工（Agent 助手）
+        function rebuildAssigneeOptions(members, agents) {
+            const sel = document.getElementById('taskFilterAssignee');
+            if (!sel) return;
+            const prev = sel.value;
+            const names = [...new Set([...(members || []), ...(agents || [])])];
+            sel.innerHTML = '<option value="">全部</option>'
+                + names.map(n => `<option value="${escapeAttr(n)}">${escapeHtml(n)}</option>`).join('');
+            sel.value = names.includes(prev) ? prev : '';
+        }
+
+        function updateFilterHint() {
+            const hint = document.getElementById('taskFilterHint');
+            if (!hint) return;
+            const rows = taskRows();
+            const shown = rows.filter(tr => tr.style.display !== 'none').length;
+            hint.textContent = shown === rows.length ? '' : `筛选后显示 ${shown} / ${rows.length} 条`;
+        }
+
+        function applyTaskFilters() {
+            const title = (document.getElementById('taskFilterTitle')?.value || '').trim().toLowerCase();
+            const project = document.getElementById('taskFilterProject')?.value || '';
+            const status = document.getElementById('taskFilterStatus')?.value || '';
+            const priority = document.getElementById('taskFilterPriority')?.value || '';
+            const due = document.getElementById('taskFilterDue')?.value || '';
+            const assignee = document.getElementById('taskFilterAssignee')?.value || '';
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const soonLimit = new Date(today.getTime() + 7 * 86400000);
+
+            taskRows().forEach(tr => {
+                let ok = true;
+                if (ok && title && !(tr.dataset.taskTitle || '').toLowerCase().includes(title)) ok = false;
+                if (ok && project && tr.dataset.projectName !== project) ok = false;
+                if (ok && assignee && tr.dataset.assignee !== assignee) ok = false;
+                if (ok && priority && tr.dataset.priority !== priority) ok = false;
+                if (ok && status) ok = status === 'Overdue' ? tr.dataset.overdue === '1' : tr.dataset.status === status;
+                if (ok && due) {
+                    const raw = tr.dataset.due || '';
+                    if (due === 'overdue') ok = tr.dataset.overdue === '1';
+                    else if (due === 'soon') { const d = raw ? new Date(raw) : null; ok = !!d && d >= today && d <= soonLimit; }
+                }
+                tr.style.display = ok ? '' : 'none';
+            });
+            updateFilterHint();
+        }
+
+        // 供全选使用：只取当前筛选后可见的行
+        function visibleTaskCheckboxes() {
+            return taskRows().filter(tr => tr.style.display !== 'none')
+                .map(tr => tr.querySelector('.task-checkbox')).filter(Boolean);
+        }
+
+        FILTER_IDS.forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.addEventListener(id === 'taskFilterTitle' ? 'input' : 'change', applyTaskFilters);
+        });
+        rebuildFilterOptions();
+        applyTaskFilters();
 
         if (!isReadOnly) {
             document.querySelectorAll('.project-checkbox').forEach(cb => cb.addEventListener('change', refreshTasks));
+
+            // 任务勾选变化（委托，兼容 AJAX 重绘后的行）→ 自动汇总
+            document.getElementById('taskTableBody')?.addEventListener('change', function(e) {
+                if (e.target.classList.contains('task-checkbox')) maybeAutoGenerate();
+            });
+
             document.getElementById('btnSelectAllTasks')?.addEventListener('click', function() {
-                document.querySelectorAll('.task-checkbox').forEach(cb => cb.checked = true);
+                visibleTaskCheckboxes().forEach(cb => cb.checked = true);
+                maybeAutoGenerate();
             });
             document.getElementById('toggleAllTasks')?.addEventListener('change', function() {
-                document.querySelectorAll('.task-checkbox').forEach(cb => cb.checked = this.checked);
+                visibleTaskCheckboxes().forEach(cb => cb.checked = this.checked);
+                maybeAutoGenerate();
             });
+
+            const contentEl = document.getElementById('draftContent');
+            contentEl?.addEventListener('input', function() {
+                if (!contentEdited) { contentEdited = true; updateContentHint(); }
+            });
+            document.getElementById('btnRegenerateContent')?.addEventListener('click', regenerateContent);
+
+            updateContentHint();
+
             document.getElementById('btnSaveDraft').addEventListener('click', async function() {
                 const title = document.getElementById('draftTitle').value.trim();
-                if (!title) { alert('草稿标题不能为空'); return; }
+                if (!title) { alert('会议标题不能为空'); return; }
+                const content = document.getElementById('draftContent').value.trim();
+                if (!content) { alert('会议内容不能为空，请勾选任务或手工填写会议内容'); document.getElementById('draftContent').focus(); return; }
                 const projectIds = Array.from(document.querySelectorAll('.project-checkbox:checked')).map(cb => parseInt(cb.value));
                 if (projectIds.length === 0) { alert('请至少选择一个项目'); return; }
                 const taskIds = Array.from(document.querySelectorAll('.task-checkbox:checked')).map(cb => parseInt(cb.value));
                 const draftId = parseInt(document.getElementById('draftId').value) || 0;
+                const location = document.getElementById('draftLocation').value.trim();
+                const meetingTime = document.getElementById('meetingTime').value || null;
                 this.disabled = true;
                 this.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>保存中…';
                 try {
                     const resp = await fetch('?handler=Save', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': token },
-                        body: JSON.stringify({ draftId, title, projectIds, taskIds })
+                        body: JSON.stringify({ draftId, title, location, meetingTime, content, projectIds, taskIds })
                     });
                     const data = await resp.json();
                     if (!resp.ok || !data.success) { alert(data.message || '保存失败'); return; }
@@ -328,6 +576,8 @@
                 this.disabled = false;
                 this.innerHTML = '<i class="bi bi-save me-1"></i>保存草稿';
             });
+        } else {
+            updateContentHint();
         }
     })();
 </script>

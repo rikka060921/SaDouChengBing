@@ -33,7 +33,8 @@ namespace ToDo.Domain
                 [".jpg"] = "image/jpeg",
                 [".jpeg"] = "image/jpeg",
                 [".png"] = "image/png",
-                [".txt"] = "text/plain"
+                [".txt"] = "text/plain",
+                [".md"] = "text/markdown"
             };
 
         private readonly ApplicationDbContext _context;
@@ -1199,7 +1200,7 @@ namespace ToDo.Domain
                 ".xls" or ".xlsx" => "fa-file-excel text-success",
                 ".ppt" or ".pptx" => "fa-file-powerpoint text-warning",
                 ".jpg" or ".jpeg" or ".png" => "fa-file-image text-info",
-                ".txt" => "fa-file-alt text-secondary",
+                ".txt" or ".md" => "fa-file-alt text-secondary",
                 _ => "fa-file text-dark"
             };
         }

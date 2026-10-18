@@ -2884,6 +2884,9 @@ namespace ToDo.Context.Migrations
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("Content")
+                        .HasColumnType("longtext");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)");
 
@@ -2894,6 +2897,13 @@ namespace ToDo.Context.Migrations
                         .HasColumnType("tinyint(1)");
 
                     b.Property<DateTime>("LastModifiedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Location")
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
+
+                    b.Property<DateTime?>("MeetingTime")
                         .HasColumnType("datetime(6)");
 
                     b.Property<string>("SelectedProjectIdsJson")

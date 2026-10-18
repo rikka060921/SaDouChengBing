@@ -917,7 +917,7 @@
 															}
 														</td>
 														<td style="white-space:normal;word-break:break-all;">
-															@if (!string.IsNullOrWhiteSpace(item.SourceDecisionContent))
+															@if (item.IsConfirmed && !string.IsNullOrWhiteSpace(item.SourceDecisionContent))
 															{
 																int? sourceDecisionJumpIndex = null;
 																if (item.SourceDecisionIndex.HasValue
@@ -960,12 +960,13 @@
 															else
 															{
 																<select class="form-select form-select-sm row-decision-select" data-item-id="@item.Id" disabled="@(!Model.CanApproveWrites)">
-																	<option value="" selected="@(!item.SourceDecisionIndex.HasValue)">无（讨论直接布置）</option>
+																	@{var selectedDecisionOption = Model.GetSourceDecisionOptionIndex(item);}
+																	<option value="" selected="@(selectedDecisionOption == null)">无（讨论直接布置）</option>
 																	@for (int d = 0; d < Model.MeetingDecisions.Count; d++)
 																	{
 																		var decisionContent = Model.MeetingDecisions[d].Content ?? string.Empty;
 																		var optionText = decisionContent.Length > 18 ? decisionContent.Substring(0, 18) + "…" : decisionContent;
-																		<option value="@(d + 1)" selected="@(item.SourceDecisionIndex == d + 1)">决策@(d + 1)：@optionText</option>
+																		<option value="@(d + 1)" selected="@(selectedDecisionOption == d)">决策@(d + 1)：@optionText</option>
 																	}
 																</select>
 															}

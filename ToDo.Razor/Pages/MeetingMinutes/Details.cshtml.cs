@@ -1049,6 +1049,33 @@ public class DetailsModel : PageModel
         return current == snapshot || current.Contains(snapshot) || snapshot.Contains(current);
     }
 
+    /// <summary>
+    /// 解析行动项来源决策对应的下拉选项序号（0基，null=无）：
+    /// 优先按原序号+内容匹配，其次按内容模糊匹配，最后原序号仍在范围内时按原序号回显。
+    /// </summary>
+    public int? GetSourceDecisionOptionIndex(MeetingActionItem item)
+    {
+        var indexInRange = item.SourceDecisionIndex.HasValue
+            && item.SourceDecisionIndex.Value >= 1
+            && item.SourceDecisionIndex.Value <= MeetingDecisions.Count;
+        if (indexInRange
+            && DecisionContentMatches(
+                MeetingDecisions[item.SourceDecisionIndex.Value - 1].Content,
+                item.SourceDecisionContent))
+            return item.SourceDecisionIndex.Value - 1;
+
+        if (!string.IsNullOrWhiteSpace(item.SourceDecisionContent))
+        {
+            for (int d = 0; d < MeetingDecisions.Count; d++)
+            {
+                if (DecisionContentMatches(MeetingDecisions[d].Content, item.SourceDecisionContent))
+                    return d;
+            }
+        }
+
+        return indexInRange ? item.SourceDecisionIndex.Value - 1 : null;
+    }
+
     public async Task<IActionResult> OnPostSuperviseAsync(int id)
     {
         var meeting = await GetMeetingForActionItemWriteAsync(id);

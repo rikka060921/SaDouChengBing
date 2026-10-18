@@ -29,6 +29,17 @@ namespace ToDo.Entities
         [StringLength(200, ErrorMessage = "标题不能超过200个字符")]
         public string Title { get; set; } = string.Empty;
 
+        /// <summary>会议地点</summary>
+        [StringLength(200, ErrorMessage = "会议地点不能超过200个字符")]
+        public string? Location { get; set; }
+
+        /// <summary>会议时间</summary>
+        public DateTime? MeetingTime { get; set; }
+
+        /// <summary>会议内容：由勾选任务按项目汇总生成，可手工再编辑</summary>
+        [Column(TypeName = "longtext")]
+        public string? Content { get; set; }
+
         [Required]
         public int CreatorId { get; set; }
 
