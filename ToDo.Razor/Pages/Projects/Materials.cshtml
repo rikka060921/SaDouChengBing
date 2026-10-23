@@ -15,6 +15,7 @@
 
 <div class="card shadow-sm mb-4">
     <div class="card-header">上传新资料</div>
+    <div class="px-3 pt-3 small text-muted">原件按上传内容保存，不改变 WPS/Office 排版。正文提取仅供检索与 AI 使用，不等同于原件预览；Word/PDF 的 AI 修改生成 Markdown 修订稿，原件仍保留。</div>
     <div class="card-body">
         <form method="post" enctype="multipart/form-data" asp-page-handler="Upload" id="uploadForm">
             <fieldset disabled="@Model.IsReadOnly">
@@ -102,7 +103,7 @@
                 @foreach (var item in Model.Documents)
                 {
                     <tr>
-                        <td><a href="#" onclick="showDocumentContent(@item.Id, '@item.FileName'); return false;" class="text-decoration-none">@item.FileName</a></td>
+                        <td><a href="#" data-document-id="@item.Id" data-file-name="@item.FileName" onclick="showDocumentContent(this.dataset.documentId, this.dataset.fileName); return false;" class="text-decoration-none">@item.FileName</a></td>
                         <td>
                             @if (Model.CanManageAgentPermissions)
                             {
@@ -178,9 +179,9 @@
                                 <a class="btn btn-sm btn-outline-primary" href="/Projects/Materials?handler=Download&amp;projectId=@Model.ProjectId&amp;id=@item.Id">下载</a>
                                 @if (Model.DocumentWritePermissions.ContainsKey(item.Id) && Model.DocumentWritePermissions[item.Id])
                                 {
-                                    <button type="button" class="btn btn-sm btn-outline-warning" onclick="showAiReviseModal(@item.Id, '@item.FileName')">AI修改</button>
+                                    <button type="button" class="btn btn-sm btn-outline-warning" data-document-id="@item.Id" data-file-name="@item.FileName" onclick="showAiReviseModal(this.dataset.documentId, this.dataset.fileName)">AI修改</button>
                                 }
-                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="showVersionHistory(@item.Id, '@item.FileName')">历史版本</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" data-document-id="@item.Id" data-file-name="@item.FileName" onclick="showVersionHistory(this.dataset.documentId, this.dataset.fileName)">历史版本</button>
                                 @if (item.IsCurrent && item.IndexStatus is ProjectDocumentIndexStatus.Failed or ProjectDocumentIndexStatus.Unsupported)
                                 {
                                     <form method="post" asp-page-handler="Reindex" class="d-inline">
@@ -251,6 +252,16 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
+                <div id="documentNotice" class="alert alert-info small">正文提取不是原件版式，下载原件可保留全部格式。</div>
+                <div class="d-flex flex-wrap gap-2 mb-3">
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="showExtractedText">AI 正文提取</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="showOriginalPreview" hidden>原件预览</button>
+                </div>
+                <div id="originalPreviewPane" hidden>
+                    <img id="originalImage" alt="项目资料原件" class="img-fluid" hidden />
+                    <iframe id="originalPdf" title="PDF 原件预览" class="w-100 border rounded" style="height:65vh" hidden></iframe>
+                    <p id="originalDownloadHint" class="text-muted">此格式请下载后使用 WPS/Office 查看原件；系统不会把提取的文字当作排版预览。</p>
+                </div>
                 <div id="documentContent" class="bg-light p-3 rounded" style="max-height: 400px; overflow-y: auto; white-space: pre-wrap; font-family: monospace;"></div>
             </div>
             <div class="modal-footer">
@@ -331,15 +342,17 @@
                                 @foreach (var draft in Model.PendingDrafts)
                                 {
                                     <tr>
-                                        <td><a href="#" onclick="showDraftContent(@draft.Id, '@draft.DraftFileName'); return false;" class="text-decoration-none">@draft.DraftFileName</a></td>
+                                        <td><a href="#" data-draft-id="@draft.Id" data-file-name="@draft.DraftFileName" onclick="showDraftContent(this.dataset.draftId, this.dataset.fileName); return false;" class="text-decoration-none">@draft.DraftFileName</a></td>
                                         <td>@draft.AgentDisplayName</td>
                                         <td>@draft.ChangeDescription</td>
                                         <td>@draft.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
                                         <td>@draft.ExpireTime.ToString("yyyy-MM-dd")</td>
                                         <td>
                                             <div class="d-flex gap-1">
-                                                <button type="button" class="btn btn-sm btn-outline-info" onclick="showDraftContent(@draft.Id, '@draft.DraftFileName')">查看对比</button>
+                                                <button type="button" class="btn btn-sm btn-outline-info" data-draft-id="@draft.Id" data-file-name="@draft.DraftFileName" onclick="showDraftContent(this.dataset.draftId, this.dataset.fileName)">查看对比</button>
                                                 <a href="/Projects/Materials?handler=DownloadDraft&projectId=@Model.ProjectId&draftId=@draft.Id" class="btn btn-sm btn-outline-secondary">下载</a>
+                                                @if (Model.CanManageAgentPermissions && !Model.IsReadOnly)
+                                                {
                                                 <form method="post" asp-page-handler="AuditDraft" class="d-inline">
                                                     <input type="hidden" name="projectId" value="@Model.ProjectId" />
                                                     <input type="hidden" name="draftId" value="@draft.Id" />
@@ -352,6 +365,7 @@
                                                     <input type="hidden" name="action" value="reject" />
                                                     <button type="submit" class="btn btn-sm btn-danger">驳回</button>
                                                 </form>
+                                                }
                                             </div>
                                         </td>
                                     </tr>
@@ -384,7 +398,7 @@
                                 @foreach (var draft in Model.ProcessedDrafts)
                                 {
                                     <tr>
-                                        <td><a href="#" onclick="showDraftContent(@draft.Id, '@draft.DraftFileName'); return false;" class="text-decoration-none">@draft.DraftFileName</a></td>
+                                        <td><a href="#" data-draft-id="@draft.Id" data-file-name="@draft.DraftFileName" onclick="showDraftContent(this.dataset.draftId, this.dataset.fileName); return false;" class="text-decoration-none">@draft.DraftFileName</a></td>
                                         <td>@draft.AgentDisplayName</td>
                                         <td>@draft.ChangeDescription</td>
                                         <td>
@@ -400,7 +414,7 @@
                                         <td>@draft.AuditTime?.ToString("yyyy-MM-dd HH:mm")</td>
                                         <td>
                                             <div class="d-flex gap-1">
-                                                <button type="button" class="btn btn-sm btn-outline-info" onclick="showDraftContent(@draft.Id, '@draft.DraftFileName')">查看对比</button>
+                                                <button type="button" class="btn btn-sm btn-outline-info" data-draft-id="@draft.Id" data-file-name="@draft.DraftFileName" onclick="showDraftContent(this.dataset.draftId, this.dataset.fileName)">查看对比</button>
                                                 <a href="/Projects/Materials?handler=DownloadDraft&projectId=@Model.ProjectId&draftId=@draft.Id" class="btn btn-sm btn-outline-secondary">下载</a>
                                             </div>
                                         </td>
@@ -682,25 +696,7 @@
 
     // 查看历史版本内容
     function viewHistoryContent(documentId, fileName) {
-        document.getElementById('contentFileName').textContent = fileName;
-        document.getElementById('documentContent').textContent = '加载中...';
-        document.getElementById('documentDownloadLink').href = '/Projects/Materials?handler=Download&projectId=' + projectId + '&id=' + documentId;
-        
-        var modal = new bootstrap.Modal(document.getElementById('documentContentModal'));
-        modal.show();
-
-        fetch('/Projects/Materials?handler=DocumentContent&projectId=' + projectId + '&documentId=' + documentId)
-            .then(function(response) { return response.json(); })
-            .then(function(data) {
-                if (data.success) {
-                    document.getElementById('documentContent').textContent = data.content || '文档内容为空';
-                } else {
-                    document.getElementById('documentContent').textContent = data.error || '加载失败';
-                }
-            })
-            .catch(function() {
-                document.getElementById('documentContent').textContent = '加载失败，请重试';
-            });
+        showDocumentContent(documentId, fileName);
     }
 
     function rollbackVersion(versionId) {
@@ -772,6 +768,13 @@
         document.getElementById('contentFileName').textContent = fileName;
         document.getElementById('documentContent').textContent = '加载中...';
         
+        document.getElementById('documentContent').hidden = false;
+        document.getElementById('originalPreviewPane').hidden = true;
+        document.getElementById('showOriginalPreview').hidden = true;
+        document.getElementById('originalImage').removeAttribute('src');
+        document.getElementById('originalPdf').removeAttribute('src');
+        document.getElementById('documentNotice').textContent = '正在读取正文，原件未改动。';
+        document.getElementById('btnAiReviseFromModal').hidden = true;
         // 设置下载链接
         document.getElementById('documentDownloadLink').href = '/Projects/Materials?handler=Download&projectId=' + projectId + '&id=' + documentId;
         
@@ -784,8 +787,17 @@
         fetch('/Projects/Materials?handler=DocumentContent&projectId=' + projectId + '&documentId=' + documentId)
             .then(function(response) { return response.json(); })
             .then(function(data) {
+                if (String(document.getElementById('documentContentModal').dataset.documentId) !== String(documentId)) return;
                 if (data.success) {
-                    document.getElementById('documentContent').textContent = data.content || '（无内容）';
+                    document.getElementById('documentContent').textContent = data.content || '（未提取文字，原件仍可下载）';
+                    document.getElementById('documentNotice').textContent = data.notice;
+                    document.getElementById('showOriginalPreview').hidden = false;
+                    document.getElementById('btnAiReviseFromModal').hidden = !data.canRevise;
+                    document.getElementById('originalImage').hidden = data.originalKind !== 'image';
+                    document.getElementById('originalPdf').hidden = data.originalKind !== 'pdf';
+                    document.getElementById('originalDownloadHint').hidden = data.originalKind !== 'download';
+                    if (data.originalKind === 'image') document.getElementById('originalImage').src = data.originalUrl;
+                    if (data.originalKind === 'pdf') document.getElementById('originalPdf').src = data.originalUrl;
                 } else {
                     document.getElementById('documentContent').textContent = data.error || '加载失败';
                 }
@@ -795,6 +807,14 @@
             });
     }
     
+    document.getElementById('showExtractedText').addEventListener('click', function() {
+        document.getElementById('documentContent').hidden = false;
+        document.getElementById('originalPreviewPane').hidden = true;
+    });
+    document.getElementById('showOriginalPreview').addEventListener('click', function() {
+        document.getElementById('documentContent').hidden = true;
+        document.getElementById('originalPreviewPane').hidden = false;
+    });
     // 文档查看弹窗中的AI修改按钮
     document.getElementById('btnAiReviseFromModal').addEventListener('click', function() {
         var documentId = document.getElementById('documentContentModal').dataset.documentId;

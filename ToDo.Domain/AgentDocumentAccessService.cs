@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Configuration;
+using ToDo.Domain.AI;
 using System.Text;
 using System.Text.RegularExpressions;
 using ToDo.Context;
@@ -9,18 +11,15 @@ namespace ToDo.Domain;
 
 public class AgentDocumentAccessService
 {
-    private static readonly HashSet<string> TextExtensions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".txt", ".md", ".markdown", ".json", ".xml", ".csv", ".log", ".yaml", ".yml"
-    };
-
     private readonly ApplicationDbContext _context;
     private readonly IHostEnvironment _environment;
+    private readonly IConfiguration? _configuration;
 
-    public AgentDocumentAccessService(ApplicationDbContext context, IHostEnvironment environment)
+    public AgentDocumentAccessService(ApplicationDbContext context, IHostEnvironment environment, IConfiguration? configuration = null)
     {
         _context = context;
         _environment = environment;
+        _configuration = configuration;
     }
 
     public Task<List<AgentDocumentPermission>> GetPermissionsAsync(int projectId, CancellationToken cancellationToken = default)
@@ -229,6 +228,8 @@ public class AgentDocumentAccessService
         CancellationToken cancellationToken,
         string? query)
     {
+        if (DocumentModelPolicy.IsImage(document.FileName))
+            return "[图片资料，非文字正文。仅配置图片能力的模型可读取；未提供像素时不得声称已识别。单次最多 3 张、每张 4 MB。]";
         var indexedChunks = await _context.ProjectDocumentChunks.AsNoTracking()
             .Where(chunk => chunk.ProjectDocumentId == document.Id)
             .OrderBy(chunk => chunk.ChunkIndex)
@@ -271,19 +272,34 @@ public class AgentDocumentAccessService
             return builder.ToString().Trim();
         }
 
-        if (!TextExtensions.Contains(Path.GetExtension(document.FileName)))
-            return document.IndexStatus switch
-            {
-                ProjectDocumentIndexStatus.Pending or ProjectDocumentIndexStatus.Processing => "[该文件正在建立知识索引，稍后即可检索正文。]",
-                ProjectDocumentIndexStatus.Failed => $"[知识索引失败：{document.IndexError}]",
-                ProjectDocumentIndexStatus.Unsupported => $"[暂不支持正文解析：{document.IndexError}]",
-                _ => "[该文件暂无可检索正文。]"
-            };
         var fullPath = ResolveStoragePath(document.StoragePath);
         if (!File.Exists(fullPath)) return "[资料文件不存在]";
-        var text = await File.ReadAllTextAsync(fullPath, cancellationToken);
-        var limit = Math.Clamp(maxCharacters, 1000, 50000);
-        return text.Length <= limit ? text : text[..limit] + "\n[内容已截断]";
+        var extracted = await ProjectDocumentIndexService.ReadContentAsync(fullPath, document.FileName, cancellationToken);
+        if (string.IsNullOrWhiteSpace(extracted.Content)) return $"[未获得正文：{extracted.Notice}]";
+        var limit = Math.Clamp(maxCharacters, 500, 12000);
+        const string suffix = "\n[正文节选已截断，不代表完整原件；版式及嵌入图片未解析]";
+        return extracted.Content.Length <= limit ? extracted.Content : extracted.Content[..Math.Max(0, limit - suffix.Length)] + suffix;
+    }
+
+    public async Task<List<AIImageInput>> ReadImagesAsync(int projectId, string agentKey, int userId, string modelName,
+        CancellationToken cancellationToken = default)
+    {
+        if (!DocumentModelPolicy.SupportsImages(_configuration, modelName)) return [];
+        if (!await CanUserAccessProjectAsync(projectId, userId, cancellationToken))
+            throw new UnauthorizedAccessException("当前用户无权访问该项目资料");
+        // Apply category grants in SQL BEFORE taking a bounded selection; unauthorized files cannot crowd out authorized ones.
+        var documents = await _context.ProjectDocuments.AsNoTracking()
+            .Where(d => d.ProjectId == projectId && d.IsCurrent && _context.AgentDocumentPermissions.Any(p =>
+                p.ProjectId == projectId && p.AgentKey == agentKey && p.CanRead &&
+                (d.CategoryId.HasValue ? p.CategoryId == d.CategoryId : p.CategoryId == null && p.Category == d.Category)))
+            .OrderByDescending(d => d.UploadedAt).ThenByDescending(d => d.Id).Take(100).ToListAsync(cancellationToken);
+        var images = new List<AIImageInput>();
+        foreach (var document in documents.Where(d => DocumentModelPolicy.IsImage(d.FileName)).Take(DocumentModelPolicy.MaxImages))
+        {
+            if (document.FileSize > DocumentModelPolicy.MaxImageBytes) continue;
+            images.Add(await DocumentModelPolicy.ReadImageAsync(ResolveStoragePath(document.StoragePath), document.FileName, cancellationToken));
+        }
+        return images;
     }
 
     private static List<string> ExtractSearchTerms(string? query)
@@ -334,6 +350,7 @@ public class AgentDocumentAccessService
     private async Task<bool> CanUserAccessProjectAsync(int projectId, int userId, CancellationToken cancellationToken)
     {
         var user = await _context.Users.AsNoTracking().FirstOrDefaultAsync(item => item.Id == userId, cancellationToken);
+        if (user == null || user.Status != UserStatus.Active || !await _context.Project.AsNoTracking().AnyAsync(p => p.Id == projectId && !p.IsDeleted, cancellationToken)) return false;
         if (user?.Role == UserRole.systemAdmin) return true;
         return await _context.Project.AsNoTracking().AnyAsync(project => project.Id == projectId
             && !project.IsDeleted

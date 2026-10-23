@@ -55,6 +55,14 @@ namespace ToDo.Domain.AI
         public int MaxTokens { get; set; } = 6000;
         public int TimeoutSeconds { get; set; } = 90;
         public List<AIChatToolDefinition> Tools { get; set; } = new();
+        public List<AIImageInput> Images { get; set; } = new();
+    }
+
+    public sealed class AIImageInput
+    {
+        public string FileName { get; init; } = string.Empty;
+        public string MediaType { get; init; } = string.Empty;
+        public byte[] Data { get; init; } = [];
     }
 
     public sealed class AIChatToolDefinition

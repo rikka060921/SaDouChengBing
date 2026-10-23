@@ -959,6 +959,8 @@ public class DetailsModel : PageModel
         public string? AssigneeName { get; set; }
         public string? Deadline { get; set; }
         public bool IsOverdue { get; set; }
+        // 手工填写的会前事项（来自草稿"会议内容"文本行，Id 为负数），非勾选的任务
+        public bool IsManual { get; set; }
     }
 
     public class MeetingDecisionDisplayItem
@@ -1198,20 +1200,29 @@ public class DetailsModel : PageModel
             LinkedPrepDraft = await _context.MeetingPrepDrafts
                 .FirstOrDefaultAsync(d => d.Id == MeetingMinutes.PrepDraftId.Value && !d.IsDeleted);
 
-            if (LinkedPrepDraft != null && !string.IsNullOrWhiteSpace(LinkedPrepDraft.TaskSnapshotJson))
+            if (LinkedPrepDraft != null)
             {
-                PrepDraftAllTasks = JsonSerializer.Deserialize<List<MeetingPrepDraftTaskItem>>(
-                    LinkedPrepDraft.TaskSnapshotJson,
-                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
+                if (!string.IsNullOrWhiteSpace(LinkedPrepDraft.TaskSnapshotJson))
+                {
+                    PrepDraftAllTasks = JsonSerializer.Deserialize<List<MeetingPrepDraftTaskItem>>(
+                        LinkedPrepDraft.TaskSnapshotJson,
+                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
+                }
 
-                // 第一步：先用关键词匹配把"明显对应的"行动项自动关联到草稿任务
+                // 把草稿"会议内容"里手工填写的行也解析为可匹配的事项（负数 ID）
+                PrepDraftAllTasks.AddRange(ParseManualPrepItems(LinkedPrepDraft.Content, PrepDraftAllTasks));
+            }
+
+            if (PrepDraftAllTasks.Count > 0)
+            {
+                // 第一步：先用关键词匹配把"明显对应的"行动项自动关联到草稿事项（含手工填写项）
                 // （新创建的会议还没人手动关联，自动兜底让用户不用手动一条条选）
-                var alreadyAutoLinked = new HashSet<int>(); // 草稿任务ID，防止一个草稿任务被多条行动项抢
-                var alreadyAutoLinkedActionItem = new HashSet<int>(); // 行动项ID，一个行动项只能关联一个草稿任务
+                var alreadyAutoLinked = new HashSet<int>(); // 草稿事项ID，防止一个草稿事项被多条行动项抢
+                var alreadyAutoLinkedActionItem = new HashSet<int>(); // 行动项ID，一个行动项只能关联一个草稿事项
 
                 if (!MeetingMinutes.ConfirmedAt.HasValue)
                 {
-                    foreach (var draftTask in PrepDraftAllTasks.Where(t => t.Id > 0))
+                    foreach (var draftTask in PrepDraftAllTasks)
                     {
                         if (alreadyAutoLinked.Contains(draftTask.Id)) continue;
 
@@ -1245,19 +1256,63 @@ public class DetailsModel : PageModel
                         await _context.SaveChangesAsync();
                 }
 
-                // 第二步：未讨论到的 = 草稿里的任务，没有任何行动项通过 PrepDraftTaskId 关联它
+                // 第二步：未讨论到的 = 草稿里的事项（含手工填写项），没有任何行动项通过 PrepDraftTaskId 关联它
                 var linkedDraftIds = ActionItems
                     .Where(i => i.PrepDraftTaskId.HasValue)
                     .Select(i => i.PrepDraftTaskId!.Value)
                     .ToHashSet();
 
                 UndiscussedDraftTasks = PrepDraftAllTasks
-                    .Where(t => t.Id > 0 && !linkedDraftIds.Contains(t.Id))
+                    .Where(t => !linkedDraftIds.Contains(t.Id))
                     .ToList();
             }
         }
 
         return Page();
+    }
+
+    // 把草稿"会议内容"里手工填写的行解析为可匹配的手工事项：
+    // 跳过空行、【项目名】分组头、与勾选任务同名的行；其余每行作为一个手工事项（负数 ID）
+    private static List<MeetingPrepDraftTaskItem> ParseManualPrepItems(string? content, List<MeetingPrepDraftTaskItem> snapshotTasks)
+    {
+        var items = new List<MeetingPrepDraftTaskItem>();
+        if (string.IsNullOrWhiteSpace(content)) return items;
+
+        var taskTitles = new HashSet<string>(snapshotTasks.Select(t => t.Title), StringComparer.Ordinal);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        int manualSeq = 0;
+
+        foreach (var rawLine in content.Split('\n'))
+        {
+            if (items.Count >= 50) break;
+            var line = rawLine.Trim().TrimEnd('\r');
+            if (line.Length == 0) continue;
+            // 跳过【项目名】分组头
+            if (line.StartsWith('【') && line.EndsWith('】')) continue;
+            // 去掉常见列表前缀：- 、• 、* 、1. 、1、等
+            if (line.Length > 2 && (line[0] is '-' or '•' or '*' or '＊') && line[1] == ' ')
+            {
+                line = line.Substring(2).Trim();
+            }
+            else
+            {
+                var m = System.Text.RegularExpressions.Regex.Match(line, @"^\d{1,2}[\.\、\)]\s*");
+                if (m.Success) line = line.Substring(m.Length).Trim();
+            }
+            if (line.Length == 0) continue;
+            // 与勾选任务同名的行不重复计
+            if (taskTitles.Contains(line)) continue;
+            if (!seen.Add(line)) continue;
+
+            items.Add(new MeetingPrepDraftTaskItem
+            {
+                Id = --manualSeq,
+                Title = line,
+                Status = "Manual",
+                IsManual = true
+            });
+        }
+        return items;
     }
 
     private static readonly HashSet<string> ValidPriorities =

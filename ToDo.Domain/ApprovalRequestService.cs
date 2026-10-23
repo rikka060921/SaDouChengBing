@@ -485,17 +485,28 @@ public class ApprovalRequestService
         {
             var payload = JsonSerializer.Deserialize<AgentDocumentWritePayload>(request.PayloadJson)
                 ?? throw new InvalidOperationException("资料写入审批载荷无效");
-            var canWrite = await _documentAccess.CanWriteAsync(request.ProjectId, payload.AgentKey, payload.Category, cancellationToken);
+            if (!await _context.AgentDefinitions.AnyAsync(a => a.AgentKey == payload.AgentKey && a.IsEnabled, cancellationToken))
+                throw new UnauthorizedAccessException("Agent 已停用，未执行资料写入");
+            if (payload.SourceDocumentId.HasValue)
+            {
+                var source = await _context.ProjectDocuments.AsNoTracking().SingleOrDefaultAsync(d => d.Id == payload.SourceDocumentId && d.ProjectId == request.ProjectId, cancellationToken);
+                if (source == null || !source.IsCurrent || source.Category != payload.Category || source.CategoryId != payload.CategoryId)
+                    throw new InvalidOperationException("原资料版本或分类已变化，请重新读取并发起修订");
+            }
+            var canWrite = await _documentAccess.CanWriteAsync(request.ProjectId, payload.AgentKey, payload.Category, cancellationToken, payload.CategoryId);
             if (!canWrite)
             {
                 await _documentAccess.LogWriteAttemptAsync(request.ProjectId, payload.AgentKey, payload.Category, false,
-                    "审批执行时分类写入权限已撤销", request.RequestedById, payload.AiSessionId, cancellationToken: cancellationToken);
+                    "审批执行时分类写入权限已撤销", request.RequestedById, payload.AiSessionId, cancellationToken: cancellationToken, categoryId: payload.CategoryId);
                 throw new UnauthorizedAccessException("Agent 没有该资料分类的写入权限");
             }
-            var document = await _documents.SaveGeneratedTextAsync(request.ProjectId, reviewerId, payload.FileName,
-                payload.Content, payload.Description, cancellationToken, payload.Category);
+            string? categoryName = payload.CategoryId.HasValue ? await _context.DocumentCategories.Where(c => c.Id == payload.CategoryId && c.ProjectId == request.ProjectId)
+                .Select(c => c.Name).SingleOrDefaultAsync(cancellationToken) : null;
+            var document = payload.SourceDocumentId.HasValue
+                ? await _documents.SaveRevisionAsync(request.ProjectId, payload.SourceDocumentId.Value, reviewerId, payload.Content, payload.Description, cancellationToken)
+                : await _documents.SaveGeneratedTextAsync(request.ProjectId, reviewerId, payload.FileName, payload.Content, payload.Description, cancellationToken, payload.Category, payload.CategoryId, categoryName);
             await _documentAccess.LogWriteAttemptAsync(request.ProjectId, payload.AgentKey, payload.Category, true,
-                "人工审批通过并完成资料写入", request.RequestedById, payload.AiSessionId, document.Id, cancellationToken);
+                "人工审批通过并完成资料写入", request.RequestedById, payload.AiSessionId, document.Id, cancellationToken, payload.CategoryId);
             return $"已创建项目资料 #{document.Id}：{document.FileName} v{document.VersionNumber}";
         }
         if (request.ActionType == AgentProjectUpdate)
@@ -750,6 +761,8 @@ public sealed class AgentDocumentWritePayload
     public string AgentKey { get; init; } = string.Empty;
     public int? AiSessionId { get; init; }
     public ProjectDocumentCategory Category { get; init; } = ProjectDocumentCategory.Other;
+    public int? CategoryId { get; init; }
+    public int? SourceDocumentId { get; init; }
     public string FileName { get; init; } = string.Empty;
     public string Content { get; init; } = string.Empty;
     public string Description { get; init; } = string.Empty;

@@ -253,12 +253,14 @@ app.Use(async (context, next) =>
     {
         var headers = context.Response.Headers;
         headers.XContentTypeOptions = "nosniff";
-        headers.XFrameOptions = "DENY";
+        // Only the permission-checked, MIME-validated project-document preview may be embedded by this site.
+        var documentPreview = context.Items["ProjectDocumentInlinePreview"] is true;
+        headers.XFrameOptions = documentPreview ? "SAMEORIGIN" : "DENY";
         headers.Append("Referrer-Policy", "strict-origin-when-cross-origin");
         headers.Append("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
         headers.Append(
             "Content-Security-Policy",
-            "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; " +
+            "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors " + (documentPreview ? "'self'" : "'none'") + "; " +
             "form-action 'self'; img-src 'self' data: https:; " +
             $"style-src 'self' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src-elem 'self' 'nonce-{cspNonce}' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src-attr 'unsafe-inline'; " +
             $"script-src 'self' https://cdn.jsdelivr.net; script-src-elem 'self' 'nonce-{cspNonce}' https://cdn.jsdelivr.net; script-src-attr 'unsafe-inline'; " +

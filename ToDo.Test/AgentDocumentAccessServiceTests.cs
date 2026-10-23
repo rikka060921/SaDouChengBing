@@ -90,6 +90,7 @@ public class AgentDocumentAccessServiceTests
         var otherCustom = new DocumentCategory { ProjectId = 100, Name = "合同材料" };
         context.DocumentCategories.AddRange(custom, otherCustom);
         await context.SaveChangesAsync();
+        context.Project.Add(new Project { Id = 100, Name = "资料权限测试项目", CreatedByUserId = admin.Id, LeaderUserId = admin.Id });
         context.AgentDocumentPermissions.Add(new AgentDocumentPermission
         {
             ProjectId = 100,
@@ -110,7 +111,7 @@ public class AgentDocumentAccessServiceTests
             ProjectId = projectId,
             UploadedById = 1,
             FileName = fileName,
-            StoragePath = $"uploads/{fileName}",
+            StoragePath = $"App_Data/ProjectDocuments/{projectId}/{Guid.NewGuid():N}_{fileName}",
             Category = ProjectDocumentCategory.Other,
             CategoryId = categoryId,
             Description = fileName,

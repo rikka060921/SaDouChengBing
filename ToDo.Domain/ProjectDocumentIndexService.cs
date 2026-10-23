@@ -163,6 +163,27 @@ public sealed class ProjectDocumentIndexService
         await _context.SaveChangesAsync(cancellationToken);
     }
 
+    public static async Task<ProjectDocumentContent> ReadContentAsync(string fullPath, string fileName, CancellationToken cancellationToken = default)
+    {
+        const int limit = 100000;
+        const string notice = "此处为 AI 正文提取，不是原件排版预览；字体、分页、图片和复杂表格可能不包含在内。原件保持不变，请下载后用 WPS/Office 核对。";
+        if (DocumentModelPolicy.IsImage(fileName))
+            return new("", "图片需使用已配置图片能力的模型；纯文本模型不能识别图片，系统不会伪造识别结果。", false);
+        try
+        {
+            if (!File.Exists(fullPath)) return new("", "原件不存在，请重新上传。", false);
+            var text = await ExtractTextAsync(fullPath, fileName, cancellationToken);
+            if (string.IsNullOrWhiteSpace(text)) return new("", "未提取到正文，可能为扫描件或仅含图片；请提供可复制文本或单独上传图片。", false);
+            var truncated = text.Length > limit;
+            return new(text[..Math.Min(text.Length, limit)], notice + (truncated ? " 正文超过 10 万字符，当前只显示前部；请拆分文档后再修订。" : ""), !truncated, truncated);
+        }
+        catch (UnsupportedDocumentException ex) { return new("", ex.Message + "；原件仍可下载。", false); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return new("", "正文提取失败，未把错误信息当作正文交给 AI。请下载原件检查文件完整性，或转换为标准 DOCX/PDF/Markdown。", false);
+        }
+    }
+
     private static async Task<string> ExtractTextAsync(string fullPath, string fileName, CancellationToken cancellationToken)
     {
         var extension = Path.GetExtension(fileName).ToLowerInvariant();
@@ -191,28 +212,39 @@ public sealed class ProjectDocumentIndexService
         using var pdf = PdfDocument.Open(fullPath);
         var builder = new StringBuilder();
         foreach (var page in pdf.GetPages())
-            builder.AppendLine($"## 第 {page.Number} 页").AppendLine(page.Text).AppendLine();
+            if (!string.IsNullOrWhiteSpace(page.Text)) builder.AppendLine($"## 第 {page.Number} 页").AppendLine(page.Text).AppendLine();
+        if (builder.Length == 0) throw new UnsupportedDocumentException("PDF 中没有可复制文字，可能为扫描件；需 OCR 或单独上传页面图片给图片模型识别");
         return builder.ToString();
     }
 
     private static string ExtractWord(string fullPath)
     {
         using var document = WordprocessingDocument.Open(fullPath, false);
-        return string.Join("\n", document.MainDocumentPart?.Document?
-            .Descendants<W.Paragraph>()
-            .Select(paragraph => paragraph.InnerText)
-            .Where(text => !string.IsNullOrWhiteSpace(text)) ?? []);
+        var builder = new StringBuilder();
+        foreach (var element in document.MainDocumentPart?.Document?.Body?.Elements() ?? [])
+        {
+            if (element is W.Paragraph paragraph) builder.AppendLine(paragraph.InnerText);
+            else if (element is W.Table table)
+                foreach (var row in table.Elements<W.TableRow>())
+                    builder.AppendLine(string.Join("\t", row.Elements<W.TableCell>().Select(cell =>
+                        string.Join(" / ", cell.Descendants<W.Paragraph>().Select(p => p.InnerText)))));
+        }
+        return builder.ToString();
     }
 
     private static string ExtractPresentation(string fullPath)
     {
         using var document = PresentationDocument.Open(fullPath, false);
         var builder = new StringBuilder();
-        var slides = document.PresentationPart?.SlideParts.ToList() ?? [];
+        var presentation = document.PresentationPart;
+        var slides = presentation?.Presentation?.SlideIdList?.Elements<DocumentFormat.OpenXml.Presentation.SlideId>()
+            .Where(id => id.RelationshipId?.Value != null)
+            .Select(id => presentation.GetPartById(id.RelationshipId!.Value!) as SlidePart)
+            .Where(part => part != null).ToList() ?? [];
         for (var index = 0; index < slides.Count; index++)
         {
             builder.AppendLine($"## 第 {index + 1} 页");
-            foreach (var text in slides[index].Slide?.Descendants<A.Text>() ?? [])
+            foreach (var text in slides[index]!.Slide?.Descendants<A.Text>() ?? [])
                 if (!string.IsNullOrWhiteSpace(text.Text)) builder.AppendLine(text.Text);
             builder.AppendLine();
         }

@@ -42,6 +42,7 @@ public class ProjectDocumentService
 
     public async Task<ProjectDocument?> RollbackVersionAsync(int projectId, int versionId, int userId, CancellationToken cancellationToken = default)
     {
+        await ProjectLifecycleRules.RequireActiveAsync(_context, projectId, cancellationToken);
         var version = await _context.ProjectDocuments
             .FirstOrDefaultAsync(d => d.Id == versionId && d.ProjectId == projectId, cancellationToken);
         
@@ -203,10 +204,14 @@ public class ProjectDocumentService
         string content,
         string? description,
         CancellationToken cancellationToken = default,
-        ProjectDocumentCategory category = ProjectDocumentCategory.Other)
+        ProjectDocumentCategory category = ProjectDocumentCategory.Other,
+        int? categoryId = null,
+        string? categoryName = null)
     {
         var safeName = Path.GetFileName(fileName);
         if (string.IsNullOrWhiteSpace(safeName)) throw new InvalidOperationException("生成资料的文件名无效");
+        if (!DocumentModelPolicy.IsEditableText(safeName))
+            throw new InvalidOperationException("AI 生成内容只能保存为 .md、.markdown 或 .txt，不能把纯文本伪装为 Word/PDF 原件");
         if (string.IsNullOrWhiteSpace(content)) throw new InvalidOperationException("生成资料的内容不能为空");
         var bytes = Encoding.UTF8.GetBytes(content);
         if (bytes.Length > 2 * 1024 * 1024) throw new InvalidOperationException("生成资料不能超过 2 MB");
@@ -225,15 +230,22 @@ public class ProjectDocumentService
                 .Where(item => item.ProjectId == projectId && item.FileName == safeName)
                 .OrderByDescending(item => item.VersionNumber)
                 .FirstOrDefaultAsync(cancellationToken);
+            if (latest != null && (latest.Category != category || latest.CategoryId != categoryId))
+                throw new InvalidOperationException("同名资料属于其他分类，请更换文件名；不会跨分类覆盖资料");
+            var currentVersions = await _context.ProjectDocuments.Where(d => d.ProjectId == projectId && d.FileName == safeName && d.IsCurrent).ToListAsync(cancellationToken);
+            if (currentVersions.Any(d => d.Category != category || d.CategoryId != categoryId))
+                throw new InvalidOperationException("当前同名资料属于其他分类，未覆盖资料");
             var version = (latest?.VersionNumber ?? 0) + 1;
             var conflict = latest != null && !string.Equals(latest.FileHash, hash, StringComparison.OrdinalIgnoreCase);
-            if (latest != null) latest.IsCurrent = false;
+            foreach (var current in currentVersions) current.IsCurrent = false;
 
             var document = new ProjectDocument
             {
                 ProjectId = projectId,
                 UploadedById = userId,
                 Category = category,
+                CategoryId = categoryId,
+                CategoryName = categoryName,
                 FileName = safeName,
                 StoragePath = BuildSecureStoragePath(projectId, storageName),
                 FileHash = hash,
@@ -255,6 +267,36 @@ public class ProjectDocumentService
         }
     }
 
+    /// <summary>Text revisions are versioned; binary/Office originals are preserved alongside a clearly named Markdown derivative.</summary>
+    public async Task<ProjectDocument> SaveRevisionAsync(int projectId, int sourceDocumentId, int userId,
+        string content, string? description, CancellationToken cancellationToken = default)
+    {
+        await using var transaction = _context.Database.IsRelational() && _context.Database.CurrentTransaction == null
+            ? await _context.Database.BeginTransactionAsync(cancellationToken) : null;
+        await ProjectLifecycleRules.RequireActiveAsync(_context, projectId, cancellationToken);
+        var source = await _context.ProjectDocuments.AsNoTracking().SingleOrDefaultAsync(
+            item => item.Id == sourceDocumentId && item.ProjectId == projectId, cancellationToken)
+            ?? throw new InvalidOperationException("原资料不存在或不属于当前项目");
+        if (!source.IsCurrent) throw new InvalidOperationException("原资料已有更新版本，请基于最新版本重新修订；当前草稿未覆盖任何文件");
+        if (DocumentModelPolicy.IsEditableText(source.FileName) && _context.Database.IsRelational())
+        {
+            var claimed = await _context.ProjectDocuments.Where(d => d.Id == source.Id && d.ProjectId == projectId && d.IsCurrent)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(d => d.IsCurrent, false), cancellationToken);
+            if (claimed != 1) throw new InvalidOperationException("原资料已由其他人更新，请刷新后重新修订");
+            var trackedSource = _context.ChangeTracker.Entries<ProjectDocument>().FirstOrDefault(entry => entry.Entity.Id == source.Id);
+            if (trackedSource != null) await trackedSource.ReloadAsync(cancellationToken);
+        }
+        var fileName = DocumentModelPolicy.IsEditableText(source.FileName)
+            ? source.FileName : Path.GetFileNameWithoutExtension(source.FileName) + "_AI修订.md";
+        if (fileName.Length > 255) throw new InvalidOperationException("修订文件名过长，请先缩短原文件名");
+        var provenance = $"基于资料 #{source.Id} v{source.VersionNumber}（{source.FileName}）；" +
+            (DocumentModelPolicy.IsEditableText(source.FileName) ? "保留上一版本。" : "Markdown 内容修订稿，原格式文件与排版未改动。") + "\n" + description;
+        var revision = await SaveGeneratedTextAsync(projectId, userId, fileName, content, provenance, cancellationToken,
+            source.Category, source.CategoryId, source.CategoryName);
+        if (transaction != null) await transaction.CommitAsync(cancellationToken);
+        return revision;
+    }
+
     public async Task<string> SaveDraftTextAsync(
         int projectId,
         string fileName,
@@ -263,6 +305,8 @@ public class ProjectDocumentService
     {
         var safeName = Path.GetFileName(fileName);
         if (string.IsNullOrWhiteSpace(safeName)) throw new InvalidOperationException("草稿文件名无效");
+        if (!DocumentModelPolicy.IsEditableText(safeName)) throw new InvalidOperationException("AI 草稿必须使用文本文件扩展名");
+        if (string.IsNullOrWhiteSpace(content)) throw new InvalidOperationException("AI 草稿内容不能为空");
         var bytes = Encoding.UTF8.GetBytes(content ?? string.Empty);
         if (bytes.Length > 2 * 1024 * 1024) throw new InvalidOperationException("草稿不能超过 2 MB");
         await ProjectLifecycleRules.RequireActiveAsync(_context, projectId, cancellationToken);

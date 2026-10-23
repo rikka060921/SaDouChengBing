@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using ToDo.Context;
 using ToDo.Entities;
+using ToDo.Domain.AI;
 
 namespace ToDo.Domain;
 
@@ -17,6 +18,14 @@ public sealed class AgentContextService
     {
         _context = context;
         _documentAccess = documentAccess;
+    }
+
+    public Task<List<AIImageInput>> ReadImagesAsync(AgentDefinition definition, AiSession session, int? userId, CancellationToken ct)
+    {
+        if (!userId.HasValue || !session.ProjectId.HasValue ||
+            !AgentAdministrationService.ParseContextSources(definition.ContextSourcesJson).Contains(AgentContextSource.Documents))
+            return Task.FromResult(new List<AIImageInput>());
+        return _documentAccess.ReadImagesAsync(session.ProjectId.Value, definition.AgentKey, userId.Value, definition.ModelName, ct);
     }
 
     public async Task<string> BuildAsync(

@@ -218,7 +218,8 @@ public class AgentExecutionService
                         ? Math.Clamp(maxOutputTokens.Value, 64, definition.MaxTokens)
                         : definition.MaxTokens,
                     TimeoutSeconds = definition.TimeoutSeconds,
-                    Tools = nativeTools.Select(item => item.Definition).ToList()
+                    Tools = nativeTools.Select(item => item.Definition).ToList(),
+                    Images = await _agentContext.ReadImagesAsync(definition, session, userId, cancellationToken)
                 },
                 cancellationToken);
             stopwatch.Stop();

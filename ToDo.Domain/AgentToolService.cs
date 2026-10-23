@@ -356,9 +356,25 @@ public class AgentToolService
         await EnsureProjectAccessAsync(projectId, userId, cancellationToken);
         EnsureSessionProject(session, projectId);
         var category = GetCategory(arguments, "category");
-        var allowed = await _documentAccess.CanWriteAsync(projectId, session.AgentKey, category, cancellationToken);
+        var categoryId = GetInt(arguments, "categoryId");
+        var documentId = GetInt(arguments, "documentId");
+        ProjectDocument? source = null;
+        if (documentId.HasValue)
+        {
+            source = await _context.ProjectDocuments.AsNoTracking().SingleOrDefaultAsync(d => d.Id == documentId && d.ProjectId == projectId, cancellationToken)
+                ?? throw new InvalidOperationException("原资料不存在或不属于当前项目");
+            if (!source.IsCurrent) throw new InvalidOperationException("原资料已有新版本，请重新读取后修订");
+            category = source.Category; categoryId = source.CategoryId;
+        }
+        else if (categoryId.HasValue)
+        {
+            if (!await _context.DocumentCategories.AnyAsync(c => c.Id == categoryId && c.ProjectId == projectId, cancellationToken))
+                throw new InvalidOperationException("资料分类不属于当前项目");
+            category = ProjectDocumentCategory.Other;
+        }
+        var allowed = await _documentAccess.CanWriteAsync(projectId, session.AgentKey, category, cancellationToken, categoryId);
         await _documentAccess.LogWriteAttemptAsync(projectId, session.AgentKey, category, allowed,
-            allowed ? "已授权，等待人工审批" : "默认拒绝：未配置分类写入权限", userId, session.Id, cancellationToken: cancellationToken);
+            allowed ? "已授权，等待人工审批" : "默认拒绝：未配置分类写入权限", userId, session.Id, cancellationToken: cancellationToken, categoryId: categoryId);
         if (!allowed) throw new UnauthorizedAccessException($"Agent 没有“{category.GetDisplayName()}”分类的写入权限");
 
         var payload = new AgentDocumentWritePayload
@@ -366,11 +382,15 @@ public class AgentToolService
             AgentKey = session.AgentKey,
             AiSessionId = session.Id,
             Category = category,
+            CategoryId = categoryId,
+            SourceDocumentId = source?.Id,
             FileName = GetString(arguments, "fileName") ?? $"Agent产物-{session.Id}.md",
             Content = GetString(arguments, "content") ?? string.Empty,
             Description = GetString(arguments, "description") ?? $"由 Agent {session.AgentKey} 生成"
         };
         if (string.IsNullOrWhiteSpace(payload.Content)) throw new InvalidOperationException("资料内容不能为空");
+        if (source == null && !DocumentModelPolicy.IsEditableText(payload.FileName))
+            throw new InvalidOperationException("生成资料仅支持 .md、.markdown 或 .txt；修订原资料请传 documentId，原件将保留");
         await CreateApprovalAsync(session, userId, call, projectId, ApprovalRequestService.AgentDocumentWrite,
             $"Agent「{session.AgentKey}」申请写入“{category.GetDisplayName()}”项目资料", payload, cancellationToken);
     }

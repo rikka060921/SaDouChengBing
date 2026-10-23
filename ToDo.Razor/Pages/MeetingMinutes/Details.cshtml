@@ -375,14 +375,15 @@
 															Model.MeetingDecisions.Select(d => new { quotes = d.GetQuotes(), key = d.GetKeyQuote() }).ToList()));
 
 						window.prepDraftTasks = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(
-														Model.PrepDraftAllTasks.Where(t => t.Id > 0).Select(t => new
+														Model.PrepDraftAllTasks.Select(t => new
 														{
 																id = t.Id,
 																title = t.Title,
 																projectName = t.ProjectName ?? "-",
 																assigneeName = t.AssigneeName ?? "-",
 																deadline = t.Deadline ?? "-",
-																isOverdue = t.IsOverdue
+																isOverdue = t.IsOverdue,
+																isManual = t.IsManual
 														}).ToList()));
 						window.actionItemDraftLinks = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(
 														Model.ActionItems.Where(a => !a.IsConfirmed).Select(a => new
@@ -580,7 +581,7 @@
 							<div class="small text-muted">AI先生成任务建议，审批人确认后才会创建或更新任务。<span class="text-success">表格内下拉框直接选择即可自动保存</span></div>
 							@if (Model.MeetingMinutes.IsDraft)
 							{
-								<div class="small text-warning mt-1"><i class="fas fa-exclamation-triangle me-1"></i>当前为草稿状态，点击"确认并写入任务"后将正式提交会议纪要并锁定议题</div>
+								<div class="small text-warning mt-1"><i class="fas fa-exclamation-triangle me-1"></i>当前为草稿状态，点击"确认并写入任务"后将正式提交会议纪要</div>
 							}
 						</div>
 						<div class="d-flex gap-2 flex-wrap">
@@ -897,9 +898,9 @@
 															{
 																<select class="form-select form-select-sm match-task-select" data-item-id="@item.Id">
 																	<option value="0" selected="@(!item.PrepDraftTaskId.HasValue)">未关联</option>
-																	@foreach (var dt in Model.PrepDraftAllTasks.Where(t => t.Id > 0))
+																	@foreach (var dt in Model.PrepDraftAllTasks)
 																	{
-																		<option value="@dt.Id" selected="@(item.PrepDraftTaskId == dt.Id)">@dt.Title</option>
+																		<option value="@dt.Id" selected="@(item.PrepDraftTaskId == dt.Id)">@(dt.IsManual ? "（手工）" : "")@dt.Title</option>
 																	}
 																</select>
 															}
@@ -1058,15 +1059,19 @@
 								<div class="card-header bg-light">
 									<h6 class="mb-0">
 										<i class="fas fa-info-circle me-2"></i>
-										本次会议未讨论到的任务
+										本次会议未讨论到的会前准备事项
 										<span class="badge bg-secondary ms-2">草稿：@Model.LinkedPrepDraft.Title</span>
-										（共 <span id="undiscussedCount">@Model.UndiscussedDraftTasks.Count</span> 项 / 草稿选了 @Model.PrepDraftAllTasks.Count 项）
+										（共 <span id="undiscussedCount">@Model.UndiscussedDraftTasks.Count</span> 项 / 草稿列了 @Model.PrepDraftAllTasks.Count 项）
 									</h6>
 								</div>
 								<div class="card-body" id="undiscussedDraftBody">
-									@if (Model.UndiscussedDraftTasks.Count == 0)
+									@if (Model.PrepDraftAllTasks.Count == 0)
 									{
-										<div class="text-muted small"><i class="fas fa-check-circle me-1 text-success"></i>会前准备里勾选的所有任务在本次会议中都已处理。</div>
+										<div class="text-muted small">草稿中没有列出可比对的任务或事项。</div>
+									}
+									else if (Model.UndiscussedDraftTasks.Count == 0)
+									{
+										<div class="text-muted small"><i class="fas fa-check-circle me-1 text-success"></i>会前准备里列出的所有事项在本次会议中都已处理。</div>
 									}
 									else
 									{
@@ -1074,7 +1079,7 @@
 											<table class="table table-sm mb-0 w-100">
 												<thead>
 													<tr>
-														<th>任务</th>
+														<th>事项</th>
 														<th>项目</th>
 														<th>责任人</th>
 														<th>截止</th>
@@ -1084,7 +1089,9 @@
 													@foreach (var t in Model.UndiscussedDraftTasks)
 													{
 														<tr class="@(t.IsOverdue ? "table-danger" : "")">
-															<td>@t.Title</td>
+															<td>@t.Title@if (t.IsManual) {
+															<span class="badge bg-secondary ms-1">手工</span>
+														}</td>
 															<td class="small text-muted">@(t.ProjectName ?? "-")</td>
 															<td class="small">@(t.AssigneeName ?? "-")</td>
 															<td class="small">@(t.Deadline ?? "-")@if (t.IsOverdue) {
@@ -1096,7 +1103,7 @@
 											</tbody>
 										</table>
 									</div>
-									<div class="text-muted small mt-2"><i class="fas fa-lightbulb me-1"></i>提示：这些是会前准备时勾选的任务，但本次会议没有产生与之关联的行动项，建议下次会议继续跟进。</div>
+									<div class="text-muted small mt-2"><i class="fas fa-lightbulb me-1"></i>提示：这些是会前准备里列出的事项（含勾选任务与手工填写项），但本次会议没有产生与之关联的行动项，建议下次会议继续跟进。</div>
 								}
 							</div>
 						</div>
@@ -1685,13 +1692,13 @@
 			countEl.textContent = undiscussed.length;
 
 			if (undiscussed.length === 0) {
-				body.innerHTML = '<div class="text-muted small"><i class="fas fa-check-circle me-1 text-success"></i>会前准备里勾选的所有任务在本次会议中都已处理。</div>';
+				body.innerHTML = '<div class="text-muted small"><i class="fas fa-check-circle me-1 text-success"></i>会前准备里列出的所有事项在本次会议中都已处理。</div>';
 				return;
 			}
 
 			const rowsHtml = undiscussed.map(t => `
 				<tr class="${t.isOverdue ? 'table-danger' : ''}">
-					<td>${escapeHtml(t.title)}</td>
+					<td>${escapeHtml(t.title)}${t.isManual ? ' <span class="badge bg-secondary ms-1">手工</span>' : ''}</td>
 					<td class="small text-muted">${escapeHtml(t.projectName)}</td>
 					<td class="small">${escapeHtml(t.assigneeName)}</td>
 					<td class="small">${escapeHtml(t.deadline)}${t.isOverdue ? ' <span class="badge bg-danger ms-1">逾期</span>' : ''}</td>
@@ -1702,12 +1709,12 @@
 				<div class="table-responsive">
 					<table class="table table-sm mb-0 w-100">
 						<thead><tr>
-							<th>任务</th><th>项目</th><th>责任人</th><th>截止</th>
+							<th>事项</th><th>项目</th><th>责任人</th><th>截止</th>
 						</tr></thead>
 						<tbody>${rowsHtml}</tbody>
 					</table>
 				</div>
-				<div class="text-muted small mt-2"><i class="fas fa-lightbulb me-1"></i>提示：这些是会前准备时勾选的任务，但本次会议没有产生与之关联的行动项，建议下次会议继续跟进。</div>
+				<div class="text-muted small mt-2"><i class="fas fa-lightbulb me-1"></i>提示：这些是会前准备里列出的事项（含勾选任务与手工填写项），但本次会议没有产生与之关联的行动项，建议下次会议继续跟进。</div>
 			`;
 		}
 
