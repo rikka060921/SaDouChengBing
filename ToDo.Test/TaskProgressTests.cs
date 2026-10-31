@@ -143,7 +143,7 @@ public sealed class TaskProgressTests
         Assert.Empty(await f.Service.MyActiveTasks(f.Owner.Id).ToListAsync());
     }
 
-    private sealed class Fixture : IAsyncDisposable
+    internal sealed class Fixture : IAsyncDisposable
     {
         public required SqliteConnection Connection { get; init; }
         public required ApplicationDbContext Db { get; init; }

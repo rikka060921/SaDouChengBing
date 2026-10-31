@@ -177,6 +177,10 @@
                         <td>
                             <div class="d-flex gap-1">
                                 <a class="btn btn-sm btn-outline-primary" href="/Projects/Materials?handler=Download&amp;projectId=@Model.ProjectId&amp;id=@item.Id">下载</a>
+                                @if (!Model.IsReadOnly && item.IsCurrent && ToDo.Domain.DocumentModelPolicy.IsEditableText(item.FileName))
+                                {
+                                    <a class="btn btn-sm btn-outline-primary" asp-page="./DocumentEdit" asp-route-projectId="@Model.ProjectId" asp-route-documentId="@item.Id">编辑正文</a>
+                                }
                                 @if (Model.DocumentWritePermissions.ContainsKey(item.Id) && Model.DocumentWritePermissions[item.Id])
                                 {
                                     <button type="button" class="btn btn-sm btn-outline-warning" data-document-id="@item.Id" data-file-name="@item.FileName" onclick="showAiReviseModal(this.dataset.documentId, this.dataset.fileName)">AI修改</button>
@@ -353,16 +357,19 @@
                                                 <a href="/Projects/Materials?handler=DownloadDraft&projectId=@Model.ProjectId&draftId=@draft.Id" class="btn btn-sm btn-outline-secondary">下载</a>
                                                 @if (Model.CanManageAgentPermissions && !Model.IsReadOnly)
                                                 {
+                                                <a class="btn btn-sm btn-outline-primary" asp-page="./DocumentEdit" asp-route-projectId="@Model.ProjectId" asp-route-draftId="@draft.Id">校订草稿</a>
                                                 <form method="post" asp-page-handler="AuditDraft" class="d-inline">
                                                     <input type="hidden" name="projectId" value="@Model.ProjectId" />
                                                     <input type="hidden" name="draftId" value="@draft.Id" />
                                                     <input type="hidden" name="action" value="pass" />
+                                                    <input type="hidden" name="draftToken" value="@ToDo.Domain.ProjectDocumentEditingService.Token(draft.RevisedContent ?? string.Empty)" />
                                                     <button type="submit" class="btn btn-sm btn-success">通过</button>
                                                 </form>
                                                 <form method="post" asp-page-handler="AuditDraft" class="d-inline">
                                                     <input type="hidden" name="projectId" value="@Model.ProjectId" />
                                                     <input type="hidden" name="draftId" value="@draft.Id" />
                                                     <input type="hidden" name="action" value="reject" />
+                                                    <input type="hidden" name="draftToken" value="@ToDo.Domain.ProjectDocumentEditingService.Token(draft.RevisedContent ?? string.Empty)" />
                                                     <button type="submit" class="btn btn-sm btn-danger">驳回</button>
                                                 </form>
                                                 }
@@ -435,7 +442,7 @@
 
 @if (Model.CanManageAgentPermissions)
 {
-    <div class="card shadow-sm mb-4">
+    <div class="card shadow-sm mb-4" id="agent-permissions">
         <div class="card-header d-flex justify-content-between">
             <span>Agent 分类资料权限</span>
             <span class="small text-muted">未配置即拒绝；写入权限自动包含读取权限</span>

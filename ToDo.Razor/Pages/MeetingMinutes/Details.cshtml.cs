@@ -645,7 +645,9 @@ public class DetailsModel : PageModel
         string? deadline,
         string priority,
         string taskStatus,
-        string? groupName)
+        string? groupName,
+        int? prepDraftTaskId = null,
+        int? sourceDecisionIndex = null)
     {
         try
         {
@@ -688,6 +690,38 @@ public class DetailsModel : PageModel
             item.Priority = priority;
             item.TaskStatus = taskStatus;
             item.GroupName = string.IsNullOrEmpty(groupName) ? null : groupName;
+
+            // 关联会前事项（草稿快照 ID，负数表示手工填写事项）
+            if (prepDraftTaskId.HasValue)
+            {
+                item.PrepDraftTaskId = prepDraftTaskId.Value == 0 ? null : prepDraftTaskId.Value;
+            }
+
+            // 来源决策
+            if (sourceDecisionIndex.HasValue)
+            {
+                if (sourceDecisionIndex.Value <= 0)
+                {
+                    item.SourceDecisionIndex = null;
+                    item.SourceDecisionContent = null;
+                }
+                else
+                {
+                    var decisions = DeserializeDecisions(meeting.AiDecisionsJson);
+                    if (decisions == null
+                        || sourceDecisionIndex.Value < 1
+                        || sourceDecisionIndex.Value > decisions.Count)
+                    {
+                        TempData["ErrorMessage"] = "来源决策不存在，请重新解析任务";
+                        return RedirectToPage(new { id = meetingId });
+                    }
+                    var decisionContent = decisions[sourceDecisionIndex.Value - 1].Content;
+                    item.SourceDecisionIndex = sourceDecisionIndex.Value;
+                    item.SourceDecisionContent = string.IsNullOrWhiteSpace(decisionContent)
+                        ? null
+                        : (decisionContent.Length > 500 ? decisionContent[..500] : decisionContent);
+                }
+            }
 
             if (item.ActionType == "TaskChange")
             {
@@ -959,7 +993,6 @@ public class DetailsModel : PageModel
         public string? AssigneeName { get; set; }
         public string? Deadline { get; set; }
         public bool IsOverdue { get; set; }
-        // 手工填写的会前事项（来自草稿"会议内容"文本行，Id 为负数），非勾选的任务
         public bool IsManual { get; set; }
     }
 

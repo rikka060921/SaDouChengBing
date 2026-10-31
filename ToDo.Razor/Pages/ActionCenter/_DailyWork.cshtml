@@ -1,0 +1,47 @@
+@model ToDo.Razor.Pages.ActionCenter.IndexModel
+@if (!ViewData.ModelState.IsValid) { <div asp-validation-summary="All" class="alert alert-danger" role="alert"></div> }
+@if (Model.FailedTaskId.HasValue && !Model.MyWork.Any(t => t.Id == Model.FailedTaskId))
+{
+    <div class="alert alert-warning">本次说明未保存，请先复制后查看最新任务：<pre class="mb-0 text-wrap">@Model.SubmittedNote</pre></div>
+}
+@if (Model.TeamAttention.Any())
+{
+    <section class="mb-4" aria-labelledby="team-attention-heading">
+        <h2 class="h5" id="team-attention-heading">团队需要关注</h2>
+        <p class="small text-muted">仅显示你管理的活跃项目；计数可能重叠，不会新增催办通知。</p>
+        <div class="row g-2">
+        @foreach (var project in Model.TeamAttention)
+        {
+            <div class="col-12 col-md-6"><a class="card card-body h-100 text-decoration-none" asp-page="/Tasks/Index" asp-route-projectId="@project.ProjectId">
+                <span class="fw-semibold text-dark">@project.ProjectName</span>
+                <span class="small text-muted mt-1">@project.Blocked 项阻塞 · @project.Overdue 项逾期 · @project.WaitingReview 项待验收</span>
+                <span class="small mt-2">查看任务，处理阻塞或安排验收 →</span>
+            </a></div>
+        }
+        </div>
+    </section>
+}
+@if (Model.MyActiveTaskCount > 0)
+{
+    <section class="mb-4" aria-labelledby="my-daily-work-heading">
+        <div class="d-flex flex-wrap justify-content-between gap-2 mb-2"><h2 class="h5 mb-0" id="my-daily-work-heading">我接下来要推进的工作 <span class="badge bg-light text-dark">@Model.MyActiveTaskCount</span></h2><a asp-page="/Tasks/Index" asp-route-MyWork="true">查看全部</a></div>
+        <p class="small text-muted">按截止时间、优先级排序，展示前 6 项。保存进展不额外催办；提交验收才提醒审核人。</p>
+        @foreach (var task in Model.MyWork)
+        {
+            var failed = Model.FailedTaskId == task.Id;
+            <article class="card mb-2" data-daily-task="@task.Id"><div class="card-body">
+                <div class="d-flex flex-wrap justify-content-between gap-2"><a class="fw-semibold text-break" asp-page="/Tasks/Details" asp-route-id="@task.Id">@task.Title</a><span class="small text-muted">@task.Project?.Name · @(task.EndTime?.ToString("MM-dd HH:mm") ?? "未设截止时间") · @task.Progress%</span></div>
+                <details class="mt-2" open="@failed"><summary class="small text-primary">更新进展 / 提交成果</summary>
+                    <form method="post" asp-page-handler="Progress" class="mt-3">
+                        <input type="hidden" name="taskId" value="@task.Id" />
+                        <input type="hidden" name="expectedVersion" value="@(failed ? Model.SubmittedVersion : task.ConcurrencyVersion)" />
+                        <div class="row g-2"><div class="col-12 col-sm-3"><label class="form-label small" for="progress-@task.Id">进度（0–99%）</label><input id="progress-@task.Id" name="progress" type="number" min="0" max="99" value="@(failed ? Model.SubmittedProgress : task.Progress)" class="form-control" required /></div>
+                        <div class="col-12 col-sm-9"><label class="form-label small" for="note-@task.Id">完成了什么 / 哪里受阻 / 成果位置</label><textarea id="note-@task.Id" name="note" rows="2" maxlength="1500" class="form-control">@(failed ? Model.SubmittedNote : "")</textarea></div></div>
+                        @if (failed) { <p class="small text-danger mt-2">本次输入已保留。若提示版本冲突，请复制说明，刷新后重新提交。</p> }
+                        <div class="d-flex flex-wrap gap-2 mt-2"><button class="btn btn-sm btn-outline-primary" name="submitForReview" value="false">保存进展</button><button class="btn btn-sm btn-primary" name="submitForReview" value="true">提交成果验收</button><a class="btn btn-sm btn-link" asp-page="/Tasks/Details" asp-route-id="@task.Id" asp-fragment="task-assistance">进入任务 / 请 AI 协助</a></div>
+                    </form>
+                </details>
+            </div></article>
+        }
+    </section>
+}

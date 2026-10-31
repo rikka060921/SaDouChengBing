@@ -518,7 +518,7 @@ public sealed class MeetingTaskSyncServiceTests
             LegacyMeetingCallCount++;
             return Task.FromResult(new AIMeetingSummaryResult { Success = true });
         }
-        public Task<AIMeetingFullParseResult> ProcessMeetingMinutesFullStructAsync(string meetingContent, List<string>? memberNames = null, List<string>? projectNames = null) => Task.FromResult(FullResult);
+        public Task<AIMeetingFullParseResult> ProcessMeetingMinutesFullStructAsync(string meetingContent, List<string>? memberNames = null, List<string>? projectNames = null, CancellationToken cancellationToken = default) => Task.FromResult(FullResult);
         public Task<string> GetChatCompletionAsync(string prompt) => throw new NotSupportedException();
         public Task<string> GetChatCompletionAsync(string prompt, AIChatOptions options, CancellationToken cancellationToken = default)
             => ChatResponse == null ? throw new InvalidOperationException("模拟 AI 不可用") : Task.FromResult(ChatResponse);

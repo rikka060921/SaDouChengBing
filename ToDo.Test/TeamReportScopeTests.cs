@@ -103,7 +103,7 @@ public class TeamReportScopeTests
         public Task<AIMeetingMinutesResult> GenerateMeetingMinutesAsync(string transcript, string template, int projectId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<AITaskSplitResult> SplitTaskAsync(string taskTitle, string taskDescription, string? expectedSubTaskCount = null) => throw new NotSupportedException();
         public Task<AIMeetingSummaryResult> ProcessMeetingMinutesAsync(string meetingContent) => throw new NotSupportedException();
-        public Task<AIMeetingFullParseResult> ProcessMeetingMinutesFullStructAsync(string meetingContent, List<string>? memberNames = null, List<string>? projectNames = null) => throw new NotSupportedException();
+        public Task<AIMeetingFullParseResult> ProcessMeetingMinutesFullStructAsync(string meetingContent, List<string>? memberNames = null, List<string>? projectNames = null, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<AIDailyReportResult> GenerateDailyReportAsync(AIDailyReportInput input) => throw new NotSupportedException();
         public Task<AIDailyReportResult> GenerateDailyReportByProjectAsync(DailyReportByProjectInput input) => throw new NotSupportedException();
         public Task<AITaskParseResult> ParseTaskTextAsync(string text, string? expectedCount = null) => throw new NotSupportedException();

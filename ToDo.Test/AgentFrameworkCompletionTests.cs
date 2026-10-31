@@ -802,7 +802,7 @@ public sealed partial class AgentFrameworkCompletionTests
         }
         public Task<AITaskSplitResult> SplitTaskAsync(string taskTitle, string taskDescription, string? expectedSubTaskCount = null) => throw new NotSupportedException();
         public Task<AIMeetingSummaryResult> ProcessMeetingMinutesAsync(string meetingContent) => throw new NotSupportedException();
-        public Task<AIMeetingFullParseResult> ProcessMeetingMinutesFullStructAsync(string meetingContent, List<string>? memberNames = null, List<string>? projectNames = null) => throw new NotSupportedException();
+        public Task<AIMeetingFullParseResult> ProcessMeetingMinutesFullStructAsync(string meetingContent, List<string>? memberNames = null, List<string>? projectNames = null, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<AIDailyReportResult> GenerateDailyReportAsync(AIDailyReportInput input) => throw new NotSupportedException();
         public Task<AIDailyReportResult> GenerateDailyReportByProjectAsync(DailyReportByProjectInput input) => throw new NotSupportedException();
         public Task<AIDailyReportResult> GenerateTeamReportAsync(TeamReportInput input) => throw new NotSupportedException();

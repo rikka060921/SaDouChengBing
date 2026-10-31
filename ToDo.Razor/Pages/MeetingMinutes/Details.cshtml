@@ -386,11 +386,14 @@
 																isManual = t.IsManual
 														}).ToList()));
 						window.actionItemDraftLinks = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(
-														Model.ActionItems.Where(a => !a.IsConfirmed).Select(a => new
+														Model.ActionItemsByProject.SelectMany(kv => kv.Value.Select((a, i) => new
 														{
 																itemId = a.Id,
-																prepDraftTaskId = a.PrepDraftTaskId
-														}).ToList()));
+																prepDraftTaskId = a.PrepDraftTaskId,
+																title = a.Title,
+																projectName = Model.ProjectsById.GetValueOrDefault(kv.Key)?.Name ?? "未知项目",
+																orderNo = i + 1
+														})).ToList()));
 					</script>
 
 					@if (Model.MeetingMinutes.ConfirmedAt == null)
@@ -579,6 +582,12 @@
 						<div>
 							<h5 class="mb-1"><i class="fas fa-tasks me-2"></i>本次会议任务</h5>
 							<div class="small text-muted">AI先生成任务建议，审批人确认后才会创建或更新任务。<span class="text-success">表格内下拉框直接选择即可自动保存</span></div>
+                                @{ var closeout = ToDo.Domain.MeetingCloseoutSummary.From(Model.ActionItems); }
+                                <div class="small border rounded p-2 mt-2" aria-label="会议任务确认概览">
+                                    待新增 @closeout.NewTasks · 待更新 @closeout.Updates · 已写入 @closeout.Confirmed
+                                    @if (closeout.MissingDefinition > 0) { <span class="text-warning"> · @closeout.MissingDefinition 项缺负责人、期限或任务关联，请核对</span> }
+                                    <div class="text-muted">概览按本次加载计算，修改后以表格为准；已有任务的负责人、状态、期限变更请逐项核对，未改变的内容无需重复新建。</div>
+                                </div>
 							@if (Model.MeetingMinutes.IsDraft)
 							{
 								<div class="small text-warning mt-1"><i class="fas fa-exclamation-triangle me-1"></i>当前为草稿状态，点击"确认并写入任务"后将正式提交会议纪要</div>
@@ -614,7 +623,7 @@
 								@if (Model.CanApproveWrites)
 								{
 									<form method="post" asp-page-handler="Supervise" asp-route-id="@Model.MeetingMinutes.Id">
-										<button type="submit" class="btn btn-sm btn-outline-warning"><i class="fas fa-bell me-1"></i>立即检查督办</button>
+										<button type="submit" class="btn btn-sm btn-outline-warning" title="检查会议任务的落实状态，符合提醒条件时可能通知相关人员"><i class="fas fa-bell me-1"></i>检查任务落实情况</button>
 									</form>
 								}
 							}
@@ -669,7 +678,7 @@
 													<th style="min-width:80px;">优先级</th>
 													<th style="min-width:100px;">任务分组</th>
 													<th style="min-width:180px;">所属项目</th>
-													<th style="min-width:200px;">关联任务</th>
+													<th style="min-width:200px;">关联会前事项</th>
 													<th style="min-width:180px;">来源决策</th>
 													<th style="min-width:100px;">初始状态</th>
 													<th style="min-width:220px;">督办状态</th>
@@ -1026,10 +1035,12 @@
 															else if (Model.CanApproveWrites)
 															{
 																<button class="btn btn-sm btn-outline-warning edit-action-item-btn"
-																		data-id="@item.Id" data-title="@item.Title" data-desc="@item.Description"
-																		data-assignee-id="@item.AssigneeId" data-deadline="@item.Deadline?.ToString("yyyy-MM-dd")"
-																		data-priority="@item.Priority" data-status="@item.TaskStatus"
-																		data-group-value="@item.GroupName">
+																	data-id="@item.Id" data-title="@item.Title" data-desc="@item.Description"
+																	data-assignee-id="@item.AssigneeId" data-deadline="@item.Deadline?.ToString("yyyy-MM-dd")"
+																	data-priority="@item.Priority" data-status="@item.TaskStatus"
+																	data-group-value="@item.GroupName"
+																	data-prep-draft-task-id="@(item.PrepDraftTaskId ?? 0)"
+																	data-source-decision-index="@((Model.GetSourceDecisionOptionIndex(item) + 1) ?? 0)">
 																	<i class="fas fa-edit"></i>编辑
 																</button>
 																<button class="btn btn-sm btn-outline-danger delete-action-btn ms-1"
@@ -1052,26 +1063,34 @@
 							</div>
 						}
 
-						@* 未讨论到的任务 *@
+						@* 会前准备事项讨论情况（全量对照） *@
 						@if (Model.LinkedPrepDraft != null)
 						{
+							var discussedCount = Model.PrepDraftAllTasks.Count - Model.UndiscussedDraftTasks.Count;
 							<div class="card mt-3" id="undiscussedDraftCard">
+								@{
+									var actionItemRefs = new Dictionary<int, string>();
+									foreach (var kv in Model.ActionItemsByProject)
+									{
+										var projName = Model.ProjectsById.GetValueOrDefault(kv.Key)?.Name ?? "未知项目";
+										for (int i = 0; i < kv.Value.Count; i++)
+										{
+											actionItemRefs[kv.Value[i].Id] = $"{projName} 第{i + 1}条";
+										}
+									}
+								}
 								<div class="card-header bg-light">
 									<h6 class="mb-0">
 										<i class="fas fa-info-circle me-2"></i>
-										本次会议未讨论到的会前准备事项
+										会前准备事项讨论情况
 										<span class="badge bg-secondary ms-2">草稿：@Model.LinkedPrepDraft.Title</span>
-										（共 <span id="undiscussedCount">@Model.UndiscussedDraftTasks.Count</span> 项 / 草稿列了 @Model.PrepDraftAllTasks.Count 项）
+										（共 @Model.PrepDraftAllTasks.Count 项 · 已讨论 <span id="discussedCount">@discussedCount</span> · 未讨论 <span id="undiscussedCount">@Model.UndiscussedDraftTasks.Count</span>）
 									</h6>
 								</div>
 								<div class="card-body" id="undiscussedDraftBody">
 									@if (Model.PrepDraftAllTasks.Count == 0)
 									{
 										<div class="text-muted small">草稿中没有列出可比对的任务或事项。</div>
-									}
-									else if (Model.UndiscussedDraftTasks.Count == 0)
-									{
-										<div class="text-muted small"><i class="fas fa-check-circle me-1 text-success"></i>会前准备里列出的所有事项在本次会议中都已处理。</div>
 									}
 									else
 									{
@@ -1080,34 +1099,58 @@
 												<thead>
 													<tr>
 														<th>事项</th>
-														<th>项目</th>
-														<th>责任人</th>
-														<th>截止</th>
+														<th style="width:110px;">讨论状态</th>
+														<th style="width:32%;">对应行动项</th>
 													</tr>
 												</thead>
 												<tbody>
-													@foreach (var t in Model.UndiscussedDraftTasks)
+													@foreach (var t in Model.PrepDraftAllTasks)
 													{
+														var matchedTitles = Model.ActionItems
+															.Where(a => a.PrepDraftTaskId == t.Id)
+															.Select(a => $"{actionItemRefs.GetValueOrDefault(a.Id, "未知项目")} · {a.Title}")
+															.ToList();
+														var isDiscussed = matchedTitles.Count > 0;
 														<tr class="@(t.IsOverdue ? "table-danger" : "")">
-															<td>@t.Title@if (t.IsManual) {
-															<span class="badge bg-secondary ms-1">手工</span>
-														}</td>
-															<td class="small text-muted">@(t.ProjectName ?? "-")</td>
-															<td class="small">@(t.AssigneeName ?? "-")</td>
-															<td class="small">@(t.Deadline ?? "-")@if (t.IsOverdue) {
-															<span class="badge bg-danger ms-1">逾期</span>
-														}
-			</td>
-													</tr>
-												}
-											</tbody>
-										</table>
-									</div>
-									<div class="text-muted small mt-2"><i class="fas fa-lightbulb me-1"></i>提示：这些是会前准备里列出的事项（含勾选任务与手工填写项），但本次会议没有产生与之关联的行动项，建议下次会议继续跟进。</div>
-								}
+															<td>
+																@t.Title
+																@if (t.IsManual)
+																{
+																	<span class="badge bg-secondary ms-1">手工</span>
+																}
+																@if (t.IsOverdue)
+																{
+																	<span class="badge bg-danger ms-1">逾期</span>
+																}
+															</td>
+															<td>
+																@if (isDiscussed)
+																{
+																	<span class="badge bg-success">✓ 已讨论</span>
+																}
+																else
+																{
+																	<span class="badge bg-warning text-dark">✗ 未讨论</span>
+																}
+															</td>
+															<td class="small text-muted">@(isDiscussed ? string.Join("；", matchedTitles) : "—")</td>
+														</tr>
+													}
+												</tbody>
+											</table>
+										</div>
+										@if (Model.UndiscussedDraftTasks.Count == 0)
+										{
+											<div class="text-muted small mt-2"><i class="fas fa-check-circle me-1 text-success"></i>会前准备里列出的所有事项在本次会议中都已处理。</div>
+										}
+										else
+										{
+											<div class="text-muted small mt-2"><i class="fas fa-lightbulb me-1"></i>提示：标「未讨论」的事项（含勾选任务与手工填写项）本次会议没有产生关联行动项，建议下次会议继续跟进。</div>
+										}
+									}
+								</div>
 							</div>
-						</div>
-					}
+						}
 										}
 										else if (Model.MeetingMinutes.IsDraft)
 					{
@@ -1191,6 +1234,29 @@
 								@foreach (var group in Model.ProjectTaskGroups)
 								{
 									<option value="@group.Text">@group.Text</option>
+								}
+							</select>
+						</div>
+					</div>
+					<div class="row mb-3">
+						<label class="col-md-2 col-form-label">关联会前事项</label><div class="col-md-10">
+							<select class="form-select" name="prepDraftTaskId" id="edit_prepDraftTask">
+								<option value="0">无（不关联会前事项）</option>
+								@foreach (var dt in Model.PrepDraftAllTasks)
+								{
+									<option value="@dt.Id">@(dt.IsManual ? "（手工）" : "")@dt.Title</option>
+								}
+							</select>
+						</div>
+					</div>
+					<div class="row mb-3">
+						<label class="col-md-2 col-form-label">来源决策</label><div class="col-md-10">
+							<select class="form-select" name="sourceDecisionIndex" id="edit_sourceDecision">
+								<option value="0">无（讨论直接布置）</option>
+								@for (int d = 0; d < Model.MeetingDecisions.Count; d++)
+								{
+									var dc = Model.MeetingDecisions[d].Content ?? string.Empty;
+									<option value="@(d + 1)">决策@(d + 1)：@(dc.Length > 40 ? dc.Substring(0, 40) + "…" : dc)</option>
 								}
 							</select>
 						</div>
@@ -1499,6 +1565,12 @@
 				document.getElementById('edit_taskStatus').value = this.dataset.status || 'NotStarted';
 				document.getElementById('edit_group').value = this.dataset.groupValue || '';
 
+				const prepTaskSelect = document.getElementById('edit_prepDraftTask');
+				if (prepTaskSelect) prepTaskSelect.value = this.dataset.prepDraftTaskId || '0';
+
+				const sourceDecisionSelect = document.getElementById('edit_sourceDecision');
+				if (sourceDecisionSelect) sourceDecisionSelect.value = this.dataset.sourceDecisionIndex || '0';
+
 				modal.show();
 			});
 		});
@@ -1679,42 +1751,50 @@
 		function updateUndiscussedDraftCard() {
 			const body = document.getElementById('undiscussedDraftBody');
 			const countEl = document.getElementById('undiscussedCount');
+			const discussedEl = document.getElementById('discussedCount');
 			if (!body || !countEl) return;
 			if (!window.prepDraftTasks || window.prepDraftTasks.length === 0) return;
 
+			const links = window.actionItemDraftLinks || [];
 			const linkedIds = new Set(
-				(window.actionItemDraftLinks || [])
-					.map(l => l.prepDraftTaskId)
-					.filter(id => id != null && id !== 0)
+				links.map(l => l.prepDraftTaskId).filter(id => id != null && id !== 0)
 			);
 
 			const undiscussed = window.prepDraftTasks.filter(t => !linkedIds.has(t.id));
+			const discussed = window.prepDraftTasks.length - undiscussed.length;
 			countEl.textContent = undiscussed.length;
+			if (discussedEl) discussedEl.textContent = discussed;
 
-			if (undiscussed.length === 0) {
-				body.innerHTML = '<div class="text-muted small"><i class="fas fa-check-circle me-1 text-success"></i>会前准备里列出的所有事项在本次会议中都已处理。</div>';
-				return;
-			}
-
-			const rowsHtml = undiscussed.map(t => `
+			const rowsHtml = window.prepDraftTasks.map(t => {
+				const matched = links
+					.filter(l => l.prepDraftTaskId === t.id && l.title)
+					.map(l => `${escapeHtml(l.projectName)} 第${l.orderNo}条 · ${escapeHtml(l.title)}`);
+				const isDiscussed = matched.length > 0;
+				const statusHtml = isDiscussed
+					? '<span class="badge bg-success">✓ 已讨论</span>'
+					: '<span class="badge bg-warning text-dark">✗ 未讨论</span>';
+				return `
 				<tr class="${t.isOverdue ? 'table-danger' : ''}">
-					<td>${escapeHtml(t.title)}${t.isManual ? ' <span class="badge bg-secondary ms-1">手工</span>' : ''}</td>
-					<td class="small text-muted">${escapeHtml(t.projectName)}</td>
-					<td class="small">${escapeHtml(t.assigneeName)}</td>
-					<td class="small">${escapeHtml(t.deadline)}${t.isOverdue ? ' <span class="badge bg-danger ms-1">逾期</span>' : ''}</td>
-				</tr>
-			`).join('');
+					<td>${escapeHtml(t.title)}${t.isManual ? ' <span class="badge bg-secondary ms-1">手工</span>' : ''}${t.isOverdue ? ' <span class="badge bg-danger ms-1">逾期</span>' : ''}</td>
+					<td>${statusHtml}</td>
+					<td class="small text-muted">${isDiscussed ? matched.join('；') : '—'}</td>
+				</tr>`;
+			}).join('');
+
+			const footerHtml = undiscussed.length === 0
+				? '<div class="text-muted small mt-2"><i class="fas fa-check-circle me-1 text-success"></i>会前准备里列出的所有事项在本次会议中都已处理。</div>'
+				: '<div class="text-muted small mt-2"><i class="fas fa-lightbulb me-1"></i>提示：标「未讨论」的事项（含勾选任务与手工填写项）本次会议没有产生关联行动项，建议下次会议继续跟进。</div>';
 
 			body.innerHTML = `
 				<div class="table-responsive">
 					<table class="table table-sm mb-0 w-100">
 						<thead><tr>
-							<th>事项</th><th>项目</th><th>责任人</th><th>截止</th>
+							<th>事项</th><th style="width:110px;">讨论状态</th><th style="width:32%;">对应行动项</th>
 						</tr></thead>
 						<tbody>${rowsHtml}</tbody>
 					</table>
 				</div>
-				<div class="text-muted small mt-2"><i class="fas fa-lightbulb me-1"></i>提示：这些是会前准备里列出的事项（含勾选任务与手工填写项），但本次会议没有产生与之关联的行动项，建议下次会议继续跟进。</div>
+				${footerHtml}
 			`;
 		}
 

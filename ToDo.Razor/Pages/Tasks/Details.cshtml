@@ -107,10 +107,11 @@
 					<div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
 						<div>
 							<div class="fw-semibold"><i class="bi bi-cpu me-1"></i>@(Model.TaskDetail.AgentDefinition?.Name ?? Model.TaskDetail.AgentName ?? "未指定 Agent")</div>
-							<div class="small text-muted">真实 Agent 绑定 · 分配版本 @Model.TaskDetail.AgentAssignmentVersion</div>
+							<div class="small text-muted">@ToDo.Domain.AgentWorkPresentation.NextStep(Model.TaskDetail.AgentExecutionStatus)</div>
 						</div>
 						<span class="badge bg-@agentStatusClass">@Model.TaskDetail.AgentExecutionStatus.GetDisplayName()</span>
 					</div>
+                    <details class="small text-muted mt-2"><summary>技术信息</summary>Agent #@Model.TaskDetail.AgentDefinitionId · 分配版本 @Model.TaskDetail.AgentAssignmentVersion</details>
 					@if (Model.TaskDetail.AgentLastRunAt.HasValue)
 					{
 						<div class="small text-muted mt-2">最近执行：@Model.TaskDetail.AgentLastRunAt.Value.ToString("yyyy-MM-dd HH:mm:ss")</div>
@@ -156,7 +157,7 @@
                     }
 					@if (Model.AgentWorkItems.Any())
 					{
-						<details class="mt-3" open>
+						<details class="mt-3">
 							<summary class="fw-semibold text-primary">执行时间线（最近 @Model.AgentWorkItems.Count 条）</summary>
 							<div class="mt-3 d-grid gap-2">
 								@foreach (var item in Model.AgentWorkItems)

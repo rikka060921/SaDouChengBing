@@ -239,16 +239,21 @@ public class MeetingTaskSyncService
         };
 
         var distinctTodos = parseItems
-            .Where(item => !string.IsNullOrWhiteSpace(item.Title))
-            .GroupBy(item => NormalizeTaskText($"{item.Title}||{item.Description}"))
-            .Select(group => group.First())
-            .ToList();
+          .Where(item => !string.IsNullOrWhiteSpace(item.Title))
+          .GroupBy(item => NormalizeTaskText(
+              $"{item.ProjectName}||{item.Title}||{item.Description}"))   // ← 加入 ProjectName
+          .Select(group => group.First())
+          .ToList();
 
         var resultItems = new List<MeetingActionItem>();
-
         foreach (var todo in distinctTodos)
         {
-            // ===== 多项目改造：根据 AI 返回的 ProjectName 映射 ProjectId =====
+            // 【诊断日志】：把 AI 返回的 ProjectName 打印出来
+            if (projectNames.Count > 1)
+            {
+                Console.WriteLine($"[DIAG] AI解析任务: {todo.Title}, ProjectName='{todo.ProjectName}'");
+            }
+
             int itemProjectId;
             if (!string.IsNullOrWhiteSpace(todo.ProjectName)
                 && projectNameToId.TryGetValue(todo.ProjectName, out var pid))
@@ -257,7 +262,10 @@ public class MeetingTaskSyncService
             }
             else
             {
-                // AI 没判断出或名字对不上，兜底用首项目
+                if (projectNames.Count > 1)
+                {
+                    Console.WriteLine($"[DIAG-ERROR] 任务 '{todo.Title}' 没有有效的 ProjectName，兜底到首项目。");
+                }
                 itemProjectId = meeting.ProjectId;
             }
 

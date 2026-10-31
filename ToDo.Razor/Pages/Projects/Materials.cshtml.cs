@@ -307,7 +307,7 @@ public class MaterialsModel : PageModel
         
         if (!System.IO.File.Exists(fullPath)) return NotFound();
         
-        var fileName = Path.GetFileName(draft.DraftFilePath);
+        var fileName = Path.GetFileName(draft.DraftFileName);
         return PhysicalFile(fullPath, "application/octet-stream", fileName);
     }
 
@@ -469,7 +469,7 @@ public class MaterialsModel : PageModel
         return RedirectToPage(new { projectId = ProjectId });
     }
 
-    public async Task<IActionResult> OnPostAuditDraftAsync(int draftId, string action)
+    public async Task<IActionResult> OnPostAuditDraftAsync(int draftId, string action, string? draftToken = null)
     {
         if (!await CanAccessAsync()) return Forbid();
         await ProjectLifecycleRules.RequireActiveAsync(_context, ProjectId);
@@ -496,14 +496,18 @@ public class MaterialsModel : PageModel
 
             if (!await CanManageAsync(user)) return Forbid();
             if (action is not ("pass" or "reject")) return BadRequest("审核操作无效");
+            if (draftToken != null && draftToken != ProjectDocumentEditingService.Token(draft.RevisedContent ?? string.Empty))
+                throw new InvalidOperationException("草稿已被校订，请刷新后查看最新对比，再审核");
             if (action == "pass")
             {
                 if (!await CanManageAsync(user)) return Forbid();
                 if (draft.ExpireTime <= AppTime.Now) throw new InvalidOperationException("草稿已过期，请重新生成");
                 await using var transaction = await _context.Database.BeginTransactionAsync();
                 var claimed = await _context.AiDocumentDrafts.Where(d => d.Id == draft.Id && d.ProjectId == ProjectId
-                    && d.AuditStatus == DraftAuditStatus.Pending).ExecuteUpdateAsync(setters => setters.SetProperty(d => d.AuditStatus, DraftAuditStatus.Pass));
-                if (claimed != 1) throw new InvalidOperationException("草稿已被处理，请刷新页面");
+                    && d.AuditStatus == DraftAuditStatus.Pending && d.ExpireTime > AppTime.Now
+                    && d.DraftFilePath == draft.DraftFilePath && d.RevisedContent == draft.RevisedContent)
+                    .ExecuteUpdateAsync(setters => setters.SetProperty(d => d.AuditStatus, DraftAuditStatus.Pass));
+                if (claimed != 1) throw new InvalidOperationException("草稿已被校订或处理，请刷新后查看最新对比，再审核");
                 var document = await _context.ProjectDocuments.AsNoTracking()
                     .SingleOrDefaultAsync(d => d.Id == draft.SourceDocumentId && d.ProjectId == ProjectId)
                     ?? throw new InvalidOperationException("原资料不存在或不属于当前项目");
@@ -536,12 +540,13 @@ public class MaterialsModel : PageModel
             }
             else if (action == "reject")
             {
-                // 审核驳回
-                draft.AuditStatus = DraftAuditStatus.Reject;
-                draft.AuditUserId = user.Id.ToString();
-                draft.AuditTime = AppTime.Now;
-                _context.AiDocumentDrafts.Update(draft);
-                await _context.SaveChangesAsync();
+                var auditTime = AppTime.Now;
+                var changed = await _context.AiDocumentDrafts.Where(d => d.Id == draft.Id && d.ProjectId == ProjectId
+                    && d.AuditStatus == DraftAuditStatus.Pending && d.DraftFilePath == draft.DraftFilePath && d.RevisedContent == draft.RevisedContent)
+                    .ExecuteUpdateAsync(s => s.SetProperty(d => d.AuditStatus, DraftAuditStatus.Reject)
+                        .SetProperty(d => d.AuditUserId, user.Id.ToString()).SetProperty(d => d.AuditTime, auditTime));
+                if (changed != 1) throw new InvalidOperationException("草稿已被校订或处理，请刷新后查看最新对比，再审核");
+                await _context.Entry(draft).ReloadAsync();
 
                 TempData["SuccessMessage"] = "草稿已驳回";
             }
@@ -689,7 +694,7 @@ public class MaterialsModel : PageModel
     private async Task<bool> CanAccessAsync()
     {
         var user = await _userManager.GetUserAsync(User);
-        if (user == null || user.Status != UserStatus.Active || !await ProjectExistsAsync()) return false;
+        if (user == null || user.IsDeleted || user.Status != UserStatus.Active || !await ProjectExistsAsync()) return false;
         if (user.Role == UserRole.systemAdmin) return true;
         return await _context.Project.AnyAsync(project => project.Id == ProjectId
             && !project.IsDeleted

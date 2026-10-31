@@ -25,6 +25,7 @@
         const longResult = find('long-result');
         const details = find('result-details');
         const copyButton = find('copy');
+        const fillProgress = find('fill-progress');
         const copyFeedback = find('copy-feedback');
         const footer = find('footer');
         const sessionLink = find('session-link');
@@ -202,6 +203,21 @@
             } finally {
                 copyButton.disabled = false;
             }
+        });
+
+        if (fillProgress) fillProgress.addEventListener('click', () => {
+            const field = document.getElementById('ProgressNote');
+            if (!field || !currentResult || accessLost) return;
+            if (currentResult.length > field.maxLength) {
+                copyFeedback.textContent = '建议超过进展说明的字数上限，请复制后精简，不会自动截断或发布。';
+                return;
+            }
+            if (field.value.trim() && !window.confirm('进展说明已有输入，确定用本次建议替换吗？未保存的内容会被替换。')) return;
+            field.value = currentResult;
+            field.dispatchEvent(new Event('input', { bubbles: true }));
+            field.focus();
+            field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            copyFeedback.textContent = '已填入但未保存。请核对事实后再保存进展或提交验收。';
         });
 
         refreshButton.addEventListener('click', () => poll(true));

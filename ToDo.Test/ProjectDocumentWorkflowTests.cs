@@ -261,7 +261,7 @@ public class ProjectDocumentWorkflowTests
         public IDictionary<string,object> LoadTempData(HttpContext context)=>new Dictionary<string,object>();
         public void SaveTempData(HttpContext context,IDictionary<string,object> values){}
     }
-    private sealed class Fixture:IAsyncDisposable
+    internal sealed class Fixture:IAsyncDisposable
     {
         private SqliteConnection connection=null!;private ServiceProvider provider=null!;
         public ApplicationDbContext Context=null!;
@@ -282,6 +282,14 @@ public class ProjectDocumentWorkflowTests
         }
         public Task<ProjectDocument> Upload(string name,byte[] bytes)=>Documents.SaveAsync(10,1,new FormFile(new MemoryStream(bytes),0,bytes.Length,"UploadFile",name),"");
         public async Task Grant(){Context.AgentDocumentPermissions.Add(new AgentDocumentPermission{ProjectId=10,AgentKey=Agent.AgentKey,Category=ProjectDocumentCategory.Other,CanRead=true,CanWrite=true,UpdatedById=1});await Context.SaveChangesAsync();}
+        public DocumentEditModel Editor(int userId=1) => Authenticate(new DocumentEditModel(Context,Documents,provider.GetRequiredService<UserManager<ApplicationUser>>()){ProjectId=10},userId);
+        public ToDo.Razor.Pages.ActionCenter.IndexModel Workbench(int userId=1) => Authenticate(new ToDo.Razor.Pages.ActionCenter.IndexModel(Context,provider.GetRequiredService<UserManager<ApplicationUser>>(),
+            new ApprovalRequestService(Context,Documents,new UserNotificationService(Context),new AgentDocumentAccessService(Context,Environment))),userId);
+        private T Authenticate<T>(T page,int userId) where T:PageModel
+        {
+            var http=new DefaultHttpContext{RequestServices=provider,User=new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier,userId.ToString())],"test"))};
+            page.PageContext=new PageContext{HttpContext=http};page.TempData=new TempDataDictionary(http,new TempDataProvider());return page;
+        }
         public MaterialsModel Page(int userId=1)
         {
             var page=new MaterialsModel(Context,provider.GetRequiredService<UserManager<ApplicationUser>>(),Documents,new(Context,Documents,NullLogger<ProjectDocumentIndexService>.Instance),new(Context),new(Context,Environment,Configuration),new Registry(Agent),AIService,new EventBusService(Context),NullLogger<MaterialsModel>.Instance,Configuration){ProjectId=10};

@@ -463,7 +463,7 @@ public class AgentEventAutomationTests
         public Task<AIMeetingSummaryResult> ProcessMeetingMinutesAsync(string meetingContent)
             => throw new NotSupportedException();
 
-        public Task<AIMeetingFullParseResult> ProcessMeetingMinutesFullStructAsync(string meetingContent, List<string>? memberNames = null, List<string>? projectNames = null)
+        public Task<AIMeetingFullParseResult> ProcessMeetingMinutesFullStructAsync(string meetingContent, List<string>? memberNames = null, List<string>? projectNames = null, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
         public Task<AIDailyReportResult> GenerateDailyReportAsync(AIDailyReportInput input)

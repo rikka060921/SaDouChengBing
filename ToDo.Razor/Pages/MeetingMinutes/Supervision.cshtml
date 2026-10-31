@@ -6,7 +6,7 @@
 }
 
 <div class="container py-4">
-    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4"><div><h1 class="h2 mb-1">会议督办中心</h1><div class="text-muted">把会议承诺变成有责任人、有检查点、可升级的执行闭环。</div></div><form method="post" asp-page-handler="Run"><input type="hidden" name="projectId" value="@Model.ProjectId" /><button class="btn btn-outline-primary">立即检查</button></form></div>
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4"><div><h1 class="h2 mb-1">会议督办中心</h1><div class="text-muted">查看会议任务的落实情况。检查会更新督办状态，符合提醒条件时可能通知相关人员。</div></div><form method="post" asp-page-handler="Run"><input type="hidden" name="projectId" value="@Model.ProjectId" /><button class="btn btn-outline-primary">检查任务落实情况</button></form></div>
     @if (TempData["SuccessMessage"] != null) { <div class="alert alert-success">@TempData["SuccessMessage"]</div> }
 
     <div class="row g-3 mb-4">

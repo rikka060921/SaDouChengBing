@@ -25,17 +25,51 @@ namespace ToDo.Razor.Data
 
             // Visual Studio 直接运行时自动应用已提交的迁移。
             // 旧版本曾使用 EnsureCreated，数据库可能没有迁移历史；这种情况只补第二阶段迁移。
+            //try
+            //{
+            //    if (await IsDatabaseEmptyAsync(context))
+            //    {
+            //        await BootstrapFreshDatabaseAsync(context);
+            //    }
+            //    else
+            //    {
+            //        await RepairInterruptedDocumentCategoryMigrationAsync(context);
+            //        await context.Database.MigrateAsync();
+            //    }
+            //}
+            //catch (Exception migrationException)
+            //{
+            //    try
+            //    {
+            //        await EnsureMigrationHistoryAsync(context);
+            //        await context.Database.ExecuteSqlRawAsync(
+            //            "INSERT IGNORE INTO `__EFMigrationsHistory` (`MigrationId`, `ProductVersion`) VALUES ('20260719113651_FirstPhaseWorkflow', '8.0.17')");
+            //        await RepairInterruptedDocumentCategoryMigrationAsync(context);
+            //        await context.Database.MigrateAsync();
+            //    }
+            //    catch (Exception fallbackException)
+            //    {
+            //        Console.Error.WriteLine($"数据库迁移失败：{migrationException.Message}; 兼容迁移失败：{fallbackException.Message}");
+            //        throw new InvalidOperationException("数据库迁移失败，应用已停止启动以避免使用不完整的数据结构。", fallbackException);
+            //    }
+            //}
             try
             {
-                if (await IsDatabaseEmptyAsync(context))
-                {
-                    await BootstrapFreshDatabaseAsync(context);
-                }
-                else
-                {
-                    await RepairInterruptedDocumentCategoryMigrationAsync(context);
-                    await context.Database.MigrateAsync();
-                }
+#if DEBUG
+                // 仅本地VS调试F5时生效：强制全新库初始化，解决本地重建数据库的迁移BUG
+                await BootstrapFreshDatabaseAsync(context);
+#else
+    // Release打包/服务器环境：原版完整逻辑，用于增量迁移
+    if (await IsDatabaseEmptyAsync(context))
+    {
+        await BootstrapFreshDatabaseAsync(context);
+    }
+    else
+    {
+        await RepairInterruptedDocumentCategoryMigrationAsync(context);
+        await context.Database.MigrateAsync();
+    }
+#endif
             }
             catch (Exception migrationException)
             {
@@ -53,6 +87,7 @@ namespace ToDo.Razor.Data
                     throw new InvalidOperationException("数据库迁移失败，应用已停止启动以避免使用不完整的数据结构。", fallbackException);
                 }
             }
+
 
             // 创建角色
             string[] roleNames = { "systemAdmin", "teamMember" };

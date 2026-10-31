@@ -36,13 +36,17 @@
                    class="btn btn-outline-secondary px-4">今日</a>
                 @if (Model.CanGenerateForCurrentUser)
                 {
-                    <a asp-page="Generate" class="btn btn-success px-4" id="generateSummaryButton">生成我的报告</a>
+                    <a asp-page="Generate" class="btn btn-success px-4" id="generateSummaryButton">根据工作记录生成</a>
                 }
             </form>
             <div id="generateSummaryProgress" class="ai-generation-status d-none mt-3 ms-auto" aria-live="polite"></div>
         </div>
     </div>
 
+    @if (Model.CanGenerateForCurrentUser)
+    {
+        <p class="small text-muted">日报复用已有工作记录，不必再抄写一遍。请先在 <a asp-page="/ActionCenter/Index">待我处理</a> 更新真实进展，生成后核对参与归因：任务由他人更新不等于本人完成。</p>
+    }
     @if (TempData["Message"] != null)
     {
         <div class="alert alert-success alert-dismissible fade show" role="alert">

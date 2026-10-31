@@ -33,6 +33,7 @@ namespace ToDo.Razor.Pages.Projects
         public int TaskCount { get; set; }
         public List<ProjectMemberDto> Members { get; set; } = new();
         public bool CanManageMembers { get; set; }
+        public ProjectGettingStarted? GettingStarted { get; set; }
 
         [BindProperty]
         public AddMemberInput Input { get; set; } = new AddMemberInput();
@@ -79,6 +80,7 @@ namespace ToDo.Razor.Pages.Projects
             try
             {
                 await LoadPageData(id.Value);
+                GettingStarted = await new TeamWorkbenchService(_context).GettingStartedAsync(id.Value, CurrentUserId, HttpContext.RequestAborted);
                 return Page();
             }
             catch (Exception ex)

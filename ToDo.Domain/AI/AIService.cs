@@ -205,15 +205,47 @@ namespace ToDo.Domain.AI
             }
         }
         #endregion
-
-        #region 【全新】会议纪要完整结构化解析（对齐任务文本解析逻辑）
-        public async Task<AIMeetingFullParseResult> ProcessMeetingMinutesFullStructAsync(string meetingContent, List<string>? memberNames = null,
-    List<string>? projectNames = null)
+        /// <summary>
+        /// 将文本按最大长度分块，尽量在换行处切割，避免一句话截断
+        /// </summary>
+        private List<string> SplitTextIntoChunks(string text, int maxChunkSize = 8000)
         {
-            try
+            var chunks = new List<string>();
+            var lines = text.Split(new[] { "\n", "\r\n" }, StringSplitOptions.None);
+            var currentChunk = new StringBuilder();
+
+            foreach (var line in lines)
             {
-                var memberHint = memberNames != null && memberNames.Any()
-                    ? $@"
+                if (currentChunk.Length + line.Length + 2 > maxChunkSize && currentChunk.Length > 0)
+                {
+                    chunks.Add(currentChunk.ToString());
+                    currentChunk.Clear();
+                }
+                currentChunk.AppendLine(line);
+            }
+            if (currentChunk.Length > 0)
+            {
+                chunks.Add(currentChunk.ToString());
+            }
+            return chunks;
+        }
+
+        /// <summary>
+        /// 合并所有分块解析得到的决策和任务，去重、合并冲突，输出最终完整结构化结果
+        /// </summary>
+        private async Task<AIMeetingFullParseResult> MergeChunkParseResultsAsync(
+            string fullMeetingContent,
+            List<AIMeetingFullParseResult> chunkResults,
+            List<string>? memberNames,
+            List<string>? projectNames,
+            CancellationToken cancellationToken)
+        {
+            // 把所有块提取到的Decisions和TaskItems平铺合并
+            var allDecisions = chunkResults.SelectMany(c => c.Decisions ?? new List<MeetingDecisionItem>()).ToList();
+            var allTasks = chunkResults.SelectMany(c => c.TaskItems ?? new List<MeetingTaskParseItem>()).ToList();
+
+            var memberHint = memberNames != null && memberNames.Any()
+                ? $@"
 # 项目成员名单（用于匹配责任人）
 以下是项目组成员的真实姓名，会议纪要中提到的人名可能有错别字或不完整，请从名单中选择最匹配的：
 {string.Join("、", memberNames)}
@@ -221,171 +253,142 @@ namespace ToDo.Domain.AI
 - 如果能从名单中匹配到具体成员，填写其真实姓名
 - 如果会议纪要中提到「负责人」、「项目经理」等角色指代，填写「负责人」
 - 如果无法匹配，assigneeName 字段填 null
+" : "";
 
-"
-                        : "";
-                // ===== 新增：项目归属提示 =====
-                var projectHint = projectNames != null && projectNames.Count > 1
-                    ? $@"
-# 项目归属判定（严格执行）
+            var projectHint = projectNames != null && projectNames.Count > 1
+     ? $@"
+# 项目归属判定（【最高优先级，强制逐条匹配，严禁批量统一】）
 本次会议关联以下项目：
 {string.Join("\n", projectNames.Select(p => $"- {p}"))}
-
-为每条任务判断它属于哪个项目，在 TaskItems 中输出 projectName 字段：
+针对每一条TaskItems任务，**独立单独判断归属，不允许多条任务全部归到同一个项目！**
+规则：
 1. 必须从上面给定的项目名中选一个，严禁编造不存在的项目名；
-2. 如果任务描述里明确提到某个项目名，按提到的填；
-3. 如果任务描述里出现项目相关的关键词（项目简称、模块名），据此判断；
-4. 如果实在无法判断，填第一个项目名；
-5. 单项目会议时 projectName 统一填该唯一项目名。
-"
-                    : "";
-                var jsonTemplate = "{\n" +
-                    "  \"MeetingPurpose\": \"开会原因总结（1-2句话，简洁概括）\",\n" +
-                    "  \"KeyPoints\": \"本次会议讨论了XX。会议围绕XXX展开讨论，涉及XXX方面。会议最终达成了XX结论。\",\n" +
-                    "  \"Decisions\": [\n" +
-                    "    {\n" +
-                    "      \"content\": \"决策内容\",\n" +
-                    "      \"decisionMaker\": \"结论句说话人姓名\",\n" +
-                    "      \"keyQuote\": \"直接促成决策定论的最关键一句原话\",\n" +
-                    "      \"originalQuotes\": [\"讨论过程的原话片段\", \"疑问与争辩的原话\", \"决策结论原话\", \"结论后的确认原话\"]\n" +
-                    "    }\n" +
-                    "  ],\n" +
-                    "  \"TaskItems\": [\n" +
-                    "    {\"title\": \"任务标题\", \"description\": \"详细说明\", \"deadline\": \"2026-08-10\", \"priority\": \"Medium\", \"status\": \"NotStarted\", \"group\": \"后端组\", \"assigneeName\": \"贺楚\", \"sourceDecisionIndex\": null}\n" +
-                    "  ]\n" +
-                    "}";
+2. 如果任务描述里**明确提到某个项目名**，严格按提到的那个填写；
+3. 如果任务描述里出现项目简称、模块关键词，匹配对应项目；
+4. 只有一条任务完全找不到任何相关线索时，才允许填列表第一个项目；
+✅ 强制示例参考：
+原文：撒豆成兵项目需要完善资料模块，封神榜项目需要添加数据
+任务1：完善撒豆成兵项目资料模块 → projectName = 撒豆成兵
+任务2：添加封神榜项目数据 → projectName = 封神榜
+❌ 禁止错误：两条任务全部写封神榜 / 全部写撒豆成兵
+" : "";
 
-                var sb = new System.Text.StringBuilder();
-                sb.AppendLine("你是专业项目管理助理，请先完整阅读并理解下面全部的会议纪要内容，然后再进行分析总结和任务提取。严禁中途截断或省略内容。");
-                sb.AppendLine("【工作流程】：");
-                sb.AppendLine("第一步：完整通读全部会议纪要，掌握会议的整体脉络和全部细节。");
-                sb.AppendLine("第二步：基于完整的会议内容，生成开会原因总结（MeetingPurpose）、AI摘要（KeyPoints）、会议决策（Decisions）。");
-                sb.AppendLine("第三步：从完整的会议内容中提取所有待办任务（TaskItems），并判断每条任务是否来源于某条决策（填写 sourceDecisionIndex）。");
-                sb.AppendLine("第四步：检查所有输出内容是否完整，确保没有任何句子以省略号或未完成状态结束。");
-                sb.AppendLine();
-                sb.AppendLine(memberHint);
-                sb.AppendLine(projectHint);
-                sb.AppendLine("# 任务类型识别规则");
-                sb.AppendLine("请根据以下规则标记每个任务：");
-                sb.AppendLine("1. NewTask（新增任务）：会议中首次提到的任务，之前没有对应记录，需要创建新任务");
-                sb.AppendLine("2. TaskChange（历史任务变更）：会议中提到的任务与已有任务匹配，但状态/负责人/截止时间/优先级有变化，需要更新已有任务");
-                sb.AppendLine("   - 如果会议中提到某个任务的状态变了（如：已完成→进行中）→ 标记为 TaskChange");
-                sb.AppendLine("   - 如果会议中提到某个任务的负责人变了 → 标记为 TaskChange");
-                sb.AppendLine("   - 如果会议中提到某个任务的截止时间变了 → 标记为 TaskChange");
-                sb.AppendLine("   - 如果会议中提到某个任务的优先级变了 → 标记为 TaskChange");
-                sb.AppendLine("3. 如果无法确定是新增还是变更，默认标记为 NewTask");
-                sb.AppendLine("# 任务识别规则（严格执行）");
-                sb.AppendLine("一条内容如果满足以下任一特征，就视为待办任务：");
-                sb.AppendLine("1. 明确某人要做某事（如：贺楚要完成XX、张三负责XX）");
-                sb.AppendLine("2. 有明确的执行动作+时间要求（如：本周五完成、周三输出、下周评估）");
-                sb.AppendLine("3. 提到需要交付的产出物（如：提供版本、输出方案、完成统计）");
-                sb.AppendLine();
-                sb.AppendLine("# 正例（这些都应该识别为任务）");
-                sb.AppendLine("- 贺楚明确：后端本周完成临界点规则修正 → 任务：修正临界点规则，责任人：贺楚");
-                sb.AppendLine("- 8月5日提供自测版本 → 任务：提供自测版本");
-                sb.AppendLine("- 周三输出初步技术方案评审 → 任务：输出技术方案评审");
-                sb.AppendLine("- 周五落地初稿 → 任务：落地初稿");
-                sb.AppendLine("- 负责人安排下周完成存储用量统计评估 → 任务：存储用量统计评估");
-                sb.AppendLine("- 决策确定「会议准备页改为三个列表展示」→ 落地执行需要改造页面 → 任务：改造会议准备页任务展示，sourceDecisionIndex 填该决策序号");
-                sb.AppendLine();
-                sb.AppendLine("# 反例（这些不应识别为任务）");
-                sb.AppendLine("- 本次会议暂不展开讨论 → 这是说明，不是任务");
-                sb.AppendLine("- 纯讨论过程、纯表态（如「嗯」「明白了」「这个方向可以」）→ 不是任务");
-                sb.AppendLine("- 纯结论性决策且不需要任何后续执行动作（如「暂不设置紧急截止时间，可放慢节奏自行学习」）→ 只作为决策记录，不生成任务");
-                sb.AppendLine();
-                sb.AppendLine("# 决策落地任务识别规则（sourceDecisionIndex）");
-                sb.AppendLine("决策本身是「结论」，但一部分任务正是来源于这些决策的落地执行。提取任务时必须逐条判断：");
-                sb.AppendLine("1. 如果决策的落地需要有人做具体工作（如：改造/调整页面或规则、输出方案或文档、排期执行、按决定推进某事项），必须把该执行工作提取为任务，并将 sourceDecisionIndex 填为该决策在 Decisions 数组中的序号（从1开始）。");
-                sb.AppendLine("2. 任务在会议讨论中直接布置、与任何决策都没有派生关系时，sourceDecisionIndex 填 null。");
-                sb.AppendLine("3. 一条决策可以派生多条任务（每条任务都填同一个决策序号）；一条任务只来源于一条决策，填写最直接对应的那条。");
-                sb.AppendLine("4. 序号必须严格对应本次输出的 Decisions 数组顺序，严禁编造不存在的序号。");
-                sb.AppendLine();
-                sb.AppendLine("# 字段强制规则");
-                sb.AppendLine("1. title：任务短标题，动词+核心对象，严格控制8-20个汉字，禁止大段复制原文；完整上下文、细节全部放到description字段，不要塞到title中。");
-                sb.AppendLine("2. description：任务详细说明，补充会议上下文，完整还原任务背景细节。");
-                sb.AppendLine("3. deadline截止日期规则：");
-                sb.AppendLine("   - 文本出现 本周五、下周一、3天内、12月20日前 等口语时间，自动换算为标准 yyyy-MM-dd");
-                sb.AppendLine("   - 无法推算具体日期填 null");
-                sb.AppendLine($"   - 假设当前系统日期：{AppTime.Now:yyyy-MM-dd}");
-                sb.AppendLine("4. priority优先级规则：");
-                sb.AppendLine("   - High：紧急重要；Medium：常规任务；Low：低优先级跟进事项，默认Medium");
-                sb.AppendLine("5. status状态规则：");
-                sb.AppendLine("   - 默认全部 NotStarted；只有明确说已完成才填 Completed；进行中填 InProgress");
-                sb.AppendLine("6. group分组规则：提到前端、后端、测试、产品、运维等部门/小组填入group，无则null");
-                sb.AppendLine("7. assigneeName责任人：提取人名，无明确责任人填null");
-                sb.AppendLine("8. 过滤&去重规则：只输出真实待办行动项，纯讨论内容、纯表态不生成任务；决策结论本身不重复生成任务，但决策落地所必需的执行工作必须生成任务并标注 sourceDecisionIndex；语义完全一致的重复任务做去重合并，只保留一条。");
-                sb.AppendLine();
-                sb.AppendLine("# 会议决策识别规则");
-                sb.AppendLine("从会议纪要中提取所有明确做出的决策，包括：");
-                sb.AppendLine("1. 方案确定（如：决定采用XX方案、确定XX技术路线）");
-                sb.AppendLine("2. 方向确认（如：确认下一步往XX方向发展）");
-                sb.AppendLine("3. 规则制定（如：明确XX规则为XX）");
-                sb.AppendLine("4. 资源分配（如：决定由XX负责XX模块）");
-                sb.AppendLine();
-                sb.AppendLine("# 决策字段要求（严格执行）");
-                sb.AppendLine("每条决策包含四个字段：");
-                sb.AppendLine("- content：决策的简要内容（总结归纳，不必是原文）");
-                sb.AppendLine("- decisionMaker：决策拍板人【禁止留空】——优先取决策结论句的说话人（转写原文中\"姓名：\"前缀标明了说话人），其次取主导该讨论并给出最终方案的人；多人共同拍板用顿号并列（如\"乔宽、赵冬\"）；严禁留空、严禁照抄占位符或写\"决策人\"字样；只有原文完全无法判断由谁拍板时才填\"未明确\"并在括号内说明原因，如\"未明确（结论由多人附和，无法确定主导者）\"");
-                sb.AppendLine("- keyQuote：该决策【最关键的一句原话】——讨论中直接促成拍板定论的那句话（明确的结论表态、方案拍板句），必须逐字摘自原文，严禁编造；如果原文没有明确的定论句，取与决策结论最接近的原话");
-                sb.AppendLine("- originalQuotes：【最重要】该决策相关讨论的全部过程原文片段，不是仅保存决策结论单句；严禁自行编造或改写！");
-                sb.AppendLine();
-                sb.AppendLine("# originalQuotes 填写规则（严格执行）：");
-                sb.AppendLine("0. 【标注目标】把该决策从话题提出到定论的全部讨论过程都标注出来，不遗漏任何相关发言；可以是讨论所在的一整块连续上下文，也可以按发言顺序拆成多个片段（仅当讨论中间穿插了明显无关内容时才拆分）；");
-                sb.AppendLine("1. 【锚点】以该决策结论对应的转写句子作为中心点；");
-                sb.AppendLine("2. 【片段范围】完整覆盖：结论形成前的多轮讨论、疑问、争辩全过程 + 结论达成后的简短确认对话（如\"对\"\"好，就这么定\"等认可性回应）；");
-                sb.AppendLine("3. 【真实性】每个片段按原文顺序逐字摘抄，禁止改写、缩写、总结；保留说话人前缀（如\"乔宽：\"），与原文完全一致；所有片段按讨论先后顺序排列，结论句放最后一位；");
-                sb.AppendLine("4. 如果原文中没有与该决策直接对应的语句，则 originalQuotes 填空数组、keyQuote 填空字符串，不要编造。");
-                sb.AppendLine();
-                sb.AppendLine("# KeyPoints 摘要生成规则（简洁连贯）");
-                sb.AppendLine("KeyPoints 必须是一段或两段连贯的完整段落，总长度控制在 200-400 字，要求：");
-                sb.AppendLine("1. 用简洁的段落描述，不要分点、不要换行过多；");
-                sb.AppendLine("2. 第一句概述会议主题和目的，中间说明核心讨论内容，最后总结会议结论；");
-                sb.AppendLine("3. 整个摘要必须是完整的连贯文本，严禁出现省略号或未完成的句子；");
-                sb.AppendLine("4. 不要包含待办事项或任务列表。");
-                sb.AppendLine();
-                sb.AppendLine("# 输出格式");
-                sb.AppendLine("每条任务包含：title(短标题)、description(详细说明)、deadline(截止日期yyyy-MM-dd)、priority(High/Medium/Low)、status(NotStarted/InProgress/Completed)、group(分组)、assigneeName(责任人姓名)、sourceDecisionIndex(来源决策序号，从1开始；不来源于决策填null)");
-                sb.AppendLine();
-                sb.AppendLine("# 只输出纯JSON格式，不要任何解释、markdown、前言后语，结构如下：");
-                sb.AppendLine(jsonTemplate);
-                sb.AppendLine();
-                sb.AppendLine("会议原文内容：");
-                sb.AppendLine(meetingContent);
-                var prompt = sb.ToString();
 
-                var response = await CallAIModelAsync(prompt, new AIChatOptions { Temperature = 0.2, MaxTokens = 64000, TimeoutSeconds = 600 }, CancellationToken.None);
+            var mergePromptSb = new StringBuilder();
+            mergePromptSb.AppendLine("你是项目会议结构化合并助手。下面是**同一场会议，分多段解析提取得到的多组决策和任务**，存在大量重复、冲突、冗余。");
+            mergePromptSb.AppendLine("你的任务：阅读原始全文 + 所有分块提取结果，做全局合并、去重、冲突修正，输出一份唯一、干净、无重复的结构化会议解析结果。");
+            mergePromptSb.AppendLine("【原始会议全文】");
+            mergePromptSb.AppendLine(fullMeetingContent);
+            mergePromptSb.AppendLine();
+            mergePromptSb.AppendLine(memberHint);
+            mergePromptSb.AppendLine(projectHint);
+            mergePromptSb.AppendLine("【所有分块提取到的原始结果（存在重复）】");
+            mergePromptSb.AppendLine("Decisions 数组：");
+            mergePromptSb.AppendLine(JsonSerializer.Serialize(allDecisions, new JsonSerializerOptions { WriteIndented = true }));
+            mergePromptSb.AppendLine("TaskItems 数组：");
+            mergePromptSb.AppendLine(JsonSerializer.Serialize(allTasks, new JsonSerializerOptions { WriteIndented = true }));
+            mergePromptSb.AppendLine();
+            mergePromptSb.AppendLine("合并规则：");
+            mergePromptSb.AppendLine("1. 合并语义完全相同/高度相似的决策、任务，只保留一条，合并备注信息；");
+            mergePromptSb.AppendLine("2. 修正字段冲突：同一条任务在不同块提取到不同截止时间/负责人，以原文上下文为准；");
+            mergePromptSb.AppendLine("3. 重新生成全局的 MeetingPurpose 和 KeyPoints（基于完整全文）；");
+            mergePromptSb.AppendLine("4. 重新分配 Decisions 的序号，TaskItems 的 sourceDecisionIndex 同步更新为新序号；");
+            mergePromptSb.AppendLine("5. 严格遵守输出JSON结构，字段规则和之前保持不变；只输出纯JSON，不要任何额外文字。");
 
-                // 截取JSON块，和ParseTaskTextAsync一致容错处理
-                var jsonStart = response.IndexOf('{');
-                var jsonEnd = response.LastIndexOf('}');
-                if (jsonStart < 0 || jsonEnd <= jsonStart)
+            var jsonTemplate = "{\n" +
+                "  \"MeetingPurpose\": \"开会原因总结（1-2句话，简洁概括）\",\n" +
+                "  \"KeyPoints\": \"本次会议讨论了XX。会议围绕XXX展开讨论，涉及XXX方面。会议最终达成了XX结论。\",\n" +
+                "  \"Decisions\": [\n" +
+                "    {\n" +
+                "      \"content\": \"决策内容\",\n" +
+                "      \"decisionMaker\": \"结论句说话人姓名\",\n" +
+                "      \"keyQuote\": \"直接促成决策定论的最关键一句原话\",\n" +
+                "      \"originalQuotes\": [\"讨论过程的原话片段\", \"疑问与争辩的原话\", \"决策结论原话\", \"结论后的确认原话\"]\n" +
+                "    }\n" +
+                "  ],\n" +
+                "  \"TaskItems\": [\n" +
+                "    {\n" +
+                "      \"title\": \"任务标题\", \n" +
+                "      \"description\": \"详细说明\", \n" +
+                "      \"deadline\": \"2026-08-10\", \n" +
+                "      \"priority\": \"Medium\", \n" +
+                "      \"status\": \"NotStarted\", \n" +
+                "      \"group\": \"后端组\", \n" +
+                "      \"assigneeName\": \"贺楚\", \n" +
+                "      \"sourceDecisionIndex\": null,\n" +
+                "      \"projectName\": \"必须从会议关联的项目列表中选一个\"\n" + // <--- 加上这一行
+                "    }\n" +
+                "  ]\n" +
+                "}";
+            mergePromptSb.AppendLine($"输出模板：{jsonTemplate}");
+
+            var resp = await CallAIModelAsync(mergePromptSb.ToString(), new AIChatOptions
+            {
+                Temperature = 0.2,
+                MaxTokens = 64000,
+                TimeoutSeconds = 600
+            }, cancellationToken);
+
+            var jsonStart = resp.IndexOf('{');
+            var jsonEnd = resp.LastIndexOf('}');
+            if (jsonStart < 0 || jsonEnd <= jsonStart)
+                throw new Exception("合并阶段AI返回无法提取合法JSON结构");
+            var jsonRaw = resp.Substring(jsonStart, jsonEnd - jsonStart + 1);
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            AIMeetingFullParseResult? result;
+            try
+            {
+                result = JsonSerializer.Deserialize<AIMeetingFullParseResult>(jsonRaw, options);
+            }
+            catch (JsonException)
+            {
+                if (!TryRepairTruncatedJson(jsonRaw, out var repaired))
+                    throw;
+                result = JsonSerializer.Deserialize<AIMeetingFullParseResult>(repaired, options);
+            }
+            if (result == null) throw new Exception("合并阶段JSON反序列化失败");
+            result.Success = true;
+            result.ErrorMessage = string.Empty;
+            return result;
+        }
+
+
+        #region 【全新】会议纪要完整结构化解析（对齐任务文本解析逻辑）
+        public async Task<AIMeetingFullParseResult> ProcessMeetingMinutesFullStructAsync(
+            string meetingContent,
+            List<string>? memberNames = null,
+            List<string>? projectNames = null,
+            CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                // ========== 老师方案：分块解析，每块都携带完整全文上下文 ==========
+                var fullContext = meetingContent; // 完整原文，每一次分块调用都会带上这个全局上下文
+                var chunks = SplitTextIntoChunks(meetingContent, maxChunkSize: 8000);
+
+                // 如果文本很短，只有1块，直接走原有逻辑，不做分块循环，兼容旧逻辑
+                if (chunks.Count <= 1)
                 {
-                    throw new Exception("AI返回无法提取合法JSON结构");
-                }
-                var jsonRaw = response.Substring(jsonStart, jsonEnd - jsonStart + 1);
-
-                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-                AIMeetingFullParseResult? result;
-                try
-                {
-                    result = JsonSerializer.Deserialize<AIMeetingFullParseResult>(jsonRaw, options);
-                }
-                catch (System.Text.Json.JsonException)
-                {
-                    // AI输出被max_tokens截断时，JSON会带有未闭合的对象/数组——
-                    // 回退到最后一个完整元素并补齐括号，抢救已完成的部分，而不是整体解析失败
-                    if (!TryRepairTruncatedJson(jsonRaw, out var repaired))
-                        throw;
-                    System.Diagnostics.Debug.WriteLine("[AI Warning] 检测到JSON输出被截断，已自动修复并丢弃未完成的尾部内容");
-                    result = JsonSerializer.Deserialize<AIMeetingFullParseResult>(repaired, options);
+                    return await ProcessSingleChunkAsync(fullContext, fullContext, memberNames, projectNames, cancellationToken);
                 }
 
-                if (result == null)
-                    throw new Exception("JSON反序列化失败");
+                // 多块场景：循环逐块调用AI
+                var chunkResults = new List<AIMeetingFullParseResult>();
+                foreach (var chunk in chunks)
+                {
+                    // 【重点！】每轮Prompt都传入完整全文 + 当前chunk，指令只提取当前chunk内的信息
+                    var chunkResult = await ProcessSingleChunkAsync(fullContext, chunk, memberNames, projectNames, cancellationToken);
+                    if (!chunkResult.Success)
+                    {
+                        // 任意一块解析失败，可以选择直接报错，或者记录错误继续处理其他块（看业务策略）
+                        throw new Exception($"分块解析失败：{chunkResult.ErrorMessage}");
+                    }
+                    chunkResults.Add(chunkResult);
+                }
 
-                result.Success = true;
-                result.ErrorMessage = string.Empty;
-                return result;
+                // 全部块解析完成 → 执行合并、去重、全局汇总
+                var finalResult = await MergeChunkParseResultsAsync(fullContext, chunkResults, memberNames, projectNames, cancellationToken);
+                return finalResult;
             }
             catch (Exception ex)
             {
@@ -396,6 +399,209 @@ namespace ToDo.Domain.AI
                 };
             }
         }
+
+        /// <summary>
+        /// 单块解析：接收【完整全文上下文】+【当前待解析片段chunk】，只提取当前chunk内的决策和任务
+        /// 复用你原来的Prompt，增加约束：只从当前chunk提取信息，不要重复提取全文
+        /// </summary>
+        private async Task<AIMeetingFullParseResult> ProcessSingleChunkAsync(
+            string fullContext,
+            string currentChunk,
+            List<string>? memberNames,
+            List<string>? projectNames,
+            CancellationToken cancellationToken)
+        {
+            var memberHint = memberNames != null && memberNames.Any()
+                ? $@"
+# 项目成员名单（用于匹配责任人）
+以下是项目组成员的真实姓名，会议纪要中提到的人名可能有错别字或不完整，请从名单中选择最匹配的：
+{string.Join("、", memberNames)}
+规则：
+- 如果能从名单中匹配到具体成员，填写其真实姓名
+- 如果会议纪要中提到「负责人」、「项目经理」等角色指代，填写「负责人」
+- 如果无法匹配，assigneeName 字段填 null
+" : "";
+
+            var projectHint = projectNames != null && projectNames.Count > 1
+      ? $@"
+# 项目归属判定（【最高优先级，强制逐条匹配，严禁批量统一】）
+本次会议关联以下项目：
+{string.Join("\n", projectNames.Select(p => $"- {p}"))}
+针对每一条TaskItems任务，**独立单独判断归属，不允许多条任务全部归到同一个项目！**
+规则：
+1. 必须从上面给定的项目名中选一个，严禁编造不存在的项目名；
+2. 如果任务描述里**明确提到某个项目名**，严格按提到的那个填写；
+3. 如果任务描述里出现项目简称、模块关键词，匹配对应项目；
+4. 只有一条任务完全找不到任何相关线索时，才允许填列表第一个项目；
+✅ 强制示例参考：
+原文：撒豆成兵项目需要完善资料模块，封神榜项目需要添加数据
+任务1：完善撒豆成兵项目资料模块 → projectName = 撒豆成兵
+任务2：添加封神榜项目数据 → projectName = 封神榜
+❌ 禁止错误：两条任务全部写封神榜 / 全部写撒豆成兵
+" : "";
+
+
+            var jsonTemplate = "{\n" +
+               "  \"MeetingPurpose\": \"开会原因总结（1-2句话，简洁概括）\",\n" +
+               "  \"KeyPoints\": \"本次会议讨论了XX。...\",\n" +
+               "  \"Decisions\": [\n" +
+               "    {\n" +
+               "      \"content\": \"决策内容\",\n" +
+               "      \"decisionMaker\": \"结论句说话人姓名\",\n" +
+               "      \"keyQuote\": \"直接促成决策定论的最关键一句原话\",\n" +
+               "      \"originalQuotes\": [\"讨论过程的原话片段\", \"疑问与争辩的原话\", \"决策结论原话\", \"结论后的确认原话\"]\n" +
+               "    }\n" +
+               "  ],\n" +
+               "  \"TaskItems\": [\n" +
+               "    {\n" +
+               "      \"title\": \"任务标题\", \n" +
+               "      \"description\": \"详细说明\", \n" +
+               "      \"deadline\": \"2026-08-10\", \n" +
+               "      \"priority\": \"Medium\", \n" +
+               "      \"status\": \"NotStarted\", \n" +
+               "      \"group\": \"后端组\", \n" +
+               "      \"assigneeName\": \"贺楚\", \n" +
+               "      \"sourceDecisionIndex\": null,\n" +
+               "      \"projectName\": \"必须从会议关联的项目列表中选一个\"\n" + // <--- 加上这一行
+               "    }\n" +
+               "  ]\n" +
+               "}";
+
+            var sb = new StringBuilder();
+            sb.AppendLine("你是专业项目管理助理。下面【完整全文】是整场会议全部内容，【当前待分析片段】是本次你**只需要提取信息的段落**。");
+            sb.AppendLine("【硬性约束】：你**只从「当前待分析片段」里面提取Decisions和TaskItems**；不要从全文重复提取内容。全文仅作为上下文用来理解语境、人名、背景，不提取全文任务。");
+            sb.AppendLine("第一步：阅读完整全文理解全局背景；第二步，只分析【当前待分析片段】，提取这个片段内出现的决策、任务。");
+            sb.AppendLine("第三步：输出JSON。MeetingPurpose、KeyPoints可以基于全文生成，但Decisions、TaskItems**仅来源于当前片段**。");
+            sb.AppendLine();
+            sb.AppendLine(memberHint);
+            sb.AppendLine(projectHint);
+            sb.AppendLine("# 任务类型识别规则");
+            sb.AppendLine("请根据以下规则标记每个任务：");
+            sb.AppendLine("1. NewTask（新增任务）：会议中首次提到的任务，之前没有对应记录，需要创建新任务");
+            sb.AppendLine("2. TaskChange（历史任务变更）：会议中提到的任务与已有任务匹配，但状态/负责人/截止时间/优先级有变化，需要更新已有任务");
+            sb.AppendLine("   - 如果会议中提到某个任务的状态变了（如：已完成→进行中）→ 标记为 TaskChange");
+            sb.AppendLine("   - 如果会议中提到某个任务的负责人变了 → 标记为 TaskChange");
+            sb.AppendLine("   - 如果会议中提到某个任务的截止时间变了 → 标记为 TaskChange");
+            sb.AppendLine("   - 如果会议中提到某个任务的优先级变了 → 标记为 TaskChange");
+            sb.AppendLine("3. 如果无法确定是新增还是变更，默认标记为 NewTask");
+            sb.AppendLine("# 任务识别规则（严格执行）");
+            sb.AppendLine("一条内容如果满足以下任一特征，就视为待办任务：");
+            sb.AppendLine("1. 明确某人要做某事（如：贺楚要完成XX、张三负责XX）");
+            sb.AppendLine("2. 有明确的执行动作+时间要求（如：本周五完成、周三输出、下周评估）");
+            sb.AppendLine("3. 提到需要交付的产出物（如：提供版本、输出方案、完成统计）");
+            sb.AppendLine();
+            sb.AppendLine("# 正例（这些都应该识别为任务）");
+            sb.AppendLine("- 贺楚明确：后端本周完成临界点规则修正 → 任务：修正临界点规则，责任人：贺楚");
+            sb.AppendLine("- 8月5日提供自测版本 → 任务：提供自测版本");
+            sb.AppendLine("- 周三输出初步技术方案评审 → 任务：输出技术方案评审");
+            sb.AppendLine("- 周五落地初稿 → 任务：落地初稿");
+            sb.AppendLine("- 负责人安排下周完成存储用量统计评估 → 任务：存储用量统计评估");
+            sb.AppendLine("- 决策确定「会议准备页改为三个列表展示」→ 落地执行需要改造页面 → 任务：改造会议准备页任务展示，sourceDecisionIndex 填该决策序号");
+            sb.AppendLine();
+            sb.AppendLine("# 反例（这些不应识别为任务）");
+            sb.AppendLine("- 本次会议暂不展开讨论 → 这是说明，不是任务");
+            sb.AppendLine("- 纯讨论过程、纯表态（如「嗯」「明白了」「这个方向可以」）→ 不是任务");
+            sb.AppendLine("- 纯结论性决策且不需要任何后续执行动作（如「暂不设置紧急截止时间，可放慢节奏自行学习」）→ 只作为决策记录，不生成任务");
+            sb.AppendLine();
+            sb.AppendLine("# 决策落地任务识别规则（sourceDecisionIndex）");
+            sb.AppendLine("决策本身是「结论」，但一部分任务正是来源于这些决策的落地执行。提取任务时必须逐条判断：");
+            sb.AppendLine("1. 如果决策的落地需要有人做具体工作（如：改造/调整页面或规则、输出方案或文档、排期执行、按决定推进某事项），必须把该执行工作提取为任务，并将 sourceDecisionIndex 填为该决策在 Decisions 数组中的序号（从1开始）。");
+            sb.AppendLine("2. 任务在会议讨论中直接布置、与任何决策都没有派生关系时，sourceDecisionIndex 填 null。");
+            sb.AppendLine("3. 一条决策可以派生多条任务（每条任务都填同一个决策序号）；一条任务只来源于一条决策，填写最直接对应的那条。");
+            sb.AppendLine("4. 序号必须严格对应本次输出的 Decisions 数组顺序，严禁编造不存在的序号。");
+            sb.AppendLine();
+            sb.AppendLine("# 字段强制规则");
+            sb.AppendLine("1. title：任务短标题，动词+核心对象，严格控制8-20个汉字，禁止大段复制原文；完整上下文、细节全部放到description字段，不要塞到title中。");
+            sb.AppendLine("2. description：任务详细说明，补充会议上下文，完整还原任务背景细节。");
+            sb.AppendLine("3. deadline截止日期规则：");
+            sb.AppendLine("   - 文本出现 本周五、下周一、3天内、12月20日前 等口语时间，自动换算为标准 yyyy-MM-dd");
+            sb.AppendLine("   - 无法推算具体日期填 null");
+            sb.AppendLine($"   - 假设当前系统日期：{AppTime.Now:yyyy-MM-dd}");
+            sb.AppendLine("4. priority优先级规则：");
+            sb.AppendLine("   - High：紧急重要；Medium：常规任务；Low：低优先级跟进事项，默认Medium");
+            sb.AppendLine("5. status状态规则：");
+            sb.AppendLine("   - 默认全部 NotStarted；只有明确说已完成才填 Completed；进行中填 InProgress");
+            sb.AppendLine("6. group分组规则：提到前端、后端、测试、产品、运维等部门/小组填入group，无则null");
+            sb.AppendLine("7. assigneeName责任人：提取人名，无明确责任人填null");
+            sb.AppendLine("8. 过滤&去重规则：只输出真实待办行动项，纯讨论内容、纯表态不生成任务；决策结论本身不重复生成任务，但决策落地所必需的执行工作必须生成任务并标注 sourceDecisionIndex；语义完全一致的重复任务做去重合并，只保留一条。");
+            sb.AppendLine();
+            sb.AppendLine("# 会议决策识别规则");
+            sb.AppendLine("从【当前待分析片段】中提取所有明确做出的决策，包括：");
+            sb.AppendLine("1. 方案确定（如：决定采用XX方案、确定XX技术路线）");
+            sb.AppendLine("2. 方向确认（如：确认下一步往XX方向发展）");
+            sb.AppendLine("3. 规则制定（如：明确XX规则为XX）");
+            sb.AppendLine("4. 资源分配（如：决定由XX负责XX模块）");
+            sb.AppendLine();
+            sb.AppendLine("# 决策字段要求（严格执行）");
+            sb.AppendLine("每条决策包含四个字段：");
+            sb.AppendLine("- content：决策的简要内容（总结归纳，不必是原文）");
+            sb.AppendLine("- decisionMaker：决策拍板人【禁止留空】——优先取决策结论句的说话人（转写原文中\"姓名：\"前缀标明了说话人），其次取主导该讨论并给出最终方案的人；多人共同拍板用顿号并列（如\"乔宽、赵冬\"）；严禁留空、严禁照抄占位符或写\"决策人\"字样；只有原文完全无法判断由谁拍板时才填\"未明确\"并在括号内说明原因，如\"未明确（结论由多人附和，无法确定主导者）\"");
+            sb.AppendLine("- keyQuote：该决策【最关键的一句原话】——讨论中直接促成拍板定论的那句话（明确的结论表态、方案拍板句），必须逐字摘自原文，严禁编造；如果原文没有明确的定论句，取与决策结论最接近的原话");
+            sb.AppendLine("- originalQuotes：【最重要】该决策从话题提出到定论的全部讨论过程原文片段；全部从【当前待分析片段】摘抄，不要去全文摘抄！");
+            sb.AppendLine();
+            sb.AppendLine("# originalQuotes 填写规则（严格执行）：");
+            sb.AppendLine("0. 【标注目标】把该决策从话题提出到定论的全部讨论过程都标注出来，不遗漏任何相关发言；");
+            sb.AppendLine("1. 【锚点】以该决策结论对应的转写句子作为中心点；");
+            sb.AppendLine("2. 【片段范围】完整覆盖：结论形成前的多轮讨论、疑问、争辩全过程 + 结论达成后的简短确认对话（如\"对\"\"好，就这么定\"等认可性回应）；");
+            sb.AppendLine("3. 【真实性】每个片段按原文顺序逐字摘抄，禁止改写、缩写、总结；保留说话人前缀（如\"乔宽：\"），与原文完全一致；所有片段按讨论先后顺序排列，结论句放最后一位；");
+            sb.AppendLine("4. 如果原文中没有与该决策直接对应的语句，则 originalQuotes 填空数组、keyQuote 填空字符串，不要编造。");
+            sb.AppendLine();
+            sb.AppendLine("# KeyPoints 摘要生成规则（简洁连贯）");
+            sb.AppendLine("KeyPoints 必须是一段或两段连贯的完整段落，总长度控制在 200-400 字，要求：");
+            sb.AppendLine("1. 用简洁的段落描述，不要分点、不要换行过多；");
+            sb.AppendLine("2. 第一句概述会议主题和目的，中间说明核心讨论内容，最后总结会议结论；");
+            sb.AppendLine("3. 整个摘要必须是完整的连贯文本，严禁出现省略号或未完成的句子；");
+            sb.AppendLine("4. 不要包含待办事项或任务列表。");
+            sb.AppendLine();
+            sb.AppendLine("# 输出格式");
+            sb.AppendLine("每条任务包含：title、description、deadline、priority、status、group、assigneeName、sourceDecisionIndex，" +
+              "以及 projectName（任务所属项目，必须从本次会议关联的项目列表中选择，多项目会议时禁止全部填同一个）");
+            sb.AppendLine("每条任务包含：title(短标题)、description(详细说明)、deadline(截止日期yyyy-MM-dd)、priority(High/Medium/Low)、status(NotStarted/InProgress/Completed)、group(分组)、assigneeName(责任人姓名)、sourceDecisionIndex(来源决策序号，从1开始；不来源于决策填null)");
+            sb.AppendLine();
+            sb.AppendLine("# 只输出纯JSON格式，不要任何解释、markdown、前言后语，结构如下：");
+            sb.AppendLine(jsonTemplate);
+            sb.AppendLine();
+            sb.AppendLine("【完整全文上下文（仅用于理解背景，不提取任务/决策）】");
+            sb.AppendLine(fullContext);
+            sb.AppendLine();
+            sb.AppendLine("【===== 当前待分析片段，仅从这里提取决策和任务 =====】");
+            sb.AppendLine(currentChunk);
+
+            var prompt = sb.ToString();
+            var response = await CallAIModelAsync(prompt, new AIChatOptions
+            {
+                Temperature = 0.2,
+                MaxTokens = 32000,
+                TimeoutSeconds = 300
+            }, cancellationToken);
+
+            var jsonStart = response.IndexOf('{');
+            var jsonEnd = response.LastIndexOf('}');
+            if (jsonStart < 0 || jsonEnd <= jsonStart)
+            {
+                throw new Exception("单块解析：AI返回无法提取合法JSON结构");
+            }
+            var jsonRaw = response.Substring(jsonStart, jsonEnd - jsonStart + 1);
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            AIMeetingFullParseResult? result;
+            try
+            {
+                result = JsonSerializer.Deserialize<AIMeetingFullParseResult>(jsonRaw, options);
+            }
+            catch (JsonException)
+            {
+                if (!TryRepairTruncatedJson(jsonRaw, out var repaired))
+                    throw;
+                System.Diagnostics.Debug.WriteLine("[AI Warning] 检测到JSON输出被截断，已自动修复并丢弃未完成的尾部内容");
+                result = JsonSerializer.Deserialize<AIMeetingFullParseResult>(repaired, options);
+            }
+            if (result == null)
+                throw new Exception("单块解析JSON反序列化失败");
+            result.Success = true;
+            result.ErrorMessage = string.Empty;
+            return result;
+        }
+
 
         /// <summary>
         /// 修复被 max_tokens 截断的AI输出JSON：扫描括号配对，回退到最后一个完整闭合的

@@ -1,0 +1,15 @@
+@model ToDo.Domain.ProjectGettingStarted
+@if (!Model.HasMembers || !Model.HasDocuments || !Model.HasTask || !Model.HasAuthorizedAgent)
+{
+    <section class="card mb-3" aria-labelledby="getting-started-heading"><details class="card-body" open="@(!Model.HasMembers || !Model.HasDocuments || !Model.HasTask)">
+        <summary class="h5" id="getting-started-heading">@(Model.HasMembers && Model.HasDocuments && Model.HasTask ? "项目准备已就绪 · 可选 AI 资料授权" : "开始使用这个项目")</summary>
+        <p class="small text-muted">沿用现有功能补齐准备，不必额外填一套表。AI 授权可选，不影响人工任务。</p>
+        <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-sm btn-outline-secondary" href="#project-members">@(Model.HasMembers ? "✓ 已添加成员" : "1. 添加项目成员")</a>
+            <a class="btn btn-sm btn-outline-secondary" asp-page="/Projects/Materials" asp-route-projectId="@Model.ProjectId">@(Model.HasDocuments ? "✓ 已有项目资料" : "2. 放入必要资料")</a>
+            <a class="btn btn-sm btn-outline-primary" asp-page="/Tasks/Edit" asp-route-projectId="@Model.ProjectId">@(Model.HasTask ? "✓ 已创建任务" : "3. 创建第一个任务")</a>
+            <a class="btn btn-sm btn-outline-secondary" asp-page="/Projects/Materials" asp-route-projectId="@Model.ProjectId" asp-fragment="agent-permissions">@(Model.HasAuthorizedAgent ? "✓ AI 资料范围已授权" : "可选：确认 AI 资料范围")</a>
+        </div>
+        <p class="small text-muted mt-2 mb-0">只勾选助手确实需要读取的资料分类，不会自动开放全部项目资料。没有可用助手时，联系系统管理员创建。</p>
+    </details></section>
+}

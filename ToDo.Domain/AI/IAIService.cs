@@ -237,7 +237,9 @@ namespace ToDo.Domain.AI
         Task<AIMeetingFullParseResult> ProcessMeetingMinutesFullStructAsync(
             string meetingContent,
             List<string>? memberNames = null,
-            List<string>? projectNames = null);   // 新增
+            List<string>? projectNames = null,
+            CancellationToken cancellationToken = default);
+
 
         // 3. 通用AI对话
         Task<string> GetChatCompletionAsync(string prompt);

@@ -29,6 +29,10 @@ namespace ToDo.Razor.Pages.Account
         public InputModel Input { get; set; } = new();
 
         public string ReturnUrl { get; set; } = string.Empty;
+        public static string SafeReturnUrl(Microsoft.AspNetCore.Mvc.IUrlHelper helper, string? url)
+            => !string.IsNullOrWhiteSpace(url) && helper.IsLocalUrl(url) && url is not ("/" or "~/" or "/Index" or "/Index/")
+                ? url : "/ActionCenter/Index";
+
 
         [TempData]
         public string? ErrorMessage { get; set; }
@@ -53,12 +57,13 @@ namespace ToDo.Razor.Pages.Account
                 ModelState.AddModelError(string.Empty, ErrorMessage);
             }
 
-            ReturnUrl = returnUrl ?? Url.Content("~/");
+            ReturnUrl = SafeReturnUrl(Url, returnUrl);
         }
 
         public async Task<IActionResult> OnPostAsync(string? returnUrl = null)
         {
-            returnUrl ??= Url.Content("~/");
+            ReturnUrl = SafeReturnUrl(Url, returnUrl);
+            returnUrl = ReturnUrl;
 
             if (ModelState.IsValid)
             {
@@ -83,7 +88,7 @@ namespace ToDo.Razor.Pages.Account
                 if (result.Succeeded)
                 {
                     _logger.LogInformation("用户 {UserName} 已登录", Input.UserName);
-                    return RedirectToPage("/ActionCenter/Index");
+                    return LocalRedirect(ReturnUrl);
                 }
                 if (result.RequiresTwoFactor)
                 {

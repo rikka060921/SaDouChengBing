@@ -65,7 +65,10 @@
         <div class="task-assist-result" data-assist-result hidden="@(!hasText)">
             <div class="task-assist-result-heading">
                 <h3>给你的参考建议</h3>
-                <button type="button" class="task-assist-copy" data-assist-copy>复制结果</button>
+                <div class="d-flex flex-wrap gap-2">
+                    @if (Model.CanUpdateProgress) { <button type="button" class="task-assist-copy" data-assist-fill-progress>填入进展说明</button> }
+                    <button type="button" class="task-assist-copy" data-assist-copy>复制结果</button>
+                </div>
             </div>
             <p class="task-assist-result-note">这是辅助建议，不代表任务已完成；请结合实际情况使用。</p>
             <pre class="task-assist-result-text" data-assist-short-result hidden="@isLong">@(isLong ? "" : result)</pre>
