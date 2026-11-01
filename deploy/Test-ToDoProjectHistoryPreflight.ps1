@@ -13,9 +13,11 @@ $end=$source.IndexOf('$SiteRoot=[IO.Path]',[StringComparison]::Ordinal)
 if($start -lt 0 -or $end -le $start){throw 'Cannot locate actual source preflight'}
 # Execute the production statements, not a reimplementation. No IIS, database or package import is invoked.
 $preflight=[scriptblock]::Create($source.Substring($start,$end-$start))
-$connectionFunction=$ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Set-SiteConnection'},$true)
-if(!$connectionFunction){throw 'Cannot locate actual connection resolver'}
-Invoke-Expression $connectionFunction.Extent.Text
+foreach($functionName in @('ConvertTo-IisXPathLiteral','Set-SiteConnection')){
+    $connectionFunction=$ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $functionName},$true)
+    if(!$connectionFunction){throw 'Cannot locate actual connection resolver'}
+    Invoke-Expression $connectionFunction.Extent.Text
+}
 if(!$OutputDirectory){$OutputDirectory=Join-Path (Split-Path $PSScriptRoot -Parent) ('artifacts/history-preflight-'+[guid]::NewGuid().ToString('N'))}
 if(Test-Path -LiteralPath $OutputDirectory){throw 'Use a new fixture directory'}
 [IO.Directory]::CreateDirectory($OutputDirectory)|Out-Null
@@ -53,11 +55,34 @@ Check-Source $false 'Staged tracked change rejects'
 }
 # Mock only the IIS provider; use the real filesystem for representative published web.config layouts.
 $pool='fixture'
-$script:poolVariables=@()
+$script:poolXml=[xml]'<configuration><system.applicationHost><applicationPools><add name="fixture"><environmentVariables /></add><add name="other"><environmentVariables><add name="ConnectionStrings__DefaultConnection" value="wrong-pool" /></environmentVariables></add></applicationPools></system.applicationHost></configuration>'
+$script:poolReadFails=$false
+$script:malformedAttribute=$false
+$script:duplicateAttribute=$false
+$script:legacyProviderReads=0
 function Get-Item {
     param([string]$Path)
     if($Path -notlike 'IIS:*'){throw 'Unexpected provider access'}
-    return [pscustomobject]@{environmentVariables=$script:poolVariables}
+    $script:legacyProviderReads++
+    # Reproduce the provider's container: no name/value properties on environmentVariables itself.
+    return [pscustomobject]@{environmentVariables=[pscustomobject]@{Collection=@()}}
+}
+function Get-WebConfigurationProperty {
+    [CmdletBinding()]
+    param([string]$PSPath,[string]$Filter,[string]$Name)
+    if($PSPath -ne 'MACHINE/WEBROOT/APPHOST' -or $Name -ne 'value' -or $ErrorActionPreference -ne 'Stop'){throw 'Unexpected configuration query'}
+    if($script:poolReadFails){throw 'Fixture IIS configuration access denied'}
+    if($script:malformedAttribute){return [pscustomobject]@{Unexpected='shape'}}
+    if($script:duplicateAttribute){return @([pscustomobject]@{Value='first'},[pscustomobject]@{Value='second'})}
+    # Actual cmdlet returns configuration attributes with Value, not environment entries with name.
+    foreach($item in $script:poolXml.SelectNodes('/configuration/'+$Filter)){
+        [pscustomobject]@{Value=$item.GetAttribute($Name)}
+    }
+}
+function Expect-ConnectionFailure([string]$Pattern,[string]$Label){
+    $message=''
+    try{Set-SiteConnection $repo}catch{$message=$_.Exception.Message}
+    Assert ($message -match $Pattern) $Label
 }
 $originalConnection=$env:ConnectionStrings__DefaultConnection
 try{
@@ -67,7 +92,7 @@ try{
     Write-Fixture (Join-Path $repo 'web.config') '<configuration><system.webServer><aspNetCore /></system.webServer></configuration>'
     Set-SiteConnection $repo
     Assert ([string]::IsNullOrEmpty($env:ConnectionStrings__DefaultConnection)) 'Missing environmentVariables does not fail strict mode'
-    $script:poolVariables=@([pscustomobject]@{name='ConnectionStrings__DefaultConnection';value='pool-fixture'})
+    $script:poolXml=[xml]'<configuration><system.applicationHost><applicationPools><add name="fixture"><environmentVariables><add name="Unrelated" value="not-a-connection" /><add name="ConnectionStrings__DefaultConnection" value="pool-fixture" /></environmentVariables></add><add name="other"><environmentVariables><add name="ConnectionStrings__DefaultConnection" value="wrong-pool" /></environmentVariables></add></applicationPools></system.applicationHost></configuration>'
     Set-SiteConnection $repo
     Assert ($env:ConnectionStrings__DefaultConnection -eq 'pool-fixture') 'Pool override is preserved without web override'
     Write-Fixture (Join-Path $repo 'web.config') '<configuration><system.webServer><aspNetCore><environmentVariables><environmentVariable name="ConnectionStrings__DefaultConnection" value="root-fixture" /></environmentVariables></aspNetCore></system.webServer></configuration>'
@@ -76,5 +101,31 @@ try{
     Write-Fixture (Join-Path $repo 'web.config') '<configuration><location path="."><system.webServer><aspNetCore><environmentVariables><environmentVariable name="ConnectionStrings__DefaultConnection" value="location-fixture" /></environmentVariables></aspNetCore></system.webServer></location><location path="other"><system.webServer><aspNetCore><environmentVariables><environmentVariable name="ConnectionStrings__DefaultConnection" value="wrong-scope" /></environmentVariables></aspNetCore></system.webServer></location></configuration>'
     Set-SiteConnection $repo
     Assert ($env:ConnectionStrings__DefaultConnection -eq 'location-fixture') 'Published location wrapper is supported; child-location overrides excluded'
+    Assert ($script:legacyProviderReads -eq 0) 'Does not enumerate provider environmentVariables container'
+    $script:poolReadFails=$true
+    Expect-ConnectionFailure 'access denied' 'IIS read failure stops even if web.config has override'
+    Assert ($env:ConnectionStrings__DefaultConnection -eq 'location-fixture') 'Failed lookup does not replace process connection with fallback'
+    $script:poolReadFails=$false
+    $script:malformedAttribute=$true
+    Expect-ConnectionFailure 'Unexpected IIS configuration attribute shape' 'Malformed IIS attribute fails closed'
+    $script:malformedAttribute=$false
+    $script:duplicateAttribute=$true
+    Expect-ConnectionFailure 'ambiguous' 'Multiple matches fail closed'
+    $script:duplicateAttribute=$false
+    [xml]$names='<pools />'
+    foreach($testName in @('plain',"owner's pool",'owner"pool',('owner'+[char]39+[char]34+'pool'))){
+        $element=$names.CreateElement('pool');$element.SetAttribute('name',$testName);[void]$names.DocumentElement.AppendChild($element)
+        $literal=ConvertTo-IisXPathLiteral $testName
+        $matches=$names.SelectNodes('/pools/pool[@name='+$literal+']')
+        Assert ($matches.Count -eq 1 -and $matches[0].GetAttribute('name') -ceq $testName) 'XPath literal matches exactly with quote characters'
+    }
+    $pool="owner's pool"
+    $script:poolXml=[xml]'<configuration><system.applicationHost><applicationPools><add name="owner&apos;s pool"><environmentVariables><add name="ConnectionStrings__DefaultConnection" value="quoted-pool" /></environmentVariables></add></applicationPools></system.applicationHost></configuration>'
+    $emptyRoot=Join-Path $OutputDirectory 'empty-root';[IO.Directory]::CreateDirectory($emptyRoot)|Out-Null
+    Set-SiteConnection $emptyRoot
+    Assert ($env:ConnectionStrings__DefaultConnection -eq 'quoted-pool') 'Quoted pool name resolves through exact configuration query'
+    $reproduced=$false
+    try{$legacy=Get-Item 'IIS:\AppPools\fixture';foreach($entry in $legacy.environmentVariables){$null=$entry.name}}catch{$reproduced=$_.FullyQualifiedErrorId -match 'PropertyNotFoundStrict'}
+    Assert $reproduced 'Old container enumeration reproduces server PropertyNotFoundStrict'
 }finally{$env:ConnectionStrings__DefaultConnection=$originalConnection}
 Write-Host "$script:checks checks passed on PowerShell $($PSVersionTable.PSVersion). No IIS or database changes. Fixtures: $OutputDirectory"

@@ -46,10 +46,25 @@ $toolOutput=Join-Path $work 'tool'
 if($LASTEXITCODE -ne 0){throw '补录工具编译失败，未更改站点和数据库'}
 $tool=Join-Path $toolOutput 'ToDo.HistoryBackfill.dll'
 $originalConnection=$env:ConnectionStrings__DefaultConnection
+function ConvertTo-IisXPathLiteral([string]$Value){
+    if(!$Value.Contains("'")){return "'"+$Value+"'"}
+    if(!$Value.Contains('"')){return '"'+$Value+'"'}
+    $parts=@($Value.Split([char]39)|ForEach-Object{"'"+$_+"'"})
+    return 'concat('+($parts -join ', "''", ')+')'
+}
 function Set-SiteConnection([string]$Root){
     $script:siteConnection=$null
-    $poolConfig=Get-Item ('IIS:\AppPools\'+$pool)
-    foreach($item in $poolConfig.environmentVariables){if($item.name -eq 'ConnectionStrings__DefaultConnection'){$script:siteConnection=[string]$item.value}}
+    # IIS exposes environmentVariables as a configuration container, not an array of name/value objects.
+    # Query the specific attribute; do not enumerate the provider's container or ignore read errors.
+    $poolLiteral=ConvertTo-IisXPathLiteral $pool
+    $filter="system.applicationHost/applicationPools/add[@name=$poolLiteral]/environmentVariables/add[@name='ConnectionStrings__DefaultConnection']"
+    $poolAttributes=@(Get-WebConfigurationProperty -PSPath 'MACHINE/WEBROOT/APPHOST' -Filter $filter -Name 'value' -ErrorAction Stop)
+    if($poolAttributes.Count -gt 1){throw 'IIS connection override is ambiguous; import was not started.'}
+    if($poolAttributes.Count -eq 1){
+        $valueProperty=$poolAttributes[0].PSObject.Properties['Value']
+        if($null -eq $valueProperty){throw 'Unexpected IIS configuration attribute shape; import was not started.'}
+        $script:siteConnection=[string]$valueProperty.Value
+    }
     $configFile=Join-Path $Root 'web.config'
     if(Test-Path -LiteralPath $configFile){
         [xml]$config=[IO.File]::ReadAllText($configFile)
@@ -73,21 +88,24 @@ function Wait-Pool([string]$State){
 $wasRunning=(Get-WebAppPoolState -Name $pool).Value -eq 'Started'
 $stopped=$false
 try{
+    Write-Host 'History stage: preview (no database writes or pool stop yet).'
     Run-Tool $previousRelease @()
     if(!$Apply){Write-Host 'Preview only. No database records, app-pool state or IIS release were changed. Use -Apply to back up and import, optionally -Deploy.';return}
     if(!$MySqlDumpPath){$command=Get-Command mysqldump.exe -ErrorAction SilentlyContinue;if($command){$MySqlDumpPath=$command.Source}else{$candidate=Get-ChildItem -Path (Join-Path $env:ProgramFiles 'MySQL') -Filter mysqldump.exe -Recurse -File -ErrorAction SilentlyContinue|Select-Object -First 1;if($candidate){$MySqlDumpPath=$candidate.FullName}}}
     if(!$MySqlDumpPath -or !(Test-Path -LiteralPath $MySqlDumpPath)){throw '找不到 mysqldump.exe，请用 -MySqlDumpPath 指定本机备份工具；尚未停止站点或补录'}
+    Write-Host 'History stage: stop target pool and back up database/runtime files.'
     if((Get-WebAppPoolState -Name $pool).Value -ne 'Stopped'){$stopped=$true;Stop-WebAppPool -Name $pool;Wait-Pool 'Stopped'}
     $backup=Join-Path $work 'database-before.sql'
     Run-Tool $previousRelease @('--backup-output',$backup,'--mysql-dump',$MySqlDumpPath)
     foreach($relative in @('App_Data','wwwroot\uploads')){$source=Join-Path $previousRelease $relative;if(Test-Path -LiteralPath $source -PathType Container){Copy-ToDoRuntimeDirectory -Source $source -Destination (Join-Path (Join-Path $work 'runtime') $relative)|Out-Null}}
     Copy-Item -LiteralPath (Join-Path $previousRelease 'web.config') -Destination (Join-Path $work 'previous-web.config')
     @{Site=$SiteName;PreviousRelease=$previousRelease;DatabaseBackup=$backup;PackageSHA256=(Get-FileHash -LiteralPath $packageFile.FullName -Algorithm SHA256).Hash;RecordedAt=[DateTimeOffset]::UtcNow.ToString('o')}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $work 'backup-receipt.json') -Encoding UTF8
-    if($Deploy){& (Join-Path $SourcePath 'deploy\Deploy-ToDo-Iis.ps1') -SourcePath $SourcePath -SiteName $SiteName -AppPoolName $pool -SiteRoot $SiteRoot -HealthCheckUrl 'http://127.0.0.1/health/ready' -HealthCheckHost ([uri]$BaseUrl).Host}
+    if($Deploy){Write-Host 'History stage: deploy target IIS site.';& (Join-Path $SourcePath 'deploy\Deploy-ToDo-Iis.ps1') -SourcePath $SourcePath -SiteName $SiteName -AppPoolName $pool -SiteRoot $SiteRoot -HealthCheckUrl 'http://127.0.0.1/health/ready' -HealthCheckHost ([uri]$BaseUrl).Host}
     $current=[IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables([string](Get-Website -Name $SiteName).PhysicalPath))
     if(!$current.StartsWith($SiteRoot+'\releases\',[StringComparison]::OrdinalIgnoreCase)){throw '部署后的目录不在目标站点 releases 下，停止补录'}
     if((Get-WebAppPoolState -Name $pool).Value -ne 'Stopped'){$stopped=$true;Stop-WebAppPool -Name $pool;Wait-Pool 'Stopped'}
     $report=Join-Path $work 'import-result.json'
+    Write-Host 'History stage: apply history package (backup completed).'
     Run-Tool $current @('--apply','--backup',$backup,'--report',$report)
     $result=Get-Content -LiteralPath $report -Raw|ConvertFrom-Json
     Write-Host "Local import verified. Project ID: $($result.Result.ProjectId). Backup and report: $work"
