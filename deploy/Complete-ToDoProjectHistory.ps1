@@ -16,8 +16,9 @@ $ErrorActionPreference='Stop'
 Import-Module WebAdministration
 . (Join-Path $PSScriptRoot 'ToDoRuntimeData.ps1')
 $SourcePath=(Resolve-Path -LiteralPath $SourcePath).Path
-& git -C $SourcePath status --porcelain --untracked-files=all | Tee-Object -Variable sourceChanges | Out-Null
-if($LASTEXITCODE -ne 0 -or $sourceChanges){throw '源码目录不干净或 Git 检查失败，请先保留并处理本地修改；未更改站点或数据库'}
+$sourceChanges=@(& git -C $SourcePath status --porcelain --untracked-files=all)
+$gitStatusExitCode=$LASTEXITCODE
+if($gitStatusExitCode -ne 0 -or $sourceChanges.Count -gt 0){throw '源码目录不干净或 Git 检查失败，请先保留并处理本地修改；未更改站点或数据库'}
 $SiteRoot=[IO.Path]::GetFullPath($SiteRoot).TrimEnd('\')
 $packageFile=Get-Item -LiteralPath $PackageZip -ErrorAction Stop
 $site=Get-Website -Name $SiteName -ErrorAction Stop
@@ -50,7 +51,13 @@ function Set-SiteConnection([string]$Root){
     $poolConfig=Get-Item ('IIS:\AppPools\'+$pool)
     foreach($item in $poolConfig.environmentVariables){if($item.name -eq 'ConnectionStrings__DefaultConnection'){$script:siteConnection=[string]$item.value}}
     $configFile=Join-Path $Root 'web.config'
-    if(Test-Path -LiteralPath $configFile){[xml]$config=[IO.File]::ReadAllText($configFile);foreach($item in $config.configuration.'system.webServer'.aspNetCore.environmentVariables.environmentVariable){if($item.name -eq 'ConnectionStrings__DefaultConnection'){$script:siteConnection=[string]$item.value}}}
+    if(Test-Path -LiteralPath $configFile){
+        [xml]$config=[IO.File]::ReadAllText($configFile)
+        # Published ASP.NET Core web.config may wrap system.webServer in location; absent overrides are valid.
+        foreach($item in $config.SelectNodes('/configuration/system.webServer/aspNetCore/environmentVariables/environmentVariable | /configuration/location[@path="."]/system.webServer/aspNetCore/environmentVariables/environmentVariable')){
+            if($item.GetAttribute('name') -eq 'ConnectionStrings__DefaultConnection'){$script:siteConnection=$item.GetAttribute('value')}
+        }
+    }
     # When no IIS override exists, the tool reads appsettings.Production.json; never inherit an unrelated shell DB override.
     $env:ConnectionStrings__DefaultConnection=$script:siteConnection
 }
