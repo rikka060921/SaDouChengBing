@@ -10,6 +10,7 @@
     <div class="mb-4">
         <h1 class="page-heading">@Model.ProjectName · 项目历程</h1>
         <p class="page-subtitle">按原始发生时间查看有来源的历史节点。补录时间与原始时间分开，不把旧提交伪装成任务或会议。</p>
+        <a asp-page="Development" asp-route-projectId="@Model.ProjectId">查看逐条开发记录、Git 署名与真实补录操作 →</a>
     </div>
     @if (TempData["HistoryMessage"] is string message)
     {

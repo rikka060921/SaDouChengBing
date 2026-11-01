@@ -110,5 +110,61 @@
     "title": "正式试用前的导航和部署完善",
     "summary": "工作台导航与联网搜索状态提示调整；增加 IIS 搜索密钥配置脚本，修复旧版本目录被占用时的清理失败。服务器搜索全链路效果仍需真实执行验证。",
     "sources": "Git: 8bc2da7, 545aa3e, 99a3de7"
+  },
+  {
+    "key": "sadou-2026-10-history-archive",
+    "period": "2026-10-12—13",
+    "sortDate": "2026-10-13",
+    "title": "正式项目与只读历史档案建立",
+    "summary": "独立项目历程、负责人转移和历史任务/会议只读档案进入代码库。历史来源与当前任务分开，避免过期催办、重复派单和伪造验收；原站补录结果需与代码证据分别核对。",
+    "sources": "Git: e11ff29, 81acd0f, b4704c7; docs/项目历史档案与补录.md"
+  },
+  {
+    "key": "sadou-2026-10-runtime-recovery",
+    "period": "2026-10-13",
+    "sortDate": "2026-10-13",
+    "title": "IIS 原件目录与长路径恢复修复",
+    "summary": "处理 App_Data 重复嵌套、文件复制与 Windows 长路径问题，恢复时保留不同内容和旧目录；部署代码修改本身不等于所有线上原件已恢复。",
+    "sources": "Git: a9463ba, 0fd6173; docs/IIS运行文件复制与恢复.md"
+  },
+  {
+    "key": "sadou-2026-10-meeting-markdown",
+    "period": "2026-10-18",
+    "sortDate": "2026-10-18",
+    "title": "会议 Markdown 附件支持",
+    "summary": "新建与编辑会议纪要支持上传 Markdown 附件，保留既有文件权限与上传校验。",
+    "sources": "Git: c6d534e"
+  },
+  {
+    "key": "sadou-2026-10-document-workflow",
+    "period": "2026-10-23",
+    "sortDate": "2026-10-23",
+    "title": "资料原件、AI 修订与图片模型能力边界完善",
+    "summary": "区分原件预览与提取正文，Agent 修订保留来源与版本；图片按配置的模型能力接入，不把文本模型当作视觉模型。",
+    "sources": "Git: 2705d30; docs/项目资料原件与AI修订.md"
+  },
+  {
+    "key": "sadou-2026-10-meeting-preparation",
+    "period": "2026-10-17—28",
+    "sortDate": "2026-10-28",
+    "title": "会前准备、纪要解析与关联事项调整",
+    "summary": "多次提交调整会前准备汇总、会议纪要与会前准备关联、解析取消参数以及对应关联事项。每次修改保留独立 Git 署名，不将共同阶段强行归为某个人完成。",
+    "sources": "Git: 7e74764, ecbd850, c8dadaa, a744718"
+  },
+  {
+    "key": "sadou-2026-11-small-team-workflow",
+    "period": "2026-11-01",
+    "sortDate": "2026-11-01",
+    "title": "小团队工作台与资料人工校订",
+    "summary": "统一登录返回和根入口，在待我处理中更新进展、提交验收；增加资料正文/草稿校订、并发保护、会议概览和轻量项目引导。保留高级配置；本地回归与浏览器检查不等于已部署服务器。",
+    "sources": "Git: c5a5c96; docs/小团队工作流程优化-2026-11-01.md"
+  },
+  {
+    "key": "sadou-2026-11-history-completion",
+    "period": "2026-11-01",
+    "sortDate": "2026-11-01",
+    "title": "完整开发记录、人员与跨环境资料补录",
+    "summary": "增加逐条开发记录与人员来源展示；按项目名和用户名跨环境匹配，补齐旧任务、会议及原件，不照搬数据库编号。提供可重复执行的事务补录、文件校验与恢复、服务器备份部署脚本；服务器实际结果须单独执行验证。",
+    "sources": "代码：ToDo.Domain/ProjectHistoryBackfillService.cs、tools/ToDo.HistoryBackfill；文档：docs/历史开发记录补全与部署-2026-11-01.md；具体提交 SHA 见开发记录。"
   }
 ]

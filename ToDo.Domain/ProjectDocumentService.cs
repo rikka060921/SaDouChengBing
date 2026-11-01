@@ -47,6 +47,7 @@ public class ProjectDocumentService
             .FirstOrDefaultAsync(d => d.Id == versionId && d.ProjectId == projectId, cancellationToken);
         
         if (version == null) return null;
+        await ProjectHistoricalDocumentPolicy.RequireManagerAsync(_context,projectId,userId,version.FileName,cancellationToken);
 
         var currentDoc = await _context.ProjectDocuments
             .FirstOrDefaultAsync(d => d.ProjectId == projectId && d.FileName == version.FileName && d.IsCurrent, cancellationToken);
@@ -88,6 +89,7 @@ public class ProjectDocumentService
         if (string.IsNullOrWhiteSpace(safeName)) throw new InvalidOperationException("文件名无效");
 
         await ProjectLifecycleRules.RequireActiveAsync(_context, projectId, cancellationToken);
+        await ProjectHistoricalDocumentPolicy.RequireManagerAsync(_context,projectId,userId,safeName,cancellationToken);
         var uploadRoot = GetSecureUploadRoot(projectId);
         Directory.CreateDirectory(uploadRoot);
         var storageName = $"{Guid.NewGuid():N}_{safeName}";
@@ -146,6 +148,7 @@ public class ProjectDocumentService
         if (string.IsNullOrWhiteSpace(safeName)) throw new InvalidOperationException("文件名无效");
 
         await ProjectLifecycleRules.RequireActiveAsync(_context, projectId, cancellationToken);
+        await ProjectHistoricalDocumentPolicy.RequireManagerAsync(_context,projectId,userId,safeName,cancellationToken);
         var uploadRoot = GetSecureUploadRoot(projectId);
         Directory.CreateDirectory(uploadRoot);
         var storageName = $"{Guid.NewGuid():N}_{safeName}";

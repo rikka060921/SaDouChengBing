@@ -1,0 +1,48 @@
+@page
+@model ToDo.Razor.Pages.Projects.DevelopmentModel
+@{
+    ViewData["Title"]="开发记录";ViewData["ProjectId"]=Model.ProjectId;ViewData["ProjectSection"]="development";
+}
+<div class="container py-4">
+    <partial name="_ProjectNav" view-data="ViewData" />
+    <h1 class="page-heading">@Model.ProjectName · 开发记录</h1>
+    <p class="page-subtitle">追溯项目从雏形到当前版本的人员与修改。Git 提交是代码证据，不等于任务验收、部署成功或当年的系统操作日志。</p>
+    @if(Model.Error!=null){<div class="alert alert-danger" role="alert">@Model.Error</div>}
+    else if(Model.Ledger==null){<div class="alert alert-info">尚未补录开发记录；已有任务、会议和资料不受影响。</div>}
+    else
+    {
+        <div class="card mb-3"><div class="card-body">
+            <div class="d-flex flex-wrap gap-3"><strong>@Model.Ledger.Changes.Count 条 Git 修改</strong><span>@Model.Ledger.Changes.Select(c=>c.Author).Distinct().Count() 种 Git 显示署名（不等于相同数量的自然人）</span><span>资料补录：@Model.SourceDocument!.UploadedAt.ToString("yyyy-MM-dd HH:mm")</span></div>
+            <div class="small text-muted mt-2 text-break">来源版本：@Model.Ledger.SourceHead。下面时间采用 Git 自身记录，与补录时间分开；署名中嵌入的邮箱已隐藏，敏感内容安全摘录。这是完整提交索引，不是完整代码镜像，原始历史仍以 Git 为准。</div>
+        </div></div>
+        <details class="card mb-3"><summary class="card-header">团队参与人员与账号匹配</summary><div class="card-body row g-3">
+        @foreach(var item in Model.People)
+        {<div class="col-12 col-md-6"><strong>@item.Person.Name</strong><div class="small">@item.Person.Responsibility</div><div class="small text-muted">@item.Person.UserName · @item.Account</div></div>}
+            <p class="small text-muted mb-0">职责来自已确认的团队安排，不倒推每次提交由谁完成。历史贡献者保留 Git 署名；未知别名不强行映射、不自动创建账号或授予项目权限。</p>
+        </div></details>
+        <form method="get" class="row g-2 align-items-end mb-3">
+            <input type="hidden" asp-for="ProjectId" />
+            <div class="col-12 col-md-4"><label asp-for="Author" class="form-label">Git 署名</label><select asp-for="Author" class="form-select"><option value="">全部署名</option>@foreach(var author in Model.Ledger.Changes.Select(c=>c.Author).Distinct().Order()){<option value="@author">@author</option>}</select></div>
+            <div class="col-12 col-md-5"><label asp-for="Search" class="form-label">修改说明或提交编号</label><input asp-for="Search" maxlength="200" class="form-control" /></div>
+            <div class="col-12 col-md-3 d-flex gap-2"><button class="btn btn-primary">查询</button><a asp-page="Development" asp-route-projectId="@Model.ProjectId" class="btn btn-outline-secondary">重置</a></div>
+        </form>
+        <p class="small text-muted">共匹配 @Model.Total 条，每页 30 条。展开可看修改说明和涉及文件；合并提交的文件差异以 Git 为准。</p>
+        @foreach(var change in Model.Changes)
+        {
+            <details class="card mb-2"><summary class="card-body"><span class="fw-semibold text-break">@change.Subject</span><span class="d-block small text-muted mt-1">@change.CommittedAt.ToOffset(TimeSpan.FromHours(8)).ToString("yyyy-MM-dd HH:mm") · Git 署名 @change.Author · @change.Commit[..8]</span></summary>
+                <div class="card-body border-top"><div class="small text-break">完整提交：@change.Commit<br />作者时间：@change.AuthoredAt.ToOffset(TimeSpan.FromHours(8)).ToString("yyyy-MM-dd HH:mm zzz")</div>
+                    @if(!string.IsNullOrWhiteSpace(change.Message)){<pre class="text-wrap mt-2">@change.Message</pre>}
+                    <div class="small text-muted">记录到 @change.FileCount 个文件路径，展示前 @change.Files.Count 个；不将文件数当作工作量评分。</div>
+                    <ul class="small text-break mt-2">@foreach(var file in change.Files){<li>@file</li>}</ul>
+                </div>
+            </details>
+        }
+        <nav class="d-flex flex-wrap justify-content-between align-items-center gap-2 my-3" aria-label="开发记录分页">
+            @if(Model.PageNumber>1){<a asp-page="Development" asp-route-projectId="@Model.ProjectId" asp-route-Author="@Model.Author" asp-route-Search="@Model.Search" asp-route-PageNumber="@(Model.PageNumber-1)" class="btn btn-outline-secondary">上一页</a>}else{<span></span>}
+            <span>第 @Model.PageNumber / @Model.TotalPages 页</span>
+            @if(Model.PageNumber<Model.TotalPages){<a asp-page="Development" asp-route-projectId="@Model.ProjectId" asp-route-Author="@Model.Author" asp-route-Search="@Model.Search" asp-route-PageNumber="@(Model.PageNumber+1)" class="btn btn-outline-secondary">下一页</a>}else{<span></span>}
+        </nav>
+        @if(Model.Imports.Any())
+        {<details class="card mt-4"><summary class="card-header">真实补录操作记录（与历史提交分开）</summary><div class="card-body">@foreach(var log in Model.Imports){<div class="border-bottom py-2"><strong>@(log.OperatedByRealName??log.OperatedByUserName)</strong> · @log.OperatedAt.ToString("yyyy-MM-dd HH:mm")<p class="small mb-1">@log.AfterContent</p></div>}</div></details>}
+    }
+</div>
