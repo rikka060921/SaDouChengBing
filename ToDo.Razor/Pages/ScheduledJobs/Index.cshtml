@@ -181,7 +181,7 @@
                         <td>
                             @if (checkpoint.LastDailyWorkSummaryId.HasValue)
                             {
-                                <a asp-page="/DailySummary/Index" asp-route-selectDate="@checkpoint.LastDailyWorkSummary?.SummaryDate.ToString("yyyy-MM-dd")" asp-route-userId="@checkpoint.UserId">
+                                <a asp-page="/DailySummary/Details" asp-route-selectDate="@checkpoint.LastDailyWorkSummary?.SummaryDate.ToString("yyyy-MM-dd")" asp-route-userId="@checkpoint.UserId">
                                     @(checkpoint.LastDailyWorkSummary?.Title ?? $"个人日报 #{checkpoint.LastDailyWorkSummaryId}")
                                 </a>
                             }

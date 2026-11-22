@@ -11,7 +11,27 @@ using ToDo.Entities.DailySummary;
 namespace ToDo.Razor.Pages.DailySummary;
 
 [Authorize]
-public class IndexModel(ApplicationDbContext context, ILogger<IndexModel> logger) : PageModel
+public sealed class IndexModel(ApplicationDbContext context, ILogger<IndexModel> logger) : DailySummaryPageModel(context, logger)
+{
+    public async Task<IActionResult> OnGetAsync()
+    {
+        // Keep links shared by older releases usable while separating history from the report body.
+        if (Request.Query.ContainsKey(nameof(SelectDate)))
+        {
+            return RedirectToPage("./Details", new
+            {
+                selectDate = SelectDate.ToString("yyyy-MM-dd"),
+                userId = UserId,
+                filterStartDate = FilterStartDate?.ToString("yyyy-MM-dd"),
+                filterEndDate = FilterEndDate?.ToString("yyyy-MM-dd")
+            });
+        }
+        await LoadAsync(includeHistory: true);
+        return Page();
+    }
+}
+
+public abstract class DailySummaryPageModel(ApplicationDbContext context, ILogger logger) : PageModel
 {
     [BindProperty(SupportsGet = true)] public DateTime SelectDate { get; set; } = AppTime.Today;
     [BindProperty(SupportsGet = true)] public int? UserId { get; set; }
@@ -28,7 +48,7 @@ public class IndexModel(ApplicationDbContext context, ILogger<IndexModel> logger
     public bool CanGenerateForCurrentUser { get; set; } = true;
     public bool IsAnyProjectLeader { get; set; }
 
-    public async Task OnGetAsync()
+    protected async Task LoadAsync(bool includeHistory)
     {
         Response.Headers.CacheControl = "private, no-store";
         try
@@ -46,24 +66,28 @@ public class IndexModel(ApplicationDbContext context, ILogger<IndexModel> logger
             IsAnyProjectLeader = await MemberReportAccess.Projects(context, actor).AnyAsync();
             var projects = context.Project.Where(p => !p.IsDeleted && (actor.Role == UserRole.systemAdmin
                 || p.LeaderUserId == actorId || context.ProjectUsers.Any(m => m.ProjectId == p.Id && m.UserId == actorId))).Select(p => p.Id);
-            var day = SelectDate.Date;
-            var nextDay = day.AddDays(1);
-            Summary = await context.DailyWorkSummaries.AsNoTracking().Where(s => s.UserId == targetId
-                && s.SummaryDate >= day && s.SummaryDate < nextDay && !s.IsDeleted)
-                .OrderByDescending(s => s.CreateTime).ThenByDescending(s => s.Id).FirstOrDefaultAsync();
-            if (Summary != null)
-                ProjectDetailList = await context.DailyProjectSummaryDetails.AsNoTracking()
-                    .Where(d => d.DailySummaryId == Summary.Id && !d.IsDeleted && projects.Contains(d.ProjectId))
-                    .OrderBy(d => d.ProjectId).ToListAsync();
             var service = new WorkReportService(context, null!);
-            ManualEntries = await service.PersonalNotesAsync(actorId, targetId, SelectDate, HttpContext.RequestAborted);
-            var notes = await service.PersonalNotesAsync(actorId, targetId, null, HttpContext.RequestAborted, FilterStartDate, FilterEndDate);
             var projectReports = context.DailyReport.AsNoTracking().Include(r => r.Project).Where(r => r.ReporterId == targetId
                 && r.ReportType == 1 && !r.IsDeleted && projects.Contains(r.ProjectId));
-            ProjectDiaryReports = await projectReports.Where(r => r.ReportDate >= day && r.ReportDate < nextDay)
-                .OrderByDescending(r => r.CreatedAt).Take(100).ToListAsync();
+            if (!includeHistory)
+            {
+                var day = SelectDate.Date;
+                var nextDay = day.AddDays(1);
+                Summary = await context.DailyWorkSummaries.AsNoTracking().Where(s => s.UserId == targetId
+                    && s.SummaryDate >= day && s.SummaryDate < nextDay && !s.IsDeleted)
+                    .OrderByDescending(s => s.CreateTime).ThenByDescending(s => s.Id).FirstOrDefaultAsync();
+                if (Summary != null)
+                    ProjectDetailList = await context.DailyProjectSummaryDetails.AsNoTracking()
+                        .Where(d => d.DailySummaryId == Summary.Id && !d.IsDeleted && projects.Contains(d.ProjectId))
+                        .OrderBy(d => d.ProjectId).ToListAsync();
+                ManualEntries = await service.PersonalNotesAsync(actorId, targetId, SelectDate, HttpContext.RequestAborted);
+                ProjectDiaryReports = await projectReports.Where(r => r.ReportDate >= day && r.ReportDate < nextDay)
+                    .OrderByDescending(r => r.CreatedAt).Take(100).ToListAsync();
+                return;
+            }
+
+            var notes = await service.PersonalNotesAsync(actorId, targetId, null, HttpContext.RequestAborted, FilterStartDate, FilterEndDate);
             ManualDates = notes.Select(n => n.ReportDate).ToHashSet();
-            // Always load history, including when the selected day has no generated summary.
             var history = context.DailyWorkSummaries.AsNoTracking().Where(s => s.UserId == targetId && !s.IsDeleted);
             if (FilterStartDate.HasValue) history = history.Where(s => s.SummaryDate >= FilterStartDate.Value.Date);
             if (FilterEndDate.HasValue)

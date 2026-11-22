@@ -2,7 +2,7 @@
 @model ToDo.Razor.Pages.DailySummary.WriteModel
 @{ ViewData["Title"] = "填写人工日报"; }
 <div class="container py-4" style="max-width:1000px">
-    <a asp-page="./Index" asp-route-selectDate="@Model.ReportDate.ToString("yyyy-MM-dd")">← 我的日报</a>
+    <a asp-page="./Index">← 我的日报</a>
     <h1 class="h3 mt-3">填写或校订日报</h1>
     <p class="text-muted">补充系统没有记录的工作，或注明对自动汇总的更正。人工内容单独保存，重新生成不会覆盖；每次保存留存历史版本。</p>
     @if (!Model.Projects.Any()) { <p class="alert alert-info">暂无可填写日报的活跃项目。请先加入项目；归档项目的历史记录仍在“我的日报”中查看。</p> }

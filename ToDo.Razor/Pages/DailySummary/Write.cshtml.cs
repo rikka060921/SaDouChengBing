@@ -41,7 +41,7 @@ public sealed class WriteModel(ApplicationDbContext context, WorkReportService r
             {
                 await reports.SavePersonalNoteAsync(ActorId, ProjectId, ReportDate, ManualContent, ExpectedRevision, HttpContext.RequestAborted);
                 TempData["Message"] = "人工日报已保存；系统生成内容和以往修订均保留。";
-                return RedirectToPage("./Index", new { selectDate = ReportDate.ToString("yyyy-MM-dd") });
+                return RedirectToPage("./Details", new { selectDate = ReportDate.ToString("yyyy-MM-dd") });
             }
         }
         catch (UnauthorizedAccessException) { return Forbid(); }

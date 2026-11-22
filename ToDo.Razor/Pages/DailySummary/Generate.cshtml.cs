@@ -47,6 +47,6 @@ public class GenerateModel : PageModel
             Message = "个人日报生成失败，请稍后重试";
         }
 
-        return RedirectToPage("Index", new { selectDate = AppTime.Today.ToString("yyyy-MM-dd") });
+        return RedirectToPage("./Details", new { selectDate = AppTime.Today.ToString("yyyy-MM-dd") });
     }
 }

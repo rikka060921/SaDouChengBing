@@ -1,0 +1,155 @@
+@page
+@model ToDo.Razor.Pages.DailySummary.DetailsModel
+@{
+    ViewData["Title"] = "日报详情";
+}
+<div class="container-fluid py-4">
+    <a asp-page="./Index" asp-route-userId="@Model.UserId"
+       asp-route-filterStartDate="@Model.FilterStartDate?.ToString("yyyy-MM-dd")"
+       asp-route-filterEndDate="@Model.FilterEndDate?.ToString("yyyy-MM-dd")">← 返回日报列表</a>
+    <h1 class="h3 mt-3 mb-1">@(Model.ViewingUserName)日报</h1>
+    <p class="text-muted mb-4">@Model.SelectDate.ToString("yyyy年MM月dd日")</p>
+
+    @if (TempData["Message"] is string message)
+    {
+        <div class="alert alert-info" role="status">@message</div>
+    }
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <div class="alert alert-danger" role="alert">@Model.ErrorMessage</div>
+    }
+
+    <!-- 当日汇总总卡片 -->
+    @if (Model.Summary != null)
+    {
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <strong>@Model.Summary.Title</strong>
+                <span class="small text-muted">
+                    @(Model.Summary.IsAutomatic ? "定时触发 AI 生成" : "手动触发 AI 生成")
+                    · @Model.Summary.CreateTime.ToString("yyyy-MM-dd HH:mm")
+                    @if (Model.Summary.SummaryStartAt.HasValue && Model.Summary.SummaryEndAt.HasValue)
+                    {
+                        <text> · 汇总范围 @Model.Summary.SummaryStartAt.Value.ToString("MM-dd HH:mm")—@Model.Summary.SummaryEndAt.Value.ToString("MM-dd HH:mm")</text>
+                    }
+                </span>
+            </div>
+            <div class="card-body">
+                <div style="white-space: pre-wrap; line-height: 1.7;">@Model.Summary.TotalSummary</div>
+            </div>
+        </div>
+    }
+
+    @if (Model.ProjectDiaryReports.Any())
+    {
+        <section class="card border-0 shadow-sm mb-4" aria-label="已提交项目日报">
+            <div class="card-header bg-white"><strong>已提交的项目日报</strong><span class="small text-muted ms-2">兼容原“项目报告”中的日报，不需要重复填写</span></div>
+            <div class="card-body">
+            @foreach (var report in Model.ProjectDiaryReports)
+            { <article class="mb-3"><h3 class="h6">@report.Project.Name · @report.ReportTitle <span class="badge bg-light text-dark">@report.ContentOrigin</span></h3><div style="white-space:pre-wrap">@report.ReportContent</div><a asp-page="/Reports/Details" asp-route-id="@report.Id">查看原报告</a></article> }
+            </div>
+        </section>
+    }
+    @if (Model.ManualEntries.Any())
+    {
+        <section class="card border-0 shadow-sm mb-4" aria-label="人工填写与校订">
+            <div class="card-header bg-white"><strong>人工填写与校订</strong><span class="text-muted small ms-2">成员自述；与系统整理分开保存</span></div>
+            <div class="card-body">
+            @foreach (var note in Model.ManualEntries)
+            {
+                <article class="mb-3">
+                    <div class="d-flex justify-content-between gap-2"><h3 class="h6">@note.Project.Name <span class="badge bg-warning text-dark">人工 v@note.Revision</span></h3>
+                    @if (Model.CanGenerateForCurrentUser) { <a asp-page="Write" asp-route-projectId="@note.ProjectId" asp-route-reportDate="@note.ReportDate.ToString("yyyy-MM-dd")">校订／历史</a> }</div>
+                    <p class="small text-muted">填写时间 @note.CreatedAt.ToString("yyyy-MM-dd HH:mm") · 工作日期 @note.ReportDate.ToString("yyyy-MM-dd")</p>
+                    <div style="white-space:pre-wrap">@note.Content</div>
+                </article>
+            }
+            </div>
+        </section>
+    }
+    <!-- 瀑布流卡片区域（按项目明细） -->
+    @if (Model.ProjectDetailList != null && Model.ProjectDetailList.Any())
+    {
+        <div class="row g-3">
+            @foreach (var item in Model.ProjectDetailList)
+            {
+                <div class="col-xl-3 col-lg-4 col-md-6 col-sm-12">
+                    <div class="card border-0 shadow-sm h-100 hover-card">
+                        <div class="card-body p-3">
+                            <h6 class="fw-bold mb-2">
+                                @item.ProjectName
+                                <span class="badge bg-primary-subtle text-primary ms-1">@item.ProjectTag</span>
+                            </h6>
+                            <p class="text-muted small mb-2">负责人：@item.LeaderUserName</p>
+                            <hr class="my-2" />
+                            <div class="ai-summary-content">
+                                <p class="small mb-1 text-content" style="white-space: pre-line; line-height: 1.5;">
+                                    @item.ProjectSummary
+                                </p>
+                                @if (!string.IsNullOrEmpty(item.ProjectSummary) && item.ProjectSummary.Length > 150)
+                                {
+                                    <button class="btn btn-link p-0 text-primary small toggle-btn" type="button" aria-expanded="false">
+                                        查看更多 <i class="bi bi-chevron-down ms-1"></i>
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                        <div class="card-footer bg-light p-2 small text-muted">
+                            <i class="bi bi-clock-history me-1"></i>@item.CreateTime.ToString("MM-dd HH:mm")
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    else if (string.IsNullOrEmpty(Model.ErrorMessage) && Model.Summary == null && !Model.ManualEntries.Any() && !Model.ProjectDiaryReports.Any())
+    {
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-calendar-x fs-1 d-block mb-3"></i>
+            <p>该日期暂无个人报告。没有本人相关变化时，系统不会生成空报告。</p>
+        </div>
+    }
+</div>
+
+<style>
+    .hover-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        transition: all 0.2s ease;
+    }
+
+    .text-content {
+        display: -webkit-box;
+        -webkit-line-clamp: 4;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        line-height: 1.5;
+    }
+
+        .text-content.expanded {
+            -webkit-line-clamp: unset;
+            overflow: visible;
+        }
+
+    .toggle-btn {
+        text-decoration: none;
+        font-size: 0.75rem;
+    }
+
+        .toggle-btn:hover {
+            text-decoration: underline;
+        }
+</style>
+
+@section Scripts {
+    <script>
+        document.querySelectorAll(".toggle-btn").forEach(button => {
+            button.addEventListener("click", () => {
+                const expanded = button.previousElementSibling.classList.toggle("expanded");
+                button.setAttribute("aria-expanded", String(expanded));
+                button.textContent = expanded ? "收起内容" : "查看更多";
+            });
+        });
+    </script>
+}

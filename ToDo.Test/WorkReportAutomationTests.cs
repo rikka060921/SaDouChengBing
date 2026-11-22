@@ -146,13 +146,25 @@ public class WorkReportAutomationTests
         };
         await page.OnGetAsync();
         Assert.Empty(page.ErrorMessage);
-        Assert.Equal("昨天正文", page.Summary?.TotalSummary);
         Assert.Equal("昨天日报", Assert.Single(page.SummaryHistoryList).Title);
+        Assert.Null(page.Summary);
 
-        page.SelectDate = today;
-        await page.OnGetAsync();
-        Assert.Empty(page.ErrorMessage);
-        Assert.Equal("今天正文", page.Summary?.TotalSummary);
+        var detail = new ToDo.Razor.Pages.DailySummary.DetailsModel(f.Context, NullLogger<ToDo.Razor.Pages.DailySummary.DetailsModel>.Instance)
+        {
+            SelectDate = previousDay,
+            UserId = 3,
+            PageContext = new PageContext { HttpContext = f.Http(2) }
+        };
+        await detail.OnGetAsync();
+        Assert.Empty(detail.ErrorMessage);
+        Assert.Equal("昨天正文", detail.Summary?.TotalSummary);
+        Assert.Null(detail.UserId);
+        Assert.Empty(detail.SummaryHistoryList);
+
+        detail.SelectDate = today;
+        await detail.OnGetAsync();
+        Assert.Empty(detail.ErrorMessage);
+        Assert.Equal("今天正文", detail.Summary?.TotalSummary);
     }
 
     [Fact]
