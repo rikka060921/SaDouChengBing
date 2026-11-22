@@ -18,7 +18,7 @@
             <p class="text-muted mb-0">@Model.SelectDate.ToString("yyyy年MM月dd日")</p>
         </div>
         <div class="col-md-6 text-md-end mt-3 mt-md-0">
-            <form method="get" class="d-inline-flex gap-2 align-items-center">
+            <form method="get" asp-page="/DailySummary/Index" asp-fragment="daily-report-content" class="d-inline-flex gap-2 align-items-center">
                 @if (Model.UserId.HasValue)
                 {
                     <input type="hidden" name="userId" value="@Model.UserId" />
@@ -29,7 +29,7 @@
                        value="@Model.SelectDate.ToString("yyyy-MM-dd")"
                        class="form-control" style="width:180px;" />
                 <button type="submit" class="btn btn-primary px-4">查询</button>
-                <a asp-page="Index" asp-route-selectDate="@AppTime.Now.Date.ToString("yyyy-MM-dd")"
+                <a asp-page="/DailySummary/Index" asp-fragment="daily-report-content" asp-route-selectDate="@AppTime.Today.ToString("yyyy-MM-dd")"
                    asp-route-userId="@Model.UserId"
                    asp-route-filterStartDate="@Model.FilterStartDate?.ToString("yyyy-MM-dd")"
                    asp-route-filterEndDate="@Model.FilterEndDate?.ToString("yyyy-MM-dd")"
@@ -124,7 +124,7 @@
                                     {
                                         <span class="badge bg-primary me-1">当前</span>
                                     }
-                                    <a asp-page="Index"
+                                    <a asp-page="/DailySummary/Index" asp-fragment="daily-report-content"
                                        asp-route-selectDate="@item.SummaryDate.ToString("yyyy-MM-dd")"
                                        asp-route-userId="@Model.UserId"
                                        asp-route-filterStartDate="@Model.FilterStartDate?.ToString("yyyy-MM-dd")"
@@ -134,7 +134,7 @@
                                     </a>
                                 </td>
                                 <td>
-                                    <a asp-page="Index"
+                                    <a asp-page="/DailySummary/Index" asp-fragment="daily-report-content"
                                        asp-route-selectDate="@item.SummaryDate.ToString("yyyy-MM-dd")"
                                        asp-route-userId="@Model.UserId"
                                        asp-route-filterStartDate="@Model.FilterStartDate?.ToString("yyyy-MM-dd")"
@@ -175,12 +175,12 @@
                                     }
                                 </td>
                                 <td>
-                                    <a asp-page="Index"
+                                    <a asp-page="/DailySummary/Index" asp-fragment="daily-report-content"
                                        asp-route-selectDate="@item.SummaryDate.ToString("yyyy-MM-dd")"
                                        asp-route-userId="@Model.UserId"
                                        asp-route-filterStartDate="@Model.FilterStartDate?.ToString("yyyy-MM-dd")"
                                        asp-route-filterEndDate="@Model.FilterEndDate?.ToString("yyyy-MM-dd")"
-                                       class="btn btn-sm btn-primary">查看</a>
+                                       class="btn btn-sm btn-primary">查看日报</a>
                                 </td>
                             </tr>
                         }
@@ -189,6 +189,8 @@
             </div>
         </div>
     }
+
+    <h3 id="daily-report-content" class="h5 mb-3" tabindex="-1">@Model.SelectDate.ToString("yyyy年MM月dd日") 日报详情</h3>
 
     <!-- 当日汇总总卡片 -->
     @if (Model.Summary != null)
@@ -283,6 +285,10 @@
 </div>
 
 <style>
+    #daily-report-content {
+        scroll-margin-top: 5rem;
+    }
+
     .hover-card:hover {
         transform: translateY(-3px);
         box-shadow: 0 4px 12px rgba(0,0,0,0.1);

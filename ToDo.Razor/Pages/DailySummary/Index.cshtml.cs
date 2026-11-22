@@ -46,8 +46,11 @@ public class IndexModel(ApplicationDbContext context, ILogger<IndexModel> logger
             IsAnyProjectLeader = await MemberReportAccess.Projects(context, actor).AnyAsync();
             var projects = context.Project.Where(p => !p.IsDeleted && (actor.Role == UserRole.systemAdmin
                 || p.LeaderUserId == actorId || context.ProjectUsers.Any(m => m.ProjectId == p.Id && m.UserId == actorId))).Select(p => p.Id);
+            var day = SelectDate.Date;
+            var nextDay = day.AddDays(1);
             Summary = await context.DailyWorkSummaries.AsNoTracking().Where(s => s.UserId == targetId
-                && s.SummaryDate == SelectDate.Date && !s.IsDeleted).OrderByDescending(s => s.CreateTime).FirstOrDefaultAsync();
+                && s.SummaryDate >= day && s.SummaryDate < nextDay && !s.IsDeleted)
+                .OrderByDescending(s => s.CreateTime).ThenByDescending(s => s.Id).FirstOrDefaultAsync();
             if (Summary != null)
                 ProjectDetailList = await context.DailyProjectSummaryDetails.AsNoTracking()
                     .Where(d => d.DailySummaryId == Summary.Id && !d.IsDeleted && projects.Contains(d.ProjectId))
@@ -57,14 +60,17 @@ public class IndexModel(ApplicationDbContext context, ILogger<IndexModel> logger
             var notes = await service.PersonalNotesAsync(actorId, targetId, null, HttpContext.RequestAborted, FilterStartDate, FilterEndDate);
             var projectReports = context.DailyReport.AsNoTracking().Include(r => r.Project).Where(r => r.ReporterId == targetId
                 && r.ReportType == 1 && !r.IsDeleted && projects.Contains(r.ProjectId));
-            var day = SelectDate.Date; var nextDay = day.AddDays(1);
             ProjectDiaryReports = await projectReports.Where(r => r.ReportDate >= day && r.ReportDate < nextDay)
                 .OrderByDescending(r => r.CreatedAt).Take(100).ToListAsync();
             ManualDates = notes.Select(n => n.ReportDate).ToHashSet();
             // Always load history, including when the selected day has no generated summary.
             var history = context.DailyWorkSummaries.AsNoTracking().Where(s => s.UserId == targetId && !s.IsDeleted);
             if (FilterStartDate.HasValue) history = history.Where(s => s.SummaryDate >= FilterStartDate.Value.Date);
-            if (FilterEndDate.HasValue) history = history.Where(s => s.SummaryDate <= FilterEndDate.Value.Date);
+            if (FilterEndDate.HasValue)
+            {
+                var until = FilterEndDate.Value.Date.AddDays(1);
+                history = history.Where(s => s.SummaryDate < until);
+            }
             SummaryHistoryList = await history.OrderByDescending(s => s.SummaryDate).ThenByDescending(s => s.CreateTime).Take(100).ToListAsync();
             var legacyHistory = projectReports;
             if (FilterStartDate.HasValue) legacyHistory = legacyHistory.Where(r => r.ReportDate >= FilterStartDate.Value.Date);

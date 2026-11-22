@@ -127,6 +127,35 @@ public class WorkReportAutomationTests
     }
 
     [Fact]
+    public async Task MyDaily_LoadsSelectedDayAndIncludesLegacyTimestampsOnFilterEndDate()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var previousDay = AppTime.Today.AddDays(-1);
+        var today = AppTime.Today;
+        f.Context.DailyWorkSummaries.AddRange(
+            new DailyWorkSummary { UserId = 2, Title = "昨天日报", TotalSummary = "昨天正文", SummaryDate = previousDay.AddHours(9) },
+            new DailyWorkSummary { UserId = 2, Title = "今天日报", TotalSummary = "今天正文", SummaryDate = today });
+        await f.Context.SaveChangesAsync();
+
+        var page = new ToDo.Razor.Pages.DailySummary.IndexModel(f.Context, NullLogger<ToDo.Razor.Pages.DailySummary.IndexModel>.Instance)
+        {
+            SelectDate = previousDay,
+            FilterStartDate = previousDay,
+            FilterEndDate = previousDay,
+            PageContext = new PageContext { HttpContext = f.Http(2) }
+        };
+        await page.OnGetAsync();
+        Assert.Empty(page.ErrorMessage);
+        Assert.Equal("昨天正文", page.Summary?.TotalSummary);
+        Assert.Equal("昨天日报", Assert.Single(page.SummaryHistoryList).Title);
+
+        page.SelectDate = today;
+        await page.OnGetAsync();
+        Assert.Empty(page.ErrorMessage);
+        Assert.Equal("今天正文", page.Summary?.TotalSummary);
+    }
+
+    [Fact]
     public async Task Weekly_UsesOnlyProjectSourcesAndRetainsOriginalSnapshots()
     {
         await using var f = await Fixture.CreateAsync();
