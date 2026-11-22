@@ -1,0 +1,122 @@
+.document-reader {
+    max-width: 960px;
+}
+
+.document-heading {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.document-markdown {
+    line-height: 1.7;
+    overflow-wrap: anywhere;
+    min-width: 0;
+}
+
+.document-markdown > :last-child,
+.document-source:last-child {
+    margin-bottom: 0;
+}
+
+.document-markdown h1,
+.document-markdown h2,
+.document-markdown h3,
+.document-markdown h4,
+.document-markdown h5,
+.document-markdown h6 {
+    margin: 1.4em 0 .55em;
+    line-height: 1.3;
+    scroll-margin-top: 5rem;
+}
+
+.document-markdown > :first-child {
+    margin-top: 0;
+}
+
+.document-markdown h1 { font-size: 1.65em; }
+.document-markdown h2 { font-size: 1.35em; }
+.document-markdown h3 { font-size: 1.16em; }
+.document-markdown h4,
+.document-markdown h5,
+.document-markdown h6 { font-size: 1em; }
+
+.document-markdown ul,
+.document-markdown ol {
+    padding-inline-start: 1.6em;
+}
+
+.document-markdown li + li {
+    margin-top: .28em;
+}
+
+.document-markdown blockquote {
+    border-inline-start: 3px solid var(--app-line, #dee2e6);
+    padding-inline-start: 1em;
+    color: #4c5a67;
+}
+
+.document-markdown table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    margin-bottom: 1em;
+}
+
+.document-markdown th,
+.document-markdown td {
+    padding: .45em .8em;
+    border: 1px solid var(--app-line, #dee2e6);
+}
+
+.document-markdown th {
+    background: #f5f7fa;
+    text-align: start;
+}
+
+.document-markdown code {
+    padding: .1em .3em;
+    border-radius: .25em;
+    background: #f0f3f7;
+    color: #22334a;
+}
+
+.document-markdown pre {
+    padding: 1em;
+    max-width: 100%;
+    overflow: auto;
+    border-radius: .5rem;
+    background: #f5f7fa;
+}
+
+.document-markdown pre code {
+    padding: 0;
+    background: transparent;
+}
+
+.document-source {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.document-editor-text,
+.document-compare-pane {
+    min-height: 19rem;
+    height: clamp(19rem, 44vh, 34rem);
+}
+
+.document-compare-pane {
+    overflow: auto;
+}
+
+.document-diff {
+    max-height: 22rem;
+    overflow: auto;
+}
+
+@media (min-width: 992px) {
+    .document-edit-actions {
+        position: sticky;
+        bottom: 0;
+        z-index: 10;
+    }
+}

@@ -3,69 +3,182 @@
 @{
     ViewData["Title"] = Model.DraftId > 0 ? "校订 AI 草稿" : "编辑资料正文";
 }
-<div class="container py-4" style="max-width:1100px">
+@section Styles {
+    <link rel="stylesheet" href="~/css/document-preview.css" asp-append-version="true" />
+}
+<div class="container-fluid px-0">
     <a asp-page="./Materials" asp-route-projectId="@Model.ProjectId">← 返回项目资料</a>
-    <h1 class="h3 mt-3">@ViewData["Title"]</h1>
-    <p class="text-muted">@Model.Snapshot?.FileName · @(Model.DraftId > 0 ? "只修改待审核草稿，不自动发布" : "保存为新版本，旧版本与来源仍保留")</p>
-    @if (!ViewData.ModelState.IsValid) { <div asp-validation-summary="All" class="alert alert-danger" role="alert"></div> }
+    <header class="d-flex flex-wrap align-items-center justify-content-between gap-3 my-3">
+        <div class="document-heading">
+            <h1 class="h3 mb-1">@ViewData["Title"]</h1>
+            @if (Model.Snapshot is { } snapshot)
+            {
+                <p class="small text-muted mb-0">@snapshot.FileName · v@(snapshot.SourceVersion)@(Model.DraftId > 0 ? " · 来源版本 · 待审核草稿" : "")</p>
+            }
+        </div>
+        @if (Model.DocumentId > 0 && Model.IsMarkdown)
+        {
+            <a asp-page="./DocumentPreview" asp-route-projectId="@Model.ProjectId" asp-route-documentId="@Model.DocumentId" class="btn btn-outline-secondary">预览当前版本</a>
+        }
+    </header>
+
+    @if (!ViewData.ModelState.IsValid)
+    {
+        <div asp-validation-summary="All" class="alert alert-danger" role="alert"></div>
+    }
+    @if (Model.HasAiPreview)
+    {
+        <p class="alert alert-info" role="status">AI 结果已填入编辑框，尚未保存。</p>
+    }
     @if (Model.Snapshot != null || !string.IsNullOrEmpty(Model.EditedContent))
     {
-        <form method="post" id="document-edit-form">
-            <input asp-for="ProjectId" type="hidden" /><input asp-for="DocumentId" type="hidden" /><input asp-for="DraftId" type="hidden" /><input asp-for="ExpectedToken" type="hidden" />
-            <label asp-for="EditedContent" class="form-label">@(Model.DraftId > 0 ? "调整后的草稿正文" : "资料正文（Markdown / TXT）")</label>
-            <textarea asp-for="EditedContent" rows="20" maxlength="100000" class="form-control font-monospace" required spellcheck="false"></textarea>
-            <div class="form-text">最多 10 万字符。这里编辑文本，不修改 Office 原件版式；不支持的原件请下载后处理。</div>
-            @if (Model.HasAiPreview) { <p class="alert alert-info mt-3">AI修订预览已填入编辑区，尚未保存。请对照原文；保存后生成新版本。</p> }
+        <form method="post" asp-page="./DocumentEdit" id="document-edit-form" data-has-ai-preview="@(Model.HasAiPreview ? "true" : "false")">
+            <input asp-for="ProjectId" type="hidden" />
+            <input asp-for="DocumentId" type="hidden" />
+            <input asp-for="DraftId" type="hidden" />
+            <input asp-for="ExpectedToken" type="hidden" />
+
+            <div class="row g-3 align-items-start">
+                <section class="col-lg-6" aria-labelledby="editor-heading">
+                    <div class="card">
+                        <div class="card-header bg-white d-flex justify-content-between gap-2">
+                            <label asp-for="EditedContent" id="editor-heading" class="fw-semibold">编辑正文</label>
+                            <span class="small text-muted">@(Model.IsMarkdown ? "Markdown 源码" : "纯文本")</span>
+                        </div>
+                        <div class="card-body">
+                            <textarea asp-for="EditedContent" rows="18" maxlength="@ToDo.Domain.ProjectDocumentEditingService.MaxCharacters"
+                                      class="form-control font-monospace document-editor-text" required spellcheck="false" aria-describedby="document-editor-limit"></textarea>
+                            <div id="document-editor-limit" class="form-text">正文最多 10 万字符。</div>
+                        </div>
+                    </div>
+                </section>
+                @if (Model.Snapshot is { } original)
+                {
+                    <section class="col-lg-6" aria-label="正文对照">
+                        <div class="card">
+                            @if (Model.HasAiPreview)
+                            {
+                                <div class="card-header bg-white">
+                                    <div class="nav nav-tabs card-header-tabs" role="tablist" aria-label="正文对照">
+                                        <button class="nav-link active" id="ai-result-tab" type="button" role="tab" data-bs-toggle="tab"
+                                                data-bs-target="#ai-result-pane" aria-controls="ai-result-pane" aria-selected="true">AI 排版预览</button>
+                                        <button class="nav-link" id="original-document-tab" type="button" role="tab" data-bs-toggle="tab"
+                                                data-bs-target="#original-document-pane" aria-controls="original-document-pane" aria-selected="false">对照修改前正文</button>
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <h2 class="card-header bg-white h6 mb-0">对照修改前正文</h2>
+                            }
+                            <div class="card-body tab-content">
+                                @if (Model.HasAiPreview)
+                                {
+                                    <div class="tab-pane show active document-compare-pane pe-2" id="ai-result-pane" role="tabpanel" aria-labelledby="ai-result-tab" tabindex="0">
+                                        <partial name="_DocumentTextPreview" model='(Model.EditedContent, Model.IsMarkdown, "ai-heading-")' />
+                                    </div>
+                                }
+                                <div class="document-compare-pane pe-2 @(Model.HasAiPreview ? "tab-pane" : "")" id="original-document-pane"
+                                     role="@(Model.HasAiPreview ? "tabpanel" : null)" aria-labelledby="@(Model.HasAiPreview ? "original-document-tab" : null)" tabindex="0">
+                                    <partial name="_DocumentTextPreview" model='(original.Content, Model.IsMarkdown, "original-heading-")' />
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                }
+            </div>
+
             @if (Model.HasAiPreview)
             {
                 var comparison = Model.Comparison;
-                <details class="mt-3" open><summary>AI预览与原资料的按行差异</summary>
-                    @if (!comparison.Changes.Any()) { <p class="text-muted">正文没有变化。</p> }
-                    @if (comparison.IsRangeComparison) { <p class="small text-muted">变化较多，以下对比整个变化区间，区间内可能包含未改的行。</p> }
-                    <div class="border rounded p-2 mt-2" style="max-height:360px;overflow:auto">
-                    @foreach (var change in comparison.Changes)
-                    { <pre class="text-wrap mb-1 @(change.Added ? "text-success" : "text-danger")">@(change.Added ? "+" : "−") @change.Line  @change.Text</pre> }
-                    </div>
-                    @if (comparison.IsTruncated) { <p class="small text-muted">差异预览最多200行；完整正文仍在编辑区，保存内容不会被截断。</p> }
+                <details class="card mt-3 p-3" open>
+                    <summary class="fw-semibold">逐行差异</summary>
+                    @if (!comparison.Changes.Any())
+                    {
+                        <p class="text-muted mt-2 mb-0">正文没有变化。</p>
+                    }
+                    else
+                    {
+                        @if (comparison.IsRangeComparison)
+                        {
+                            <p class="small text-muted mt-2 mb-0">改动较多，按区间显示，可能包含未改动的行。</p>
+                        }
+                        <div class="document-diff border rounded p-2 mt-2">
+                            @foreach (var change in comparison.Changes)
+                            {
+                                <pre class="document-source mb-1 @(change.Added ? "text-success" : "text-danger")">@(change.Added ? "+" : "−") @change.Line  @change.Text</pre>
+                            }
+                        </div>
+                        @if (comparison.IsTruncated)
+                        {
+                            <p class="small text-muted mt-2 mb-0">差异预览最多显示 200 行，编辑框保留完整正文。</p>
+                        }
+                    }
                 </details>
             }
-            @if (Model.Snapshot != null) { <details class="mt-3"><summary>对照修改前正文</summary><pre class="bg-light border rounded p-3 text-wrap" style="max-height:350px;overflow:auto">@Model.Snapshot.Content</pre></details> }
             @if (Model.CanUseAi)
             {
-                <fieldset class="border rounded p-3 mt-3">
-                    <legend class="float-none w-auto fs-6 px-2">让AI调整这份资料</legend>
+                <fieldset class="card mt-3 p-3">
+                    <legend class="float-none w-auto fs-6 fw-semibold mb-2">让 AI 调整这份资料</legend>
                     <label asp-for="AiRequirement" class="form-label">修改要求</label>
-                    <textarea asp-for="AiRequirement" rows="2" maxlength="2000" class="form-control" placeholder="例如：补充验收标准，保留现有任务编号与已确认事实"></textarea>
-                    <div class="form-text">使用当前编辑区正文，只选择本分类已授权的Agent；不联网、不调用其他业务工具。旧版本保留，过期版本不会覆盖。</div>
-                    <div class="d-flex flex-wrap gap-2 mt-2">
-                        <button type="submit" asp-page-handler="AiAdjust" class="btn btn-outline-primary">AI调整并保存新版本</button>
-                        <button type="submit" asp-page-handler="AiAdjust" asp-route-previewOnly="true" class="btn btn-outline-secondary">只生成预览</button>
+                    <textarea asp-for="AiRequirement" rows="3" maxlength="2000" class="form-control"
+                              placeholder="例如：补充验收标准，保留任务编号和已确认事实"></textarea>
+                    <div class="form-text">AI 基于当前编辑框的正文，使用已获该分类读写授权的 Agent。</div>
+                    <div class="d-flex flex-wrap gap-2 mt-3">
+                        <button type="submit" asp-page-handler="AiAdjust" asp-route-previewOnly="true" class="btn btn-outline-primary" data-ai-submit>只生成预览</button>
+                        <button type="submit" asp-page-handler="AiAdjust" class="btn btn-outline-secondary" data-ai-submit>AI 调整并保存新版本</button>
                     </div>
+                    <p class="small text-muted mb-0 mt-2" id="document-ai-status" role="status" hidden></p>
                 </fieldset>
             }
-            <div class="d-flex flex-wrap gap-2 mt-3"><button class="btn btn-primary" id="save-document">@(Model.DraftId > 0 ? "保存草稿校订（不发布）" : "保存新版本")</button><a asp-page="./Materials" asp-route-projectId="@Model.ProjectId" class="btn btn-outline-secondary">取消</a></div>
+            <footer class="document-edit-actions d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3 p-3 bg-white border rounded">
+                <span class="small text-muted">@(Model.DraftId > 0 ? "保存校订后的草稿，待审核后发布。" : "保存会生成新版本，旧版本保留。")</span>
+                <div class="d-flex gap-2">
+                    <a asp-page="./Materials" asp-route-projectId="@Model.ProjectId" class="btn btn-outline-secondary">取消</a>
+                    <button type="submit" class="btn btn-primary">@(Model.DraftId > 0 ? "保存草稿校订" : "保存新版本")</button>
+                </div>
+            </footer>
         </form>
     }
 </div>
 @section Scripts {
-<script>
-(() => {
-    const form = document.getElementById('document-edit-form');
-    if (!form) return;
-    let dirty = false;
-    form.querySelector('textarea').addEventListener('input', () => dirty = true);
-    form.addEventListener('submit', event => {
-        if (event.submitter?.formAction.includes('AiAdjust') && !document.getElementById('AiRequirement').value.trim()) {
-            event.preventDefault(); document.getElementById('AiRequirement').focus(); return;
-        }
-        dirty = false;
-        document.getElementById('save-document').disabled = true;
-        if (event.submitter?.formAction.includes('AiAdjust')) {
-            event.submitter.textContent = 'AI正在调整，请稍候…';
-            setTimeout(() => form.querySelectorAll('button[type="submit"]').forEach(button => button.disabled = true), 0);
-        }
-    });
-    window.addEventListener('beforeunload', event => { if (dirty) { event.preventDefault(); event.returnValue = ''; } });
-})();
-</script>
+    <script>
+        (() => {
+            const form = document.getElementById('document-edit-form');
+            if (!form) return;
+            let dirty = form.dataset.hasAiPreview === 'true';
+            let submitting = false;
+            form.addEventListener('input', () => dirty = true);
+            form.addEventListener('submit', event => {
+                if (submitting) {
+                    event.preventDefault();
+                    return;
+                }
+
+                const isAi = event.submitter?.hasAttribute('data-ai-submit');
+                const requirement = document.getElementById('AiRequirement');
+                const status = document.getElementById('document-ai-status');
+                if (isAi && !requirement.value.trim()) {
+                    event.preventDefault();
+                    status.textContent = '请先填写修改要求。';
+                    status.hidden = false;
+                    requirement.focus();
+                    return;
+                }
+
+                dirty = false;
+                submitting = true;
+                if (isAi) {
+                    status.textContent = '正在生成，请稍候…';
+                    status.hidden = false;
+                }
+                setTimeout(() => form.querySelectorAll('button[type="submit"]').forEach(button => button.disabled = true), 0);
+            });
+            window.addEventListener('beforeunload', event => {
+                if (!dirty) return;
+                event.preventDefault();
+                event.returnValue = '';
+            });
+        })();
+    </script>
 }

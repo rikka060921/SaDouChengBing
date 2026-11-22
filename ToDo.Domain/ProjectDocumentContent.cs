@@ -20,7 +20,8 @@ public static class DocumentModelPolicy
     }
 
     public static bool IsImage(string fileName) => Path.GetExtension(fileName).ToLowerInvariant() is ".png" or ".jpg" or ".jpeg" or ".webp";
-    public static bool IsEditableText(string fileName) => Path.GetExtension(fileName).ToLowerInvariant() is ".md" or ".markdown" or ".txt";
+    public static bool IsMarkdown(string fileName) => Path.GetExtension(fileName).ToLowerInvariant() is ".md" or ".markdown";
+    public static bool IsEditableText(string fileName) => IsMarkdown(fileName) || Path.GetExtension(fileName).Equals(".txt", StringComparison.OrdinalIgnoreCase);
 
     public static string? GetImageMime(ReadOnlySpan<byte> bytes, string fileName)
     {

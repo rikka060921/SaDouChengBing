@@ -325,6 +325,8 @@ public class MaterialsModel : PageModel
             versionNumber = h.VersionNumber,
             fileSize = h.FileSize,
             description = h.Description,
+            previewUrl = DocumentModelPolicy.IsMarkdown(h.FileName)
+                ? Url.Page("./DocumentPreview", new { projectId = ProjectId, documentId = h.Id }) : null,
             uploadedAt = h.UploadedAt.ToString("yyyy-MM-dd HH:mm:ss"),
             isCurrent = h.IsCurrent
         }).ToList();
@@ -694,12 +696,7 @@ public class MaterialsModel : PageModel
     private async Task<bool> CanAccessAsync()
     {
         var user = await _userManager.GetUserAsync(User);
-        if (user == null || user.IsDeleted || user.Status != UserStatus.Active || !await ProjectExistsAsync()) return false;
-        if (user.Role == UserRole.systemAdmin) return true;
-        return await _context.Project.AnyAsync(project => project.Id == ProjectId
-            && !project.IsDeleted
-            && (project.LeaderUserId == user.Id
-                || _context.ProjectUsers.Any(member => member.ProjectId == ProjectId && member.UserId == user.Id)));
+        return await _documents.CanAccessProjectMaterialsAsync(ProjectId, user, HttpContext.RequestAborted);
     }
 
     private async Task LoadAsync()

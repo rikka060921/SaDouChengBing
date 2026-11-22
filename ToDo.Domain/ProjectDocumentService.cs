@@ -19,6 +19,16 @@ public class ProjectDocumentService
         _environment = environment;
     }
 
+    public Task<bool> CanAccessProjectMaterialsAsync(int projectId, ApplicationUser? actor, CancellationToken ct = default)
+    {
+        if (actor == null || actor.IsDeleted || actor.Status != UserStatus.Active)
+            return Task.FromResult(false);
+
+        return _context.Project.AnyAsync(project => project.Id == projectId && !project.IsDeleted
+            && (actor.Role == UserRole.systemAdmin || project.LeaderUserId == actor.Id
+                || _context.ProjectUsers.Any(member => member.ProjectId == projectId && member.UserId == actor.Id)), ct);
+    }
+
     public Task<List<ProjectDocument>> GetDocumentsAsync(int projectId, CancellationToken cancellationToken = default)
     {
         return _context.ProjectDocuments.AsNoTracking()

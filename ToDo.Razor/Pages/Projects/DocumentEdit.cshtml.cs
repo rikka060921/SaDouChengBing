@@ -22,10 +22,11 @@ public sealed class DocumentEditModel(ApplicationDbContext context, ProjectDocum
     [BindProperty, Required(ErrorMessage = "资料版本标识丢失，请先复制输入，再刷新页面")]
     public string ExpectedToken { get; set; } = string.Empty;
     public DocumentEditSnapshot? Snapshot { get; set; }
-    [BindProperty, StringLength(2000)] public string AiRequirement { get; set; } = string.Empty;
+    [BindProperty, StringLength(2000)] public string? AiRequirement { get; set; }
     public bool HasAiPreview { get; set; }
     public DocumentTextComparison Comparison => DocumentTextDiff.Compare(Snapshot?.Content ?? string.Empty, EditedContent);
     public bool CanUseAi => DraftId == 0 && DocumentId > 0;
+    public bool IsMarkdown => Snapshot is not null && DocumentModelPolicy.IsMarkdown(Snapshot.FileName);
     public async Task<IActionResult> OnPostAiAdjustAsync(bool previewOnly = false)
     {
         var user = await users.GetUserAsync(User); if (user == null) return Challenge();
@@ -35,7 +36,7 @@ public sealed class DocumentEditModel(ApplicationDbContext context, ProjectDocum
             if (!ModelState.IsValid) return await LoadAsync(false);
             var aiEditor = new ProjectDocumentAiEditingService(context, documents,
                 HttpContext.RequestServices.GetRequiredService<IAgentRegistry>(), HttpContext.RequestServices.GetRequiredService<IAIService>());
-            var result = await aiEditor.AdjustAsync(ProjectId, DocumentId, user.Id, ExpectedToken, EditedContent, AiRequirement, HttpContext.RequestAborted);
+            var result = await aiEditor.AdjustAsync(ProjectId, DocumentId, user.Id, ExpectedToken, EditedContent, AiRequirement ?? string.Empty, HttpContext.RequestAborted);
             if (previewOnly)
             {
                 EditedContent = result.Content; ModelState.Remove(nameof(EditedContent)); HasAiPreview = true;

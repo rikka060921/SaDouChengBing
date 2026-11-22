@@ -1,0 +1,10 @@
+@model (string Content, bool IsMarkdown, string HeadingIdPrefix)
+@using ToDo.Razor.Utilities
+@if (Model.IsMarkdown)
+{
+    <article class="document-markdown">@DocumentMarkdownPreview.Render(Model.Content, Model.HeadingIdPrefix)</article>
+}
+else
+{
+    <pre class="document-source">@Model.Content</pre>
+}

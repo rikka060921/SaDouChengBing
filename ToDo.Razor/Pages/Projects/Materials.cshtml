@@ -103,7 +103,16 @@
                 @foreach (var item in Model.Documents)
                 {
                     <tr>
-                        <td><a href="#" data-document-id="@item.Id" data-file-name="@item.FileName" onclick="showDocumentContent(this.dataset.documentId, this.dataset.fileName); return false;" class="text-decoration-none">@item.FileName</a></td>
+                        <td>
+                            @if (ToDo.Domain.DocumentModelPolicy.IsMarkdown(item.FileName))
+                            {
+                                <a asp-page="./DocumentPreview" asp-route-projectId="@Model.ProjectId" asp-route-documentId="@item.Id" class="text-decoration-none">@item.FileName</a>
+                            }
+                            else
+                            {
+                                <a href="#" data-document-id="@item.Id" data-file-name="@item.FileName" onclick="showDocumentContent(this.dataset.documentId, this.dataset.fileName); return false;" class="text-decoration-none">@item.FileName</a>
+                            }
+                        </td>
                         <td>
                             @if (Model.CanManageAgentPermissions)
                             {
@@ -689,7 +698,11 @@
             }
             html += '</div>';
             html += '<div class="d-flex gap-1">';
-            html += '<button type="button" class="btn btn-sm btn-outline-info" onclick="viewHistoryContent(' + Number(item.id) + ', decodeURIComponent(\'' + encodedFileName + '\'))">查看内容</button>';
+            if (item.previewUrl) {
+                html += '<a class="btn btn-sm btn-outline-info" href="' + escapeHtml(item.previewUrl) + '">查看内容</a>';
+            } else {
+                html += '<button type="button" class="btn btn-sm btn-outline-info" onclick="viewHistoryContent(' + Number(item.id) + ', decodeURIComponent(\'' + encodedFileName + '\'))">查看内容</button>';
+            }
             html += '<a class="btn btn-sm btn-outline-primary" href="/Projects/Materials?handler=Download&projectId=' + projectId + '&id=' + item.id + '">下载</a>';
             if (item.id !== currentDocumentId) {
                 html += '<button type="button" class="btn btn-sm btn-warning" onclick="rollbackVersion(' + item.id + ')">回滚到此版本</button>';
