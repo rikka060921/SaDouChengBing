@@ -27,6 +27,28 @@ public sealed class DocumentEditModel(ApplicationDbContext context, ProjectDocum
     public DocumentTextComparison Comparison => DocumentTextDiff.Compare(Snapshot?.Content ?? string.Empty, EditedContent);
     public bool CanUseAi => DraftId == 0 && DocumentId > 0;
     public bool IsMarkdown => Snapshot is not null && DocumentModelPolicy.IsMarkdown(Snapshot.FileName);
+
+    public async Task<IActionResult> OnPostPreviewAsync(CancellationToken cancellationToken)
+    {
+        Response.Headers.CacheControl = "private, no-store";
+        var user = await users.GetUserAsync(User);
+        if (user == null) return Challenge();
+        if (!ModelState.IsValid) return BadRequest();
+
+        try
+        {
+            var source = await new ProjectDocumentEditingService(context, documents)
+                .ReadAsync(ProjectId, DocumentId, DraftId, user.Id, cancellationToken);
+            if (!string.Equals(source.Token, ExpectedToken, StringComparison.Ordinal))
+                return StatusCode(StatusCodes.Status409Conflict);
+
+            return Partial("_DocumentTextPreview", (EditedContent, DocumentModelPolicy.IsMarkdown(source.FileName), "new-heading-"));
+        }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+        catch (InvalidOperationException) { return StatusCode(StatusCodes.Status409Conflict); }
+        catch (IOException) { return StatusCode(StatusCodes.Status503ServiceUnavailable); }
+    }
+
     public async Task<IActionResult> OnPostAiAdjustAsync(bool previewOnly = false)
     {
         var user = await users.GetUserAsync(User); if (user == null) return Challenge();

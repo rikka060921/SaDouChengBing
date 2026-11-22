@@ -28,71 +28,62 @@
     }
     @if (Model.HasAiPreview)
     {
-        <p class="alert alert-info" role="status">AI 结果已填入编辑框，尚未保存。</p>
+        <p class="alert alert-info" role="status">右侧是 AI 生成的预览，尚未保存。</p>
     }
     @if (Model.Snapshot != null || !string.IsNullOrEmpty(Model.EditedContent))
     {
-        <form method="post" asp-page="./DocumentEdit" id="document-edit-form" data-has-ai-preview="@(Model.HasAiPreview ? "true" : "false")">
+        <form method="post" asp-page="./DocumentEdit" id="document-edit-form"
+              data-preview-url="@Url.Page("./DocumentEdit", "Preview")"
+              data-has-unsaved-content="@((Model.HasAiPreview || !ViewData.ModelState.IsValid) ? "true" : "false")">
             <input asp-for="ProjectId" type="hidden" />
             <input asp-for="DocumentId" type="hidden" />
             <input asp-for="DraftId" type="hidden" />
             <input asp-for="ExpectedToken" type="hidden" />
 
             <div class="row g-3 align-items-start">
-                <section class="col-lg-6" aria-labelledby="editor-heading">
+                <section class="col-lg-6" aria-labelledby="original-document-heading">
                     <div class="card">
-                        <div class="card-header bg-white d-flex justify-content-between gap-2">
-                            <label asp-for="EditedContent" id="editor-heading" class="fw-semibold">编辑正文</label>
-                            <span class="small text-muted">@(Model.IsMarkdown ? "Markdown 源码" : "纯文本")</span>
-                        </div>
-                        <div class="card-body">
-                            <textarea asp-for="EditedContent" rows="18" maxlength="@ToDo.Domain.ProjectDocumentEditingService.MaxCharacters"
-                                      class="form-control font-monospace document-editor-text" required spellcheck="false" aria-describedby="document-editor-limit"></textarea>
-                            <div id="document-editor-limit" class="form-text">正文最多 10 万字符。</div>
-                        </div>
-                    </div>
-                </section>
-                @if (Model.Snapshot is { } original)
-                {
-                    <section class="col-lg-6" aria-label="正文对照">
-                        <div class="card">
-                            @if (Model.HasAiPreview)
+                        <h2 class="card-header bg-white h6 mb-0" id="original-document-heading">@(Model.DraftId > 0 ? "校订前草稿" : "旧版本")</h2>
+                        <div class="card-body document-compare-pane" id="original-document-pane" tabindex="0">
+                            @if (Model.Snapshot is { } original)
                             {
-                                <div class="card-header bg-white">
-                                    <div class="nav nav-tabs card-header-tabs" role="tablist" aria-label="正文对照">
-                                        <button class="nav-link active" id="ai-result-tab" type="button" role="tab" data-bs-toggle="tab"
-                                                data-bs-target="#ai-result-pane" aria-controls="ai-result-pane" aria-selected="true">AI 排版预览</button>
-                                        <button class="nav-link" id="original-document-tab" type="button" role="tab" data-bs-toggle="tab"
-                                                data-bs-target="#original-document-pane" aria-controls="original-document-pane" aria-selected="false">对照修改前正文</button>
-                                    </div>
-                                </div>
+                                <partial name="_DocumentTextPreview" model='(original.Content, Model.IsMarkdown, "original-heading-")' />
                             }
                             else
                             {
-                                <h2 class="card-header bg-white h6 mb-0">对照修改前正文</h2>
+                                <p class="text-muted">暂时无法加载旧版本。</p>
                             }
-                            <div class="card-body tab-content">
-                                @if (Model.HasAiPreview)
-                                {
-                                    <div class="tab-pane show active document-compare-pane pe-2" id="ai-result-pane" role="tabpanel" aria-labelledby="ai-result-tab" tabindex="0">
-                                        <partial name="_DocumentTextPreview" model='(Model.EditedContent, Model.IsMarkdown, "ai-heading-")' />
-                                    </div>
-                                }
-                                <div class="document-compare-pane pe-2 @(Model.HasAiPreview ? "tab-pane" : "")" id="original-document-pane"
-                                     role="@(Model.HasAiPreview ? "tabpanel" : null)" aria-labelledby="@(Model.HasAiPreview ? "original-document-tab" : null)" tabindex="0">
-                                    <partial name="_DocumentTextPreview" model='(original.Content, Model.IsMarkdown, "original-heading-")' />
-                                </div>
-                            </div>
                         </div>
-                    </section>
-                }
+                    </div>
+                </section>
+                <section class="col-lg-6" aria-labelledby="new-document-heading">
+                    <div class="card">
+                        <header class="card-header bg-white d-flex flex-wrap align-items-center justify-content-between gap-2">
+                            <h2 class="h6 mb-0" id="new-document-heading">@(Model.DraftId > 0 ? "校订后预览" : "新版本预览")</h2>
+                            <span class="small text-muted" id="document-preview-status" role="status">未保存</span>
+                        </header>
+                        <div class="card-body document-compare-pane" id="new-document-pane" tabindex="0">
+                            <partial name="_DocumentTextPreview" model='(Model.EditedContent, Model.IsMarkdown, "new-heading-")' />
+                        </div>
+                    </div>
+                </section>
             </div>
+
+            <details id="document-source-editor" class="card mt-3 p-3">
+                <summary class="fw-semibold">@(Model.IsMarkdown ? "编辑 Markdown 源码" : "编辑纯文本")</summary>
+                <div class="mt-3">
+                    <label asp-for="EditedContent" class="visually-hidden">资料正文源码</label>
+                    <textarea asp-for="EditedContent" rows="12" maxlength="@ToDo.Domain.ProjectDocumentEditingService.MaxCharacters"
+                              class="form-control font-monospace document-editor-text" required spellcheck="false" aria-describedby="document-editor-limit"></textarea>
+                    <div id="document-editor-limit" class="form-text">最多 10 万字符。编辑后自动更新右侧预览。</div>
+                </div>
+            </details>
 
             @if (Model.HasAiPreview)
             {
                 var comparison = Model.Comparison;
-                <details class="card mt-3 p-3" open>
-                    <summary class="fw-semibold">逐行差异</summary>
+                <details class="card mt-3 p-3">
+                    <summary class="fw-semibold">查看本次 AI 生成的逐行差异</summary>
                     @if (!comparison.Changes.Any())
                     {
                         <p class="text-muted mt-2 mb-0">正文没有变化。</p>
@@ -146,9 +137,56 @@
         (() => {
             const form = document.getElementById('document-edit-form');
             if (!form) return;
-            let dirty = form.dataset.hasAiPreview === 'true';
+            const source = form.elements.namedItem('EditedContent');
+            const sourceEditor = document.getElementById('document-source-editor');
+            const preview = document.getElementById('new-document-pane');
+            const previewStatus = document.getElementById('document-preview-status');
+            let timer;
+            let previewRequest;
+            let dirty = form.dataset.hasUnsavedContent === 'true';
             let submitting = false;
+
+            async function updatePreview() {
+                if (!source.value.trim()) {
+                    preview.textContent = '暂无正文';
+                    previewStatus.textContent = '未保存';
+                    return;
+                }
+
+                const request = new AbortController();
+                previewRequest = request;
+                const fields = new FormData();
+                for (const name of ['ProjectId', 'DocumentId', 'DraftId', 'ExpectedToken', 'EditedContent', '__RequestVerificationToken']) {
+                    fields.set(name, form.elements.namedItem(name).value);
+                }
+                try {
+                    const result = await fetch(form.dataset.previewUrl, {
+                        method: 'POST', body: fields, signal: request.signal, redirect: 'error'
+                    });
+                    if (!result.ok) {
+                        if (!request.signal.aborted) previewStatus.textContent = result.status === 409
+                            ? '源版本不可用，请复制编辑内容后刷新页面。'
+                            : '预览更新失败，编辑内容仍保留。';
+                        return;
+                    }
+                    const html = await result.text();
+                    if (!request.signal.aborted) {
+                        preview.innerHTML = html;
+                        previewStatus.textContent = '未保存';
+                    }
+                } catch {
+                    if (!request.signal.aborted) previewStatus.textContent = '预览更新失败，编辑内容仍保留。';
+                }
+            }
+
             form.addEventListener('input', () => dirty = true);
+            source.addEventListener('input', () => {
+                clearTimeout(timer);
+                previewRequest?.abort();
+                previewStatus.textContent = '正在更新预览…';
+                timer = setTimeout(updatePreview, 400);
+            });
+            source.addEventListener('invalid', () => sourceEditor.open = true);
             form.addEventListener('submit', event => {
                 if (submitting) {
                     event.preventDefault();
@@ -168,6 +206,8 @@
 
                 dirty = false;
                 submitting = true;
+                clearTimeout(timer);
+                previewRequest?.abort();
                 if (isAi) {
                     status.textContent = '正在生成，请稍候…';
                     status.hidden = false;

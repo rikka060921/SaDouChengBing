@@ -98,14 +98,14 @@
     overflow-wrap: anywhere;
 }
 
-.document-editor-text,
 .document-compare-pane {
     min-height: 19rem;
     height: clamp(19rem, 44vh, 34rem);
+    overflow: auto;
 }
 
-.document-compare-pane {
-    overflow: auto;
+.document-editor-text {
+    min-height: 14rem;
 }
 
 .document-diff {
