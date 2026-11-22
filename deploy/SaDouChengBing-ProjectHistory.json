@@ -166,5 +166,37 @@
     "title": "完整开发记录、人员与跨环境资料补录",
     "summary": "增加逐条开发记录与人员来源展示；按项目名和用户名跨环境匹配，补齐旧任务、会议及原件，不照搬数据库编号。提供可重复执行的事务补录、文件校验与恢复、服务器备份部署脚本；服务器实际结果须单独执行验证。",
     "sources": "代码：ToDo.Domain/ProjectHistoryBackfillService.cs、tools/ToDo.HistoryBackfill；文档：docs/历史开发记录补全与部署-2026-11-01.md；具体提交 SHA 见开发记录。"
+  },
+  {
+    "key": "sadou-2026-11-history-iis-preflight",
+    "period": "2026-11-01",
+    "sortDate": "2026-11-01",
+    "title": "历史补录 IIS 预检修复",
+    "summary": "修复干净源码与缺省 IIS 配置的预检错误，改为按应用池和变量名读取数据库连接属性，并补充流程回归。",
+    "sources": "Git: a268738, a45a829"
+  },
+  {
+    "key": "sadou-2026-11-meeting-preparation-changes",
+    "period": "2026-11-03",
+    "sortDate": "2026-11-03",
+    "title": "会前准备显示任务变更",
+    "summary": "会前准备给有变更的任务标记提示，可从徽标查看最近变更详情，并调整相关任务同步、进度与审核记录。",
+    "sources": "Git: f7df9bc"
+  },
+  {
+    "key": "sadou-2026-11-meeting-action-edit",
+    "period": "2026-11-12",
+    "sortDate": "2026-11-12",
+    "title": "会议纪要详情与行动项编辑改进",
+    "summary": "调整纪要详情页面布局及交互；核对 AI 解析的行动项时可切换新增任务或变更已有任务，并校验所关联任务属于目标项目。",
+    "sources": "Git: c79b386, a58f239, 0afd1bf"
+  },
+  {
+    "key": "sadou-2026-11-work-reports-document-ai",
+    "period": "2026-11-18",
+    "sortDate": "2026-11-18",
+    "title": "日报补录、可追溯周报与 AI 文本修订",
+    "summary": "人工日报追加保存修订，项目周报保留授权来源快照，Markdown/TXT 支持 AI 预览差异及保存新版本；会议任务允许无分组，非空分组校验所属项目。本地自动化验收与线上部署分别记录。",
+    "sources": "Git: b8b0973；docs/日报周报与AI资料修订验收.md"
   }
 ]

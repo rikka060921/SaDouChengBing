@@ -35,12 +35,15 @@ public class DetailsModel : PageModel
     public Project Project { get; set; } = null!;
     public string ReporterName { get; set; } = string.Empty;
     public List<AttachmentViewModel> Attachments { get; set; } = new();
+    public List<WorkReportSource> Sources => WorkReportService.ReadSources(DailyReport?.SourceSnapshotJson);
+    public bool CanEdit { get; set; }
     public string ReportContentHtml => Markdown.ToHtml(
         DailyReport?.ReportContent ?? string.Empty,
         new MarkdownPipelineBuilder().DisableHtml().UseAdvancedExtensions().Build());
 
     public async Task<IActionResult> OnGetAsync(int? id)
     {
+        Response.Headers.CacheControl = "private, no-store";
         if (!id.HasValue) return NotFound();
 
         var currentUser = await _userManager.GetUserAsync(User);
@@ -50,6 +53,7 @@ public class DetailsModel : PageModel
         var report = await _service.GetDailyReportWithDetails(id.Value, currentUser);
         if (report == null) return NotFound("日报不存在或已被删除");
         DailyReport = report;
+        CanEdit = report.ReportType != 4 && (await _service.CheckEditPermission(report, currentUser)).CanEdit;
 
         Project = DailyReport.Project!;
         ReporterName = await _service.GetReporterName(DailyReport.ReporterId);

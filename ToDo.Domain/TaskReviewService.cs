@@ -55,7 +55,7 @@ public sealed class TaskReviewService(ApplicationDbContext context)
         context.ChangeLogs.Add(new ChangeLog
         {
             OperationType = OperationType.状态变更, OperationTarget = OperationTarget.任务,
-            OperatedAt = now, OperatedByUserId = user.Id, OperatedByUserName = user.UserName,
+            OperatedAt = AppTime.ToUtc(now), OperatedByUserId = user.Id, OperatedByUserName = user.UserName,
             OperatedByRealName = user.RealName, ProjectId = task.ProjectId, TaskId = task.Id,
             TaskTitle = task.Title, TargetId = task.Id,
             BeforeContent = $"状态：{before}", AfterContent = $"状态：{task.Status}\n审核意见：{comment}"

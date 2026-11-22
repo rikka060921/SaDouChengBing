@@ -31,17 +31,20 @@ public sealed class DistributedLeaseService
                 .SetProperty(item => item.ExpiresAt, expiresAt), cancellationToken);
         if (renewed == 1) return new DistributedLeaseHandle(this, normalizedKey, ownerId);
 
-        if (await _context.BackgroundJobLeases.AsNoTracking()
-            .AnyAsync(item => item.LeaseKey == normalizedKey, cancellationToken))
-            return null;
-
-        var lease = new BackgroundJobLease
+        // Keep the atomic insert, but use the actual provider's conflict syntax.
+        var provider = _context.Database.ProviderName ?? string.Empty;
+        if (provider.Contains("MySql", StringComparison.OrdinalIgnoreCase)
+            || provider.Contains("Sqlite", StringComparison.OrdinalIgnoreCase))
         {
-            LeaseKey = normalizedKey,
-            OwnerId = ownerId,
-            AcquiredAt = now,
-            ExpiresAt = expiresAt
-        };
+            var insert = provider.Contains("Sqlite", StringComparison.OrdinalIgnoreCase)
+                ? "INSERT OR IGNORE" : "INSERT IGNORE";
+            var inserted = await _context.Database.ExecuteSqlRawAsync(
+                insert + " INTO `background_job_leases` (`LeaseKey`, `AcquiredAt`, `ExpiresAt`, `OwnerId`) VALUES ({0}, {1}, {2}, {3})",
+                new object[] { normalizedKey, now, expiresAt, ownerId }, cancellationToken);
+            return inserted == 1 ? new DistributedLeaseHandle(this, normalizedKey, ownerId) : null;
+        }
+        if (await _context.BackgroundJobLeases.AsNoTracking().AnyAsync(l => l.LeaseKey == normalizedKey, cancellationToken)) return null;
+        var lease = new BackgroundJobLease { LeaseKey = normalizedKey, OwnerId = ownerId, AcquiredAt = now, ExpiresAt = expiresAt };
         _context.BackgroundJobLeases.Add(lease);
         try
         {
@@ -51,6 +54,7 @@ public sealed class DistributedLeaseService
         catch (DbUpdateException)
         {
             _context.Entry(lease).State = EntityState.Detached;
+            if (!await _context.BackgroundJobLeases.AsNoTracking().AnyAsync(l => l.LeaseKey == normalizedKey, cancellationToken)) throw;
             return null;
         }
     }

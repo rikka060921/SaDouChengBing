@@ -86,7 +86,7 @@ public sealed class AgentContextService
         if (sources.Contains(AgentContextSource.Documents))
             await AppendDocumentsAsync(builder, definition, session, userId, cancellationToken);
         if (sources.Contains(AgentContextSource.Reports))
-            await AppendReportsAsync(builder, session.ProjectId, cancellationToken);
+            await AppendReportsAsync(builder, session.ProjectId, userId, cancellationToken);
 
         if (recordAudit) await RecordContextReadAsync(session, sources, cancellationToken);
         return builder.ToString().Trim();
@@ -315,11 +315,16 @@ public sealed class AgentContextService
         }
     }
 
-    private async Task AppendReportsAsync(StringBuilder builder, int? projectId, CancellationToken cancellationToken)
+    private async Task AppendReportsAsync(StringBuilder builder, int? projectId, int userId, CancellationToken cancellationToken)
     {
         if (!projectId.HasValue) throw new InvalidOperationException("报告上下文要求关联项目");
+        var user = await _context.Users.AsNoTracking().SingleOrDefaultAsync(u => u.Id == userId
+            && !u.IsDeleted && u.Status == UserStatus.Active, cancellationToken)
+            ?? throw new UnauthorizedAccessException("账号不可用");
+        var managedProjects = MemberReportAccess.Projects(_context, user).Select(p => p.Id);
         var reports = await _context.DailyReport.AsNoTracking()
-            .Where(item => item.ProjectId == projectId.Value && !item.IsDeleted)
+            .Where(item => item.ProjectId == projectId.Value && !item.IsDeleted
+                && ((item.ReportType != 4 && !item.ContainsMemberDailyData) || managedProjects.Contains(item.ProjectId)))
             .OrderByDescending(item => item.ReportDate)
             .Take(10)
             .Select(item => new { item.Id, item.ReportType, item.ReportDate, item.ReportTitle, item.ReportContent })

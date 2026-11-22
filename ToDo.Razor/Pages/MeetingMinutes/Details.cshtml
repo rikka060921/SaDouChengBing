@@ -257,6 +257,28 @@
 						</div>
 					</div>
 
+					<ul class="nav nav-tabs mb-3" id="meetingTabs" role="tablist">
+						<li class="nav-item" role="presentation">
+							<button class="nav-link active" id="mtab-content" data-bs-toggle="tab" data-bs-target="#mpane-content" type="button" role="tab">
+								<i class="fas fa-file-alt me-1"></i>会议内容
+							</button>
+						</li>
+						<li class="nav-item" role="presentation">
+							<button class="nav-link" id="mtab-decisions" data-bs-toggle="tab" data-bs-target="#mpane-decisions" type="button" role="tab">
+								<i class="fas fa-gavel me-1"></i>会议决策
+								@if (Model.MeetingDecisions.Any()) { <span class="badge bg-warning text-dark ms-1">@Model.MeetingDecisions.Count</span> }
+							</button>
+						</li>
+						<li class="nav-item" role="presentation">
+							<button class="nav-link" id="mtab-tasks" data-bs-toggle="tab" data-bs-target="#mpane-tasks" type="button" role="tab">
+								<i class="fas fa-tasks me-1"></i>会议任务
+								@if (Model.ActionItems.Any()) { <span class="badge bg-primary ms-1">@Model.ActionItems.Count</span> }
+							</button>
+						</li>
+					</ul>
+					<div class="tab-content" id="meetingTabContent">
+
+					<div class="tab-pane fade show active" id="mpane-content" role="tabpanel">
 					<h5 class="mb-3"><i class="fas fa-file-alt me-2"></i>会议内容</h5>
 					<div class="markdown-body" id="markdown-content">
 						@Html.Raw(Model.RenderedContent)
@@ -285,7 +307,9 @@
 							<div class="small text-muted" style="white-space: pre-wrap;">@Model.MeetingMinutes.AiMeetingPurpose</div>
 						</div>
 					}
+					</div><!-- /mpane-content -->
 
+					<div class="tab-pane fade" id="mpane-decisions" role="tabpanel">
 					@if (Model.MeetingDecisions.Any())
 					{
 						<div class="card mb-3">
@@ -306,10 +330,7 @@
 											<th style="width: 25%;">决策内容</th>
 											<th style="width: 15%;">决策人</th>
 											<th>会议原话（点击跳转）</th>
-											@if (Model.MeetingMinutes.ConfirmedAt == null)
-											{
-												<th style="width: 80px;">操作</th>
-											}
+											<th style="width: 140px;">操作</th>
 										</tr>
 									</thead>
 									<tbody>
@@ -352,17 +373,15 @@
 												{
 													<td class="decision-col-action">
 														<div class="d-flex gap-1">
-															<button type="button" class="btn btn-sm btn-outline-primary btn-edit-decision" title="手动修改决策">
-																<i class="bi bi-pencil"></i>
-															</button>
-															<button type="button" class="btn btn-sm btn-outline-warning btn-ai-match-decision" title="AI 重新匹配原话">
-																<i class="bi bi-stars"></i>
-															</button>
-															<button type="button" class="btn btn-sm btn-outline-danger btn-delete-decision" title="删除决策">
-																<i class="bi bi-trash"></i>
-															</button>
+															<button type="button" class="btn btn-sm btn-outline-primary btn-edit-decision" title="手动修改决策"><i class="bi bi-pencil"></i></button>
+															<button type="button" class="btn btn-sm btn-outline-warning btn-ai-match-decision" title="AI 重新匹配原话"><i class="bi bi-stars"></i></button>
+															<button type="button" class="btn btn-sm btn-outline-danger btn-delete-decision" title="删除决策"><i class="bi bi-trash"></i></button>
 														</div>
 													</td>
+												}
+												else
+												{
+													<td></td>
 												}
 											</tr>
 										}
@@ -577,8 +596,10 @@
 							</script>
 						}
 					}
+					</div><!-- /mpane-decisions -->
 
-					<div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mt-4 mb-2">
+					<div class="tab-pane fade" id="mpane-tasks" role="tabpanel">
+					<div id="actionItemsSection" class="d-flex justify-content-between align-items-center gap-2 flex-wrap mt-4 mb-2">
 						<div>
 							<h5 class="mb-1"><i class="fas fa-tasks me-2"></i>本次会议任务</h5>
 							<div class="small text-muted">AI先生成任务建议，审批人确认后才会创建或更新任务。<span class="text-success">表格内下拉框直接选择即可自动保存</span></div>
@@ -594,7 +615,7 @@
 							}
 						</div>
 						<div class="d-flex gap-2 flex-wrap">
-							@if (Model.CanEdit || Model.CanApproveWrites)
+							@if ((Model.CanEdit || Model.CanApproveWrites) && Model.MeetingMinutes.ConfirmedAt == null)
 							{
 								<form method="post" asp-page-handler="Prepare" asp-route-id="@Model.MeetingMinutes.Id" id="meetingSyncForm">
 									<button type="submit" class="btn btn-sm btn-outline-primary" id="meetingSyncSubmit"><i class="fas fa-wand-magic-sparkles me-1"></i>重新解析任务</button>
@@ -646,513 +667,242 @@
 							<div class="alert alert-warning py-2">任务正在等待系统管理员、项目负责人或项目管理员确认。</div>
 						}
 
-						@* ===== 多项目改造：按项目分组渲染 ===== *@
-						@foreach (var kv in Model.ActionItemsByProject)
-						{
-							var projectId = kv.Key;
-							var items = kv.Value;
-							var project = Model.ProjectsById.GetValueOrDefault(projectId);
-							var projectMembers = Model.ProjectMembersByProject.GetValueOrDefault(projectId) ?? new List<ApplicationUser>();
-							var projectGroups = Model.ProjectTaskGroupsByProject.GetValueOrDefault(projectId) ?? new List<DomainSelectListItem>();
+						@* ===== 标签页：新增 / 变更 ===== *@
+						<ul class="nav nav-tabs mb-3" id="actionItemTabs" role="tablist">
+							<li class="nav-item" role="presentation">
+								<button class="nav-link active" id="tab-new" data-bs-toggle="tab" data-bs-target="#pane-new" type="button" role="tab">
+									<i class="fas fa-plus-circle me-1 text-success"></i>新增任务
+									<span class="badge bg-success ms-1">@Model.ActionItems.Count(x => x.ActionType != "TaskChange")</span>
+								</button>
+							</li>
+							<li class="nav-item" role="presentation">
+								<button class="nav-link" id="tab-change" data-bs-toggle="tab" data-bs-target="#pane-change" type="button" role="tab">
+									<i class="fas fa-edit me-1 text-warning"></i>变更任务
+									<span class="badge bg-warning text-dark ms-1">@Model.ActionItems.Count(x => x.ActionType == "TaskChange")</span>
+								</button>
+							</li>
+						</ul>
 
-							<div class="card mb-4 border-primary">
-								<div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-									<span>
-										<i class="fas fa-project-diagram me-1"></i>
-										项目：<strong>@(project?.Name ?? "未知项目")</strong>
-									</span>
-									<span class="badge bg-light text-primary">@items.Count 项任务</span>
-								</div>
-								<div class="card-body p-0">
-									<div class="table-responsive">
-										<table class="table table-sm table-bordered align-middle mb-0">
-											<thead class="table-primary text-white">
-												<tr>
-													<th style="width:50px;">序号</th>
-													<th style="min-width:60px;">类型</th>
-													<th style="min-width:200px;">任务标题</th>
-													<th style="min-width:250px;">详细描述</th>
-													<th style="min-width:200px;">变更详情</th>
-													<th style="min-width:120px;">责任人</th>
-													<th style="min-width:130px;">截止日期</th>
-													<th style="min-width:80px;">优先级</th>
-													<th style="min-width:100px;">任务分组</th>
-													<th style="min-width:180px;">所属项目</th>
-													<th style="min-width:200px;">关联会前事项</th>
-													<th style="min-width:180px;">来源决策</th>
-													<th style="min-width:100px;">初始状态</th>
-													<th style="min-width:220px;">督办状态</th>
-													<th style="min-width:140px;">操作</th>
-												</tr>
-											</thead>
-											<tbody>
-												@{
-													int index = 1;
-												}
-												@foreach (var item in items)
-												{
-													var task = item.MatchedTask;
-													var statusText = task?.Status switch
-													{
-														ToDo.Entities.TaskStatus.InProgress => "进行中",
-														ToDo.Entities.TaskStatus.Completed => "已完成",
-														ToDo.Entities.TaskStatus.PendingConfirmation => "待审核",
-														ToDo.Entities.TaskStatus.Cancelled => "已取消",
-														_ => item.TaskStatus == "Completed" ? "已完成" : item.TaskStatus == "InProgress" ? "进行中" : "未开始"
-													};
-													var statusClass = task?.Status switch
-													{
-														ToDo.Entities.TaskStatus.Completed => "bg-success",
-														ToDo.Entities.TaskStatus.InProgress => "bg-primary",
-														ToDo.Entities.TaskStatus.PendingConfirmation => "bg-warning text-dark",
-														ToDo.Entities.TaskStatus.Cancelled => "bg-secondary",
-														_ => item.TaskStatus == "Completed" ? "bg-success" : item.TaskStatus == "InProgress" ? "bg-primary" : "bg-light border text-dark"
-													};
-													var priorityClass = item.Priority switch { "High" => "bg-danger", "Low" => "bg-secondary", _ => "bg-warning text-dark" };
-													var priorityText = item.Priority switch { "High" => "高", "Low" => "低", _ => "中" };
-													var supervisionText = item.SupervisionStatus switch
-													{
-														MeetingActionSupervisionStatus.NeedsDefinition => "待补齐执行条件",
-														MeetingActionSupervisionStatus.OnTrack => "正常推进",
-														MeetingActionSupervisionStatus.DueSoon => "即将到期",
-														MeetingActionSupervisionStatus.Overdue => "已逾期",
-														MeetingActionSupervisionStatus.Blocked => "执行受阻",
-														MeetingActionSupervisionStatus.Completed => "已完成",
-														MeetingActionSupervisionStatus.Cancelled => "已取消",
-														_ => "待关联任务"
-													};
-													var supervisionClass = item.SupervisionStatus switch
-													{
-														MeetingActionSupervisionStatus.OnTrack => "bg-info text-dark",
-														MeetingActionSupervisionStatus.DueSoon => "bg-warning text-dark",
-														MeetingActionSupervisionStatus.Overdue => "bg-danger",
-														MeetingActionSupervisionStatus.Blocked => "bg-danger",
-														MeetingActionSupervisionStatus.Completed => "bg-success",
-														MeetingActionSupervisionStatus.Cancelled => "bg-secondary",
-														MeetingActionSupervisionStatus.NeedsDefinition => "bg-warning text-dark",
-														_ => "bg-light border text-dark"
-													};
+						<div class="tab-content" id="actionItemTabContent">
+							@{
+								var tabDefs = new[]
+								{
+												new { Key = "new", Title = "新增任务", IsChange = false },
+												new { Key = "change", Title = "变更任务", IsChange = true }
+												};
+							}
+							@foreach (var tab in tabDefs)
+							{
+								var tabItems = Model.ActionItemsByProject
+								.SelectMany(kv => kv.Value.Select(item => new { ProjectId = kv.Key, Item = item }))
+								.Where(x => tab.IsChange ? x.Item.ActionType == "TaskChange" : x.Item.ActionType != "TaskChange")
+								.GroupBy(x => x.ProjectId)
+								.ToList();
 
-													<tr data-action-item-id="@item.Id">
-														<td class="text-center">@index</td>
-														<td>
-															@if (item.ActionType == "TaskChange")
-															{
-																<span class="badge bg-warning text-dark">变更</span>
-															}
-															else
-															{
-																<span class="badge bg-success">新增</span>
-															}
-														</td>
-														<td style="white-space:normal;word-break:break-all;">
-															@if (item.ActionType == "TaskChange" && task != null)
-															{
-																<a href="/Tasks/Details/@item.MatchedTaskId" target="_blank">@task.Title</a>
-																<span class="text-muted small">（历史任务）</span>
-															}
-															else
-															{
-																@item.Title
-															}
-														</td>
-														<td style="white-space:normal;word-break:break-all;">
-															@if (item.ActionType == "TaskChange" && task != null)
-															{
-																if (!string.IsNullOrEmpty(task.Description))
-																{
-																	@(task.Description.Length > 150 ? task.Description.Substring(0, 150) + "..." : task.Description)
-																}
-																else
-																{
-																	<span class="text-muted">-</span>
-																}
-															}
-															else
-															{
-																if (!string.IsNullOrEmpty(item.Description))
-																{
-																	@(item.Description.Length > 150 ? item.Description.Substring(0, 150) + "..." : item.Description)
-																}
-																else
-																{
-																	<span class="text-muted">-</span>
-																}
-															}
-														</td>
-														<td style="min-width:200px;">
-															@if (item.ActionType == "TaskChange")
-															{
-																<div class="small">
-																	@if (!string.IsNullOrEmpty(item.ChangeDescription))
-																	{
-																		<span>@item.ChangeDescription</span>
-																	}
-																	else
-																	{
-																		@if (!string.IsNullOrEmpty(item.BeforeStatus) && item.BeforeStatus != item.AfterStatus)
-																		{
-																			<span>状态: @item.BeforeStatus → @item.AfterStatus</span>
-																			<br />
-																		}
-																		@if (item.BeforeAssigneeId != item.AfterAssigneeId)
-																		{
-																			var beforeUser = projectMembers.FirstOrDefault(u => u.Id == item.BeforeAssigneeId);
-																			var afterUser = projectMembers.FirstOrDefault(u => u.Id == item.AfterAssigneeId);
-																			<span>负责人: @(beforeUser?.RealName ?? "未指定") → @(afterUser?.RealName ?? "未指定")</span>
-																			<br />
-																		}
-																		@if (item.BeforeDeadline?.ToString("yyyy-MM-dd") != item.AfterDeadline?.ToString("yyyy-MM-dd"))
-																		{
-																			<span>截止时间: @item.BeforeDeadline?.ToString("yyyy-MM-dd") → @item.AfterDeadline?.ToString("yyyy-MM-dd")</span>
-																			<br />
-																		}
-																		@if (item.BeforePriority != item.AfterPriority)
-																		{
-																			<span>优先级: @item.BeforePriority → @item.AfterPriority</span>
-																			<br />
-																		}
-																	}
-																</div>
-															}
-															else
-															{
-																<span class="text-muted">-</span>
-															}
-														</td>
-														<td>
-															@if (item.IsConfirmed)
-															{
-																var assigneeName = task?.Assignee?.RealName ?? item.AssigneeText ?? "-";
-																<span class="text-muted">@assigneeName</span>
-															}
-															else
-															{
-																<select class="form-select form-select-sm row-assignee-select" data-item-id="@item.Id" disabled="@(!Model.CanApproveWrites)">
-																	<option value="">未识别</option>
-																	@foreach (var user in projectMembers)
-																	{
-																		<option value="@user.Id" selected="@(item.AssigneeId == user.Id)">@user.RealName</option>
-																	}
-																</select>
-															}
-														</td>
-														<td>
-															@if (item.IsConfirmed)
-															{
-																var deadlineText = (task?.EndTime ?? item.Deadline)?.ToString("yyyy-MM-dd") ?? "-";
-																<span class="text-muted">@deadlineText</span>
-															}
-															else
-															{
-																<input type="date" class="form-control form-control-sm row-deadline-input"
-																	   data-item-id="@item.Id"
-																	   disabled="@(!Model.CanApproveWrites)"
-																	   value="@((task?.EndTime ?? item.Deadline)?.ToString("yyyy-MM-dd"))" />
-															}
-														</td>
-														<td>
-															@if (item.IsConfirmed)
-															{
-																<span class="badge @priorityClass">@priorityText</span>
-															}
-															else
-															{
-																<select class="form-select form-select-sm row-priority-select" data-item-id="@item.Id" disabled="@(!Model.CanApproveWrites)">
-																	<option value="Low" selected="@(item.Priority == "Low")">低</option>
-																	<option value="Medium" selected="@(item.Priority == "Medium")">中</option>
-																	<option value="High" selected="@(item.Priority == "High")">高</option>
-																</select>
-															}
-														</td>
-														<td>
-															@if (item.IsConfirmed)
-															{
-																var groupText = task?.Group?.Name ?? item.GroupName ?? "无分组";
-																<span class="text-muted">@groupText</span>
-															}
-															else
-															{
-																<select class="form-select form-select-sm row-group-select" data-item-id="@item.Id" disabled="@(!Model.CanApproveWrites)">
-																	<option value="" selected="@(string.IsNullOrEmpty(item.GroupName))">无分组</option>
-																	@foreach (var g in projectGroups)
-																	{
-																		<option value="@g.Text" selected="@(item.GroupName == g.Text)">@g.Text</option>
-																	}
-																</select>
-															}
-														</td>
-
-														@* ===== 所属项目下拉框（未确认时可改） ===== *@
-														<td>
-															@if (item.IsConfirmed)
-															{
-																<span class="text-muted">@(project?.Name ?? "-")</span>
-															}
-															else
-															{
-																<select class="form-select form-select-sm row-project-select" data-item-id="@item.Id" disabled="@(!Model.CanApproveWrites)">
-																	@foreach (var kvp in Model.ProjectsById)
-																	{
-																		<option value="@kvp.Key" selected="@(item.ProjectId == kvp.Key || (item.ProjectId == null && kvp.Key == Model.MeetingMinutes.ProjectId))">
-																			@kvp.Value.Name
-																		</option>
-																	}
-																</select>
-															}
-														</td>
-
-														<td style="white-space:normal;word-break:break-all;">
-															@if (!item.IsConfirmed && Model.MeetingMinutes.ConfirmedAt == null && Model.PrepDraftAllTasks.Count > 0)
-															{
-																<select class="form-select form-select-sm match-task-select" data-item-id="@item.Id">
-																	<option value="0" selected="@(!item.PrepDraftTaskId.HasValue)">未关联</option>
-																	@foreach (var dt in Model.PrepDraftAllTasks)
-																	{
-																		<option value="@dt.Id" selected="@(item.PrepDraftTaskId == dt.Id)">@(dt.IsManual ? "（手工）" : "")@dt.Title</option>
-																	}
-																</select>
-															}
-															else if (!item.IsConfirmed && Model.MeetingMinutes.ConfirmedAt == null)
-															{
-																<span class="text-muted small">无会前准备草稿</span>
-															}
-															else if (item.PrepDraftTaskId.HasValue && Model.PrepDraftAllTasks.FirstOrDefault(t => t.Id == item.PrepDraftTaskId) != null)
-															{
-																<span>@Model.PrepDraftAllTasks.First(t => t.Id == item.PrepDraftTaskId).Title</span>
-															}
-															else
-															{
-																<span class="text-muted small">-</span>
-															}
-														</td>
-														<td style="white-space:normal;word-break:break-all;">
-															@if (item.IsConfirmed && !string.IsNullOrWhiteSpace(item.SourceDecisionContent))
-															{
-																int? sourceDecisionJumpIndex = null;
-																if (item.SourceDecisionIndex.HasValue
-																&& item.SourceDecisionIndex.Value >= 1
-																&& item.SourceDecisionIndex.Value <= Model.MeetingDecisions.Count
-																&& DetailsModel.DecisionContentMatches(
-																Model.MeetingDecisions[item.SourceDecisionIndex.Value - 1].Content,
-																item.SourceDecisionContent))
-																{ sourceDecisionJumpIndex = item.SourceDecisionIndex.Value - 1; }
-																else
-																{
-																	for (int d = 0; d < Model.MeetingDecisions.Count; d++)
-																	{
-																		if (DetailsModel.DecisionContentMatches(Model.MeetingDecisions[d].Content, item.SourceDecisionContent))
-																		{ sourceDecisionJumpIndex = d; break; }
-																	}
-																}
-																var sourceDecisionText = item.SourceDecisionContent.Length > 24
-																? item.SourceDecisionContent.Substring(0, 24) + "…"
-																: item.SourceDecisionContent;
-																if (sourceDecisionJumpIndex.HasValue)
-																{
-																	<button type="button" class="btn btn-link border-0 p-0 text-start text-decoration-none source-decision-link"
-																			data-decision-index="@sourceDecisionJumpIndex.Value">
-																		<span class="badge bg-warning text-dark me-1">决策@(sourceDecisionJumpIndex.Value + 1)</span>
-																		<span class="small">@sourceDecisionText</span>
-																	</button>
-																}
-																else
-																{
-																	<span class="text-muted small" title="@item.SourceDecisionContent">
-																		<span class="badge bg-light border text-muted me-1">决策</span>@sourceDecisionText
-																	</span>
-																}
-															}
-															else if (item.IsConfirmed)
-															{
-																<span class="text-muted">-</span>
-															}
-															else
-															{
-																<select class="form-select form-select-sm row-decision-select" data-item-id="@item.Id" disabled="@(!Model.CanApproveWrites)">
-																	@{var selectedDecisionOption = Model.GetSourceDecisionOptionIndex(item);}
-																	<option value="" selected="@(selectedDecisionOption == null)">无（讨论直接布置）</option>
-																	@for (int d = 0; d < Model.MeetingDecisions.Count; d++)
-																	{
-																		var decisionContent = Model.MeetingDecisions[d].Content ?? string.Empty;
-																		var optionText = decisionContent.Length > 18 ? decisionContent.Substring(0, 18) + "…" : decisionContent;
-																		<option value="@(d + 1)" selected="@(selectedDecisionOption == d)">决策@(d + 1)：@optionText</option>
-																	}
-																</select>
-															}
-														</td>
-														<td>
-															@if (item.IsConfirmed)
-															{
-																<span class="badge @statusClass">@statusText</span>
-															}
-															else
-															{
-																<select class="form-select form-select-sm row-status-select" data-item-id="@item.Id" disabled="@(!Model.CanApproveWrites)">
-																	<option value="NotStarted" selected="@(item.TaskStatus == "NotStarted")">未开始</option>
-																	<option value="InProgress" selected="@(item.TaskStatus == "InProgress")">进行中</option>
-																	<option value="Completed" selected="@(item.TaskStatus == "Completed")">已完成</option>
-																	<option value="Cancelled" selected="@(item.TaskStatus == "Cancelled")">已取消</option>
-																	<option value="PendingConfirmation" selected="@(item.TaskStatus == "PendingConfirmation")">待审核</option>
-																</select>
-															}
-														</td>
-														<td>
-															@if (!item.IsConfirmed)
-															{
-																<span class="badge bg-light border text-muted">确认后启用</span>
-															}
-															else
-															{
-																<span class="badge @supervisionClass">@supervisionText</span>
-																@if (item.EscalationLevel > 0)
-																{
-																	<span class="badge bg-dark ms-1">L@(item.EscalationLevel)</span>
-																}
-																@if (!string.IsNullOrWhiteSpace(item.SupervisionMessage))
-																{
-																	<div class="small text-muted mt-1" style="white-space:normal;">@item.SupervisionMessage</div>
-																}
-																@if (item.LastSupervisedAt.HasValue)
-																{
-																	<div class="small text-muted mt-1">检查于 @item.LastSupervisedAt.Value.ToString("MM-dd HH:mm") · 已提醒 @item.ReminderCount 次</div>
-																}
-															}
-														</td>
-														<td>
-															@if (item.IsConfirmed)
-															{
-																@if (item.MatchedTaskId.HasValue && task != null)
-																{
-																	<a asp-page="/Tasks/Details" asp-route-id="@item.MatchedTaskId" class="btn btn-sm btn-outline-primary">查看任务</a>
-																	<span class="text-success small ms-1">已同步</span>
-																}
-																else
-																{
-																	<span class="badge bg-danger">关联任务失效</span>
-																}
-															}
-															else if (Model.CanApproveWrites)
-															{
-																<button class="btn btn-sm btn-outline-warning edit-action-item-btn"
-																	data-id="@item.Id" data-title="@item.Title" data-desc="@item.Description"
-																	data-assignee-id="@item.AssigneeId" data-deadline="@item.Deadline?.ToString("yyyy-MM-dd")"
-																	data-priority="@item.Priority" data-status="@item.TaskStatus"
-																	data-group-value="@item.GroupName"
-																	data-prep-draft-task-id="@(item.PrepDraftTaskId ?? 0)"
-																	data-source-decision-index="@((Model.GetSourceDecisionOptionIndex(item) + 1) ?? 0)">
-																	<i class="fas fa-edit"></i>编辑
-																</button>
-																<button class="btn btn-sm btn-outline-danger delete-action-btn ms-1"
-																		data-item-id="@item.Id" data-meeting-id="@Model.MeetingMinutes.Id">
-																	<i class="fas fa-trash"></i>删除
-																</button>
-															}
-															else
-															{
-																<span class="badge bg-light border text-muted">等待审批人处理</span>
-															}
-														</td>
-													</tr>
-													index++;
-												}
-											</tbody>
-										</table>
-									</div>
-								</div>
-							</div>
-						}
-
-						@* 会前准备事项讨论情况（全量对照） *@
-						@if (Model.LinkedPrepDraft != null)
-						{
-							var discussedCount = Model.PrepDraftAllTasks.Count - Model.UndiscussedDraftTasks.Count;
-							<div class="card mt-3" id="undiscussedDraftCard">
-								@{
-									var actionItemRefs = new Dictionary<int, string>();
-									foreach (var kv in Model.ActionItemsByProject)
+								<div class="tab-pane fade @(tab.Key == "new" ? "show active" : "")" id="pane-@tab.Key" role="tabpanel">
+									@if (!tabItems.Any())
 									{
-										var projName = Model.ProjectsById.GetValueOrDefault(kv.Key)?.Name ?? "未知项目";
-										for (int i = 0; i < kv.Value.Count; i++)
-										{
-											actionItemRefs[kv.Value[i].Id] = $"{projName} 第{i + 1}条";
-										}
-									}
-								}
-								<div class="card-header bg-light">
-									<h6 class="mb-0">
-										<i class="fas fa-info-circle me-2"></i>
-										会前准备事项讨论情况
-										<span class="badge bg-secondary ms-2">草稿：@Model.LinkedPrepDraft.Title</span>
-										（共 @Model.PrepDraftAllTasks.Count 项 · 已讨论 <span id="discussedCount">@discussedCount</span> · 未讨论 <span id="undiscussedCount">@Model.UndiscussedDraftTasks.Count</span>）
-									</h6>
-								</div>
-								<div class="card-body" id="undiscussedDraftBody">
-									@if (Model.PrepDraftAllTasks.Count == 0)
-									{
-										<div class="text-muted small">草稿中没有列出可比对的任务或事项。</div>
+										<div class="alert alert-light border">暂无@(tab.Title)。</div>
 									}
 									else
 									{
-										<div class="table-responsive">
-											<table class="table table-sm mb-0 w-100">
-												<thead>
-													<tr>
-														<th>事项</th>
-														<th style="width:110px;">讨论状态</th>
-														<th style="width:32%;">对应行动项</th>
-													</tr>
-												</thead>
-												<tbody>
-													@foreach (var t in Model.PrepDraftAllTasks)
-													{
-														var matchedTitles = Model.ActionItems
-															.Where(a => a.PrepDraftTaskId == t.Id)
-															.Select(a => $"{actionItemRefs.GetValueOrDefault(a.Id, "未知项目")} · {a.Title}")
-															.ToList();
-														var isDiscussed = matchedTitles.Count > 0;
-														<tr class="@(t.IsOverdue ? "table-danger" : "")">
-															<td>
-																@t.Title
-																@if (t.IsManual)
-																{
-																	<span class="badge bg-secondary ms-1">手工</span>
-																}
-																@if (t.IsOverdue)
-																{
-																	<span class="badge bg-danger ms-1">逾期</span>
-																}
-															</td>
-															<td>
-																@if (isDiscussed)
-																{
-																	<span class="badge bg-success">✓ 已讨论</span>
-																}
-																else
-																{
-																	<span class="badge bg-warning text-dark">✗ 未讨论</span>
-																}
-															</td>
-															<td class="small text-muted">@(isDiscussed ? string.Join("；", matchedTitles) : "—")</td>
-														</tr>
-													}
-												</tbody>
-											</table>
-										</div>
-										@if (Model.UndiscussedDraftTasks.Count == 0)
+										@foreach (var grp in tabItems)
 										{
-											<div class="text-muted small mt-2"><i class="fas fa-check-circle me-1 text-success"></i>会前准备里列出的所有事项在本次会议中都已处理。</div>
-										}
-										else
-										{
-											<div class="text-muted small mt-2"><i class="fas fa-lightbulb me-1"></i>提示：标「未讨论」的事项（含勾选任务与手工填写项）本次会议没有产生关联行动项，建议下次会议继续跟进。</div>
+											var projectId = grp.Key;
+											var items = grp.Select(x => x.Item).ToList();
+											var project = Model.ProjectsById.GetValueOrDefault(projectId);
+											var projectMembers = Model.ProjectMembersByProject.GetValueOrDefault(projectId) ?? new List<ApplicationUser>();
+											var projectGroups = Model.ProjectTaskGroupsByProject.GetValueOrDefault(projectId) ?? new List<DomainSelectListItem>();
+
+											<div class="card mb-4 border-@(tab.IsChange ? "warning" : "success")">
+												<div class="card-header bg-@(tab.IsChange ? "warning" : "success") text-white d-flex justify-content-between align-items-center">
+													<span>
+														<i class="fas fa-project-diagram me-1"></i>
+														项目：<strong>@(project?.Name ?? "未知项目")</strong>
+													</span>
+													<span class="badge bg-light text-dark">@items.Count 项@(tab.Title)</span>
+												</div>
+												<div class="card-body p-0">
+													<div class="table-responsive" style="overflow-x:hidden;">
+														<table class="table table-sm table-bordered align-middle mb-0" style="width:100%;table-layout:fixed;">
+															<thead class="table-light">
+																<tr>
+																	<th style="width:4%;">序号</th>
+																	<th style="width:22%;">任务标题</th>
+																	<th style="width:11%;">责任人</th>
+																	<th style="width:8%;">任务分组</th>
+																	<th style="width:10%;">所属项目</th>
+																	<th style="width:11%;">来源决策</th>
+																	<th style="width:11%;">关联会前事项</th>
+																	<th style="width:13%;">操作</th>
+																</tr>
+															</thead>
+															<tbody>
+																@{
+																	int index = 1;
+																}
+																@foreach (var item in items)
+																{
+																	var task = item.MatchedTask;
+																	<tr data-action-item-id="@item.Id">
+																		<td class="text-center">@index</td>
+																		<td style="white-space:normal;word-break:break-all;">
+																			@if (item.ActionType == "TaskChange" && task != null)
+																			{
+																				<a href="/Tasks/Details/@item.MatchedTaskId" target="_blank">@task.Title</a>
+																				<span class="text-muted small">（历史任务）</span>
+																			}
+																			else
+																			{
+																				@item.Title
+																			}
+																		</td>
+																		<td>
+																			@if (item.IsConfirmed)
+																			{
+																				var assigneeName = task?.Assignee?.RealName ?? item.AssigneeText ?? "-";
+																				<span class="text-muted">@assigneeName</span>
+																			}
+																			else
+																			{
+																				<select class="form-select form-select-sm row-assignee-select" data-item-id="@item.Id" disabled="@(!Model.CanApproveWrites || Model.MeetingMinutes.ConfirmedAt.HasValue)">
+																					<option value="">未识别</option>
+																					@foreach (var user in projectMembers)
+																					{
+																						<option value="@user.Id" selected="@(item.AssigneeId == user.Id)">@user.RealName</option>
+																					}
+																				</select>
+																			}
+																		</td>
+																		<td class="text-center" style="max-width:80px;">
+																			@if (!string.IsNullOrEmpty(item.GroupName))
+																			{
+																				<span class="badge bg-light text-dark">@item.GroupName</span>
+																			}
+																			else
+																			{
+																				<span class="text-muted small">-</span>
+																			}
+																		</td>
+																		<td class="text-center" style="max-width:60px;">
+																			@if (item.IsConfirmed)
+																			{
+																				<span class="badge bg-light text-dark" title="@(project?.Name ?? "")">@(project?.Name ?? "-")</span>
+																			}
+																			else
+																			{
+																				<select class="form-select form-select-sm row-project-select" data-item-id="@item.Id" disabled="@(!Model.CanApproveWrites || Model.MeetingMinutes.ConfirmedAt.HasValue)">
+																					@foreach (var kvp in Model.ProjectsById)
+																					{
+																						<option value="@kvp.Key" selected="@(item.ProjectId == kvp.Key || (item.ProjectId == null && kvp.Key == Model.MeetingMinutes.ProjectId))">
+																							@kvp.Value.Name
+																						</option>
+																					}
+																				</select>
+																			}
+																		</td>
+																		<td style="max-width:200px;">
+																			<select class="form-select form-select-sm row-source-decision-select" data-item-id="@item.Id" disabled="@(!Model.CanApproveWrites || Model.MeetingMinutes.ConfirmedAt.HasValue)" style="margin-left:auto;max-width:100%;">
+																				<option value="0" selected="@(!item.SourceDecisionIndex.HasValue || item.SourceDecisionIndex.Value == 0)">无</option>
+																				@for (int d = 0; d < Model.MeetingDecisions.Count; d++)
+																				{
+																					var dc = Model.MeetingDecisions[d].Content ?? string.Empty;
+																					<option value="@(d + 1)" selected="@(item.SourceDecisionIndex == (d + 1))" title="@dc">决策@(d + 1)：@dc</option>
+																				}
+																			</select>
+																		</td>
+																		<td style="max-width:150px;">
+																			<select class="form-select form-select-sm row-prep-draft-select" data-item-id="@item.Id" disabled="@(!Model.CanApproveWrites || Model.MeetingMinutes.ConfirmedAt.HasValue)" style="margin-left:auto;max-width:100%;">
+																				<option value="0" selected="@(!(item.PrepDraftTaskId.HasValue && item.PrepDraftTaskId.Value > 0))">无</option>
+																				@foreach (var dt in Model.PrepDraftAllTasks)
+																				{
+																					var label = (dt.IsManual ? "（手工）" : "");
+																					var title = dt.Title ?? "";
+																					var shortTitle = title.Length > 18 ? title.Substring(0, 18) + "…" : title;
+																					<option value="@dt.Id" selected="@(item.PrepDraftTaskId == dt.Id)">@label@shortTitle</option>
+																				}
+																			</select>
+																		</td>
+																		<td>
+																			@if (item.IsConfirmed)
+																			{
+																				@if (item.MatchedTaskId.HasValue && task != null)
+																				{
+																					<a asp-page="/Tasks/Details" asp-route-id="@item.MatchedTaskId" class="btn btn-sm btn-outline-primary">查看任务</a>
+																					<span class="text-success small ms-1">已同步</span>
+																				}
+																				else
+																				{
+																					<span class="badge bg-danger">关联任务失效</span>
+																				}
+																			}
+																			else if (Model.CanApproveWrites && !Model.MeetingMinutes.ConfirmedAt.HasValue)
+																			{
+																				<button class="btn btn-sm btn-outline-warning edit-action-item-btn"
+																						data-id="@item.Id" data-title="@item.Title" data-desc="@item.Description"
+																						data-assignee-id="@item.AssigneeId" data-deadline="@item.Deadline?.ToString("yyyy-MM-dd")"
+																						data-priority="@item.Priority" data-status="@item.TaskStatus"
+																						data-group-value="@item.GroupName"
+																						data-prep-draft-task-id="@(item.PrepDraftTaskId ?? 0)"
+																						data-source-decision-index="@((Model.GetSourceDecisionOptionIndex(item) + 1) ?? 0)"
+																						data-project-id="@(item.ProjectId ?? projectId)"
+																						data-change-description="@item.ChangeDescription"
+																						data-action-type="@(item.ActionType == "TaskChange" ? "TaskChange" : "NewTask")"
+																						data-matched-task-id="@(item.MatchedTaskId ?? 0)">
+																					<i class="fas fa-edit"></i>编辑
+																				</button>
+																				<button class="btn btn-sm btn-outline-danger delete-action-btn ms-1"
+																						data-item-id="@item.Id" data-meeting-id="@Model.MeetingMinutes.Id">
+																					<i class="fas fa-trash"></i>删除
+																				</button>
+																			}
+																			else
+																			{
+																				<span class="badge bg-light border text-muted">等待审批人处理</span>
+																			}
+																		</td>
+																	</tr>
+																	index++;
+																}
+															</tbody>
+														</table>
+													</div>
+												</div>
+												@{
+													var linkedPrepIds = Model.ActionItems
+														.Where(a => a.PrepDraftTaskId.HasValue && a.PrepDraftTaskId.Value > 0)
+														.Select(a => a.PrepDraftTaskId!.Value)
+														.ToHashSet();
+													var unlinkedPrep = Model.PrepDraftAllTasks.Where(t => !linkedPrepIds.Contains(t.Id)).ToList();
+												}
+												<div id="unlinkedPrepCard" class="card mt-3 border-warning-subtle @(unlinkedPrep.Count == 0 ? "d-none" : "")">
+													<div class="card-header bg-warning-subtle py-2">
+														<i class="fas fa-exclamation-triangle me-1"></i>
+														<strong>会前准备中还有 <span id="undiscussedCount">@unlinkedPrep.Count</span> 项未关联到会议任务</strong>
+													</div>
+													<div id="undiscussedDraftBody">
+														<ul class="list-group list-group-flush small">
+															@foreach (var t in unlinkedPrep)
+															{
+																<li class="list-group-item d-flex justify-content-between align-items-center py-1">
+																	<span>
+																		@if (t.IsManual) { <span class="badge bg-secondary me-1">手工</span> }
+																		else { <span class="badge bg-primary me-1">勾选</span> }
+																		@t.Title
+																	</span>
+																</li>
+															}
+														</ul>
+													</div>
+												</div>
+											</div>
 										}
 									}
 								</div>
-							</div>
-						}
-										}
-										else if (Model.MeetingMinutes.IsDraft)
+							}
+						</div>
+					}
+					else if (Model.MeetingMinutes.IsDraft)
 					{
 						<div class="alert alert-secondary">当前为草稿。正式保存后，系统将解析任务并等待人工确认。</div>
 					}
@@ -1160,6 +910,8 @@
 					{
 						<div class="alert alert-light border">暂未识别到明确任务。请在会议内容中写明待办事项、负责人和截止时间，然后保存修改或点击"重新解析任务"；如果本次会议确实没有产生新任务，可直接点击右上角"确认会议纪要（无新任务）"完成提交。</div>
 					}
+					</div><!-- /mpane-tasks -->
+					</div><!-- /meetingTabContent -->
 
 					@if (Model.Versions.Any())
 					{
@@ -1239,6 +991,44 @@
 						</div>
 					</div>
 					<div class="row mb-3">
+						<label class="col-md-2 col-form-label">所属项目</label><div class="col-md-10">
+							<select class="form-select" name="projectId" id="edit_project">
+								@foreach (var kvp in Model.ProjectsById)
+								{
+									<option value="@kvp.Key">@kvp.Value.Name</option>
+								}
+							</select>
+						</div>
+					</div>
+					<div class="row mb-3">
+						<label class="col-md-2 col-form-label">类型</label>
+						<div class="col-md-10">
+							<select class="form-select" name="actionType" id="edit_actionType">
+								<option value="NewTask">新增任务</option>
+								<option value="TaskChange">变更任务（关联已有任务）</option>
+							</select>
+						</div>
+					</div>
+					<div class="row mb-3" id="edit_matchedTaskRow" style="display:none;">
+						<label class="col-md-2 col-form-label">关联历史任务</label>
+						<div class="col-md-10">
+							<select class="form-select" name="matchedTaskId" id="edit_matchedTask">
+								<option value="0">请选择要关联的历史任务</option>
+								@foreach (var kvp in Model.HistoricalTasksByProject)
+								{
+									var projName = Model.ProjectsById.GetValueOrDefault(kvp.Key)?.Name ?? "未知项目";
+									<optgroup label="@projName">
+										@foreach (var t in kvp.Value)
+										{
+											<option value="@t.Id">@t.DisplayText</option>
+										}
+									</optgroup>
+								}
+							</select>
+							<div class="form-text text-muted">仅列出未完成/未取消的任务；选择后保存即把该行动项转为「变更」并关联此任务。</div>
+						</div>
+					</div>
+					<div class="row mb-3">
 						<label class="col-md-2 col-form-label">关联会前事项</label><div class="col-md-10">
 							<select class="form-select" name="prepDraftTaskId" id="edit_prepDraftTask">
 								<option value="0">无（不关联会前事项）</option>
@@ -1259,6 +1049,11 @@
 									<option value="@(d + 1)">决策@(d + 1)：@(dc.Length > 40 ? dc.Substring(0, 40) + "…" : dc)</option>
 								}
 							</select>
+						</div>
+					</div>
+					<div class="row mb-3">
+						<label class="col-md-2 col-form-label">变更详情</label><div class="col-md-10">
+							<textarea class="form-control" rows="2" name="changeDescription" id="edit_changeDescription" placeholder="变更说明（仅变更类型任务）"></textarea>
 						</div>
 					</div>
 				</div>
@@ -1303,6 +1098,7 @@
 						return;
 					}
 
+					if (result.groupCleared) alert(result.msg);
 					location.reload();
 				} catch (e) {
 					alert('保存异常：' + e.message);
@@ -1403,78 +1199,105 @@
 		}
 
 		window.jumpToDecisionQuotes = function(decisionIndex) {
-			if (!window.decisionQuoteMap) {
-				alert('页面引用数据未加载（decisionQuoteMap 缺失），请刷新页面重试');
-				return;
-			}
-			const entry = (window.decisionQuoteMap || [])[decisionIndex];
-			const quotes = entry ? (entry.quotes || []) : [];
-			const keyQuote = entry ? (entry.key || '').trim() : '';
-			if (!quotes.length && !keyQuote) {
-				alert('该决策没有会议原话标注数据，请对该会议重新执行 AI 解析生成完整讨论标注');
-				return;
-			}
-
-			clearHighlight();
-
-			const cleanQuotes = quotes
-				.map(q => (q || '').replace(/^「|」$/g, '').trim())
-				.filter(q => q.length > 0);
-			const keyNormalized = normalizeText(keyQuote);
-			const seen = new Set();
-			const highlightTargets = [];
-			if (keyQuote) {
-				highlightTargets.push({ text: keyQuote, isKey: true });
-				seen.add(keyNormalized);
-			}
-			cleanQuotes.forEach(quote => {
-				const normalized = normalizeText(quote);
-				if (!normalized || seen.has(normalized)) return;
-				if (keyNormalized && (normalized.includes(keyNormalized) || keyNormalized.includes(normalized))) return;
-				seen.add(normalized);
-				highlightTargets.push({ text: quote, isKey: false });
-			});
-			if (!highlightTargets.length) return;
-
-			const transcriptDetails = document.getElementById('meeting-transcript-details');
-			const transcriptEl = document.getElementById('meeting-transcript-content');
-			const markdownEl = document.getElementById('markdown-content');
-			const targets = [];
-			if (transcriptEl) targets.push({ element: transcriptEl, details: transcriptDetails });
-			if (markdownEl) targets.push({ element: markdownEl, details: null });
-
-			for (const target of targets) {
-				let keySpan = null;
-				let firstSpan = null;
-				highlightTargets.forEach(item => {
-					const before = currentHighlight;
-					let ok = findAndHighlightInElement(target.element, item.text, false, true);
-					if (!ok) {
-						ok = findAndHighlightInElement(target.element, item.text, true, true);
-					}
-					if (ok && currentHighlight && currentHighlight !== before) {
-						if (item.isKey) {
-							keySpan = currentHighlight;
-						} else if (!firstSpan) {
-							firstSpan = currentHighlight;
-						} else {
-							const pos = currentHighlight.compareDocumentPosition(firstSpan);
-							if (pos & Node.DOCUMENT_POSITION_FOLLOWING) firstSpan = currentHighlight;
-						}
-					}
-				});
-
-				const scrollTarget = keySpan || firstSpan;
-				if (scrollTarget) {
-					if (target.details) target.details.open = true;
-					requestAnimationFrame(() => {
-						scrollTarget.scrollIntoView({ behavior: 'smooth', block: 'center' });
-					});
+			const doHighlight = function() {
+				if (!window.decisionQuoteMap) {
+					alert('页面引用数据未加载（decisionQuoteMap 缺失），请刷新页面重试');
 					return;
 				}
-			}
+				const entry = (window.decisionQuoteMap || [])[decisionIndex];
+				const quotes = entry ? (entry.quotes || []) : [];
+				const keyQuote = entry ? (entry.key || '').trim() : '';
+				if (!quotes.length && !keyQuote) {
+					alert('该决策没有会议原话标注数据，请对该会议重新执行 AI 解析生成完整讨论标注');
+					return;
+				}
 
-			alert('未在会议原始记录或整理内容中找到该决策的讨论内容');
+				clearHighlight();
+
+				const cleanQuotes = quotes
+					.map(q => (q || '').replace(/^「|」$/g, '').trim())
+					.filter(q => q.length > 0);
+				const keyNormalized = normalizeText(keyQuote);
+				const seen = new Set();
+				const highlightTargets = [];
+				if (keyQuote) {
+					highlightTargets.push({ text: keyQuote, isKey: true });
+					seen.add(keyNormalized);
+				}
+				cleanQuotes.forEach(quote => {
+					const normalized = normalizeText(quote);
+					if (!normalized || seen.has(normalized)) return;
+					if (keyNormalized && (normalized.includes(keyNormalized) || keyNormalized.includes(normalized))) return;
+					seen.add(normalized);
+					highlightTargets.push({ text: quote, isKey: false });
+				});
+				if (!highlightTargets.length) return;
+
+				const transcriptDetails = document.getElementById('meeting-transcript-details');
+				const transcriptEl = document.getElementById('meeting-transcript-content');
+				const markdownEl = document.getElementById('markdown-content');
+				const targets = [];
+				if (transcriptEl) targets.push({ element: transcriptEl, details: transcriptDetails });
+				if (markdownEl) targets.push({ element: markdownEl, details: null });
+
+				for (const target of targets) {
+					let keySpan = null;
+					let firstSpan = null;
+					highlightTargets.forEach(item => {
+						const before = currentHighlight;
+						let ok = findAndHighlightInElement(target.element, item.text, false, true);
+						if (!ok) {
+							ok = findAndHighlightInElement(target.element, item.text, true, true);
+						}
+						if (ok && currentHighlight && currentHighlight !== before) {
+							if (item.isKey) {
+								keySpan = currentHighlight;
+							} else if (!firstSpan) {
+								firstSpan = currentHighlight;
+							} else {
+								const pos = currentHighlight.compareDocumentPosition(firstSpan);
+								if (pos & Node.DOCUMENT_POSITION_FOLLOWING) firstSpan = currentHighlight;
+							}
+						}
+					});
+
+					const scrollTarget = keySpan || firstSpan;
+					if (scrollTarget) {
+						if (target.details) target.details.open = true;
+						requestAnimationFrame(() => {
+							scrollTarget.scrollIntoView({ behavior: 'smooth', block: 'center' });
+						});
+						return;
+					}
+				}
+
+				alert('未在会议原始记录或整理内容中找到该决策的讨论内容');
+			};
+
+			// 检查会议内容 tab 是否已经是激活状态
+			const contentTab = document.getElementById('mtab-content');
+			if (contentTab && contentTab.classList.contains('active')) {
+				doHighlight();
+				return;
+			}
+			// 否则监听 shown.bs.tab，等 tab 渲染完成后再查找（避免 DOM 未就绪）
+			try {
+				if (contentTab) {
+					const handler = function(e) {
+						if (e.target === contentTab) {
+							contentTab.removeEventListener('shown.bs.tab', handler);
+							doHighlight();
+						}
+					};
+					contentTab.addEventListener('shown.bs.tab', handler);
+					const tabInstance = bootstrap.Tab.getOrCreateInstance(contentTab);
+					tabInstance.show();
+				} else {
+					doHighlight();
+				}
+			} catch (e) {
+				doHighlight();
+			}
 		};
 
 		window.jumpToDecisionRow = function(decisionIndex) {
@@ -1547,6 +1370,7 @@
 			});
 		}
 
+
 		// ====================== 编辑弹窗 ======================
 		const modalEl = document.getElementById('editActionItemModal');
 		const modal = new bootstrap.Modal(modalEl);
@@ -1565,6 +1389,12 @@
 				document.getElementById('edit_taskStatus').value = this.dataset.status || 'NotStarted';
 				document.getElementById('edit_group').value = this.dataset.groupValue || '';
 
+				const projectSelect = document.getElementById('edit_project');
+				if (projectSelect) projectSelect.value = this.dataset.projectId || '';
+
+				const changeDescEl = document.getElementById('edit_changeDescription');
+				if (changeDescEl) changeDescEl.value = this.dataset.changeDescription || '';
+
 				const prepTaskSelect = document.getElementById('edit_prepDraftTask');
 				if (prepTaskSelect) prepTaskSelect.value = this.dataset.prepDraftTaskId || '0';
 
@@ -1572,11 +1402,70 @@
 				if (sourceDecisionSelect) sourceDecisionSelect.value = this.dataset.sourceDecisionIndex || '0';
 
 				modal.show();
+						const actionTypeSel = document.getElementById('edit_actionType');
+		const matchedTaskSel = document.getElementById('edit_matchedTask');
+		const matchedTaskRow = document.getElementById('edit_matchedTaskRow');
+		if (actionTypeSel) {
+			actionTypeSel.value = this.dataset.actionType || 'NewTask';
+			if (matchedTaskSel) matchedTaskSel.value = this.dataset.matchedTaskId || '0';
+			if (matchedTaskRow) matchedTaskRow.style.display = actionTypeSel.value === 'TaskChange' ? '' : 'none';
+		}
 			});
 		});
 
 		modalEl.addEventListener('hidden.bs.modal', function () {
 			this.querySelector('form').reset();
+		});
+
+		modalEl.addEventListener('hidden.bs.modal', function () {
+			this.querySelector('form').reset();
+		});
+				document.getElementById('edit_actionType')?.addEventListener('change', function () {
+			const row = document.getElementById('edit_matchedTaskRow');
+			if (row) row.style.display = this.value === 'TaskChange' ? '' : 'none';
+			if (this.value !== 'TaskChange') {
+				const sel = document.getElementById('edit_matchedTask');
+				if (sel) sel.value = '0';
+			}
+		});
+
+				document.querySelector('#editActionItemModal form')?.addEventListener('submit', function (e) {
+			const type = document.getElementById('edit_actionType')?.value;
+			const matched = document.getElementById('edit_matchedTask')?.value;
+			if (type === 'TaskChange' && (!matched || matched === '0')) {
+				e.preventDefault();
+				alert('改为「变更」类型时，请先选择要关联的历史任务。');
+				document.getElementById('edit_matchedTask')?.focus();
+				return;
+			}
+
+			// 提交前记录当前滚动位置和激活的标签页，页面重载后恢复
+			sessionStorage.setItem('actionItemScrollTop', String(window.scrollY || window.pageYOffset || 0));
+			const activeTab = document.querySelector('#actionItemTabs .nav-link.active');
+			if (activeTab) sessionStorage.setItem('actionItemActiveTab', activeTab.id);
+		});
+			document.addEventListener('DOMContentLoaded', function () {
+			// 先恢复标签页（必须在恢复滚动前，否则高度变化会错位）
+			const savedTab = sessionStorage.getItem('actionItemActiveTab');
+			if (savedTab) {
+				const tabBtn = document.getElementById(savedTab);
+				if (tabBtn) {
+					const tab = new bootstrap.Tab(tabBtn);
+					tab.show();
+				}
+				sessionStorage.removeItem('actionItemActiveTab');
+			}
+
+			// 再恢复滚动位置
+			const savedScroll = sessionStorage.getItem('actionItemScrollTop');
+			if (savedScroll !== null) {
+				sessionStorage.removeItem('actionItemScrollTop');
+				const top = parseInt(savedScroll, 10) || 0;
+				// 用 requestAnimationFrame 确保标签页切换/布局完成后再滚
+				requestAnimationFrame(() => {
+					window.scrollTo({ top: top, behavior: 'auto' });
+				});
+			}
 		});
 
 		// ====================== 获取防伪令牌 ======================
@@ -1702,108 +1591,94 @@
 			}
 		}
 
+		// 责任人
 		document.querySelectorAll('.row-assignee-select').forEach(s => {
-			s.addEventListener('change', function() {
+			s.addEventListener('change', function () {
 				saveRowField(this.dataset.itemId, 'assigneeId', this.value);
 			});
 		});
 
-		document.querySelectorAll('.row-priority-select').forEach(s => {
-			s.addEventListener('change', function() {
-				saveRowField(this.dataset.itemId, 'priority', this.value);
+		// 来源决策
+		function syncSelectTitle(s) {
+			const opt = s.options[s.selectedIndex];
+			s.title = opt ? opt.text : '';
+		}
+		document.querySelectorAll('.row-source-decision-select').forEach(s => {
+			syncSelectTitle(s);
+			s.addEventListener('change', function () {
+				const val = this.value === '0' ? null : parseInt(this.value, 10);
+				saveRowField(this.dataset.itemId, 'sourceDecisionIndex', val);
+				syncSelectTitle(this);
 			});
 		});
 
+		// 关联会前事项
+		document.querySelectorAll('.row-prep-draft-select').forEach(s => {
+			syncSelectTitle(s);
+			s.addEventListener('change', function () {
+				const val = this.value === '0' ? null : parseInt(this.value, 10);
+				saveRowField(this.dataset.itemId, 'prepDraftTaskId', val);
+				syncSelectTitle(this);
+				// 同步更新内存中的 link 数据，让未关联事项卡片能重新计算
+				const itemId = parseInt(this.dataset.itemId, 10);
+				if (window.actionItemDraftLinks) {
+					const link = window.actionItemDraftLinks.find(l => l.itemId === itemId);
+					if (link) link.prepDraftTaskId = val;
+				}
+				if (typeof updateUndiscussedDraftCard === 'function') updateUndiscussedDraftCard();
+			});
+		});
+
+		// 分组可选；无分组也正常提交，由服务端校验非空分组的项目归属。
 		document.querySelectorAll('.row-group-select').forEach(s => {
-			s.addEventListener('change', function() {
-				saveRowField(this.dataset.itemId, 'groupName', this.value);
+			s.addEventListener('change', async function () {
+				const itemId = this.dataset.itemId;
+				const value = (this.value || '').trim();
+
+				this.classList.remove('is-invalid');
+				const ok = await saveRowField(itemId, 'groupName', value);
+				if (!ok) {
+					this.classList.add('is-invalid');
+				}
 			});
+
 		});
 
-		document.querySelectorAll('.row-status-select').forEach(s => {
-			s.addEventListener('change', function() {
-				saveRowField(this.dataset.itemId, 'taskStatus', this.value);
-			});
-		});
 
-		document.querySelectorAll('.row-deadline-input').forEach(inp => {
-			inp.addEventListener('change', function() {
-				saveRowField(this.dataset.itemId, 'deadline', this.value);
-			});
-		});
-
-		document.querySelectorAll('.match-task-select').forEach(s => {
-			s.addEventListener('change', async function() {
-				const itemId = parseInt(this.dataset.itemId);
-				const newVal = this.value === '0' ? null : parseInt(this.value);
-
-				const ok = await saveRowField(itemId, 'prepDraftTaskId', this.value);
-				if (!ok) { this.value = this.dataset.prevValue || '0'; return; }
-
-				const link = window.actionItemDraftLinks.find(l => l.itemId === itemId);
-				if (link) link.prepDraftTaskId = newVal;
-
-				updateUndiscussedDraftCard();
-			});
-			s.dataset.prevValue = s.value;
-		});
 
 		function updateUndiscussedDraftCard() {
 			const body = document.getElementById('undiscussedDraftBody');
 			const countEl = document.getElementById('undiscussedCount');
-			const discussedEl = document.getElementById('discussedCount');
-			if (!body || !countEl) return;
+			const card = document.getElementById('unlinkedPrepCard');
+			if (!body || !countEl || !card) return;
 			if (!window.prepDraftTasks || window.prepDraftTasks.length === 0) return;
 
-			const links = window.actionItemDraftLinks || [];
-			const linkedIds = new Set(
-				links.map(l => l.prepDraftTaskId).filter(id => id != null && id !== 0)
-			);
+			// 从页面上所有下拉框的当前值动态收集已关联的 prepDraftTaskId
+			const linkedIds = new Set();
+			document.querySelectorAll('.row-prep-draft-select').forEach(s => {
+				const v = parseInt(s.value, 10);
+				if (v && v > 0) linkedIds.add(v);
+			});
 
-			const undiscussed = window.prepDraftTasks.filter(t => !linkedIds.has(t.id));
-			const discussed = window.prepDraftTasks.length - undiscussed.length;
-			countEl.textContent = undiscussed.length;
-			if (discussedEl) discussedEl.textContent = discussed;
+			const unlinked = window.prepDraftTasks.filter(t => !linkedIds.has(t.id));
+			countEl.textContent = unlinked.length;
 
-			const rowsHtml = window.prepDraftTasks.map(t => {
-				const matched = links
-					.filter(l => l.prepDraftTaskId === t.id && l.title)
-					.map(l => `${escapeHtml(l.projectName)} 第${l.orderNo}条 · ${escapeHtml(l.title)}`);
-				const isDiscussed = matched.length > 0;
-				const statusHtml = isDiscussed
-					? '<span class="badge bg-success">✓ 已讨论</span>'
-					: '<span class="badge bg-warning text-dark">✗ 未讨论</span>';
-				return `
-				<tr class="${t.isOverdue ? 'table-danger' : ''}">
-					<td>${escapeHtml(t.title)}${t.isManual ? ' <span class="badge bg-secondary ms-1">手工</span>' : ''}${t.isOverdue ? ' <span class="badge bg-danger ms-1">逾期</span>' : ''}</td>
-					<td>${statusHtml}</td>
-					<td class="small text-muted">${isDiscussed ? matched.join('；') : '—'}</td>
-				</tr>`;
-			}).join('');
+			if (unlinked.length === 0) {
+				card.classList.add('d-none');
+				return;
+			}
+			card.classList.remove('d-none');
 
-			const footerHtml = undiscussed.length === 0
-				? '<div class="text-muted small mt-2"><i class="fas fa-check-circle me-1 text-success"></i>会前准备里列出的所有事项在本次会议中都已处理。</div>'
-				: '<div class="text-muted small mt-2"><i class="fas fa-lightbulb me-1"></i>提示：标「未讨论」的事项（含勾选任务与手工填写项）本次会议没有产生关联行动项，建议下次会议继续跟进。</div>';
-
-			body.innerHTML = `
-				<div class="table-responsive">
-					<table class="table table-sm mb-0 w-100">
-						<thead><tr>
-							<th>事项</th><th style="width:110px;">讨论状态</th><th style="width:32%;">对应行动项</th>
-						</tr></thead>
-						<tbody>${rowsHtml}</tbody>
-					</table>
-				</div>
-				${footerHtml}
-			`;
+			body.innerHTML = '<ul class="list-group list-group-flush small">' +
+				unlinked.map(t => {
+					const badge = t.isManual
+						? '<span class="badge bg-secondary me-1">手工</span>'
+						: '<span class="badge bg-primary me-1">勾选</span>';
+					return `<li class="list-group-item d-flex justify-content-between align-items-center py-1"><span>${badge}${escapeHtml(t.title)}</span></li>`;
+				}).join('') +
+			'</ul>';
 		}
 
-		document.querySelectorAll('.row-decision-select').forEach(s => {
-			s.addEventListener('change', function() {
-				var value = this.value ? parseInt(this.value) : 0;
-				saveRowField(this.dataset.itemId, 'sourceDecisionIndex', value);
-			});
-		});
 
 		document.querySelectorAll('.source-decision-link').forEach(btn => {
 			btn.addEventListener('click', function() {

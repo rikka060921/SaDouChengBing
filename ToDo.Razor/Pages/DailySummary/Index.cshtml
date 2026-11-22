@@ -37,6 +37,7 @@
                 @if (Model.CanGenerateForCurrentUser)
                 {
                     <a asp-page="Generate" class="btn btn-success px-4" id="generateSummaryButton">根据工作记录生成</a>
+                    <a asp-page="Write" asp-route-reportDate="@Model.SelectDate.ToString("yyyy-MM-dd")" class="btn btn-outline-primary">手动填写／补录</a>
                 }
             </form>
             <div id="generateSummaryProgress" class="ai-generation-status d-none mt-3 ms-auto" aria-live="polite"></div>
@@ -144,14 +145,23 @@
                                     </a>
                                 </td>
                                 <td>
-                                    @if (item.IsAutomatic)
+                                    @if (item.Id < 0)
                                     {
-                                        <span class="badge bg-primary">定时生成</span>
+                                        <span class="badge bg-secondary">项目日报</span>
+                                    }
+                                    else if (item.Id == 0)
+                                    {
+                                        <span class="badge bg-warning text-dark">人工填写</span>
+                                    }
+                                    else if (item.IsAutomatic)
+                                    {
+                                        <span class="badge bg-primary">定时触发 AI</span>
                                     }
                                     else
                                     {
-                                        <span class="badge bg-success">手动生成</span>
+                                        <span class="badge bg-success">手动触发 AI</span>
                                     }
+                                    @if (item.Id > 0 && Model.ManualDates.Contains(item.SummaryDate.Date)) { <span class="badge bg-warning text-dark">含人工校订</span> }
                                 </td>
                                 <td class="text-muted small">@item.CreateTime.ToString("yyyy-MM-dd HH:mm")</td>
                                 <td class="small text-muted" title="@item.TotalSummary">
@@ -187,7 +197,7 @@
             <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
                 <strong>@Model.Summary.Title</strong>
                 <span class="small text-muted">
-                    @(Model.Summary.IsAutomatic ? "定时生成" : "手动生成")
+                    @(Model.Summary.IsAutomatic ? "定时触发 AI 生成" : "手动触发 AI 生成")
                     · @Model.Summary.CreateTime.ToString("yyyy-MM-dd HH:mm")
                     @if (Model.Summary.SummaryStartAt.HasValue && Model.Summary.SummaryEndAt.HasValue)
                     {
@@ -201,6 +211,33 @@
         </div>
     }
 
+    @if (Model.ProjectDiaryReports.Any())
+    {
+        <section class="card border-0 shadow-sm mb-4" aria-label="已提交项目日报">
+            <div class="card-header bg-white"><strong>已提交的项目日报</strong><span class="small text-muted ms-2">兼容原“项目报告”中的日报，不需要重复填写</span></div>
+            <div class="card-body">
+            @foreach (var report in Model.ProjectDiaryReports)
+            { <article class="mb-3"><h3 class="h6">@report.Project.Name · @report.ReportTitle <span class="badge bg-light text-dark">@report.ContentOrigin</span></h3><div style="white-space:pre-wrap">@report.ReportContent</div><a asp-page="/Reports/Details" asp-route-id="@report.Id">查看原报告</a></article> }
+            </div>
+        </section>
+    }
+    @if (Model.ManualEntries.Any())
+    {
+        <section class="card border-0 shadow-sm mb-4" aria-label="人工填写与校订">
+            <div class="card-header bg-white"><strong>人工填写与校订</strong><span class="text-muted small ms-2">成员自述；与系统整理分开保存</span></div>
+            <div class="card-body">
+            @foreach (var note in Model.ManualEntries)
+            {
+                <article class="mb-3">
+                    <div class="d-flex justify-content-between gap-2"><h3 class="h6">@note.Project.Name <span class="badge bg-warning text-dark">人工 v@note.Revision</span></h3>
+                    @if (Model.CanGenerateForCurrentUser) { <a asp-page="Write" asp-route-projectId="@note.ProjectId" asp-route-reportDate="@note.ReportDate.ToString("yyyy-MM-dd")">校订／历史</a> }</div>
+                    <p class="small text-muted">填写时间 @note.CreatedAt.ToString("yyyy-MM-dd HH:mm") · 工作日期 @note.ReportDate.ToString("yyyy-MM-dd")</p>
+                    <div style="white-space:pre-wrap">@note.Content</div>
+                </article>
+            }
+            </div>
+        </section>
+    }
     <!-- 瀑布流卡片区域（按项目明细） -->
     @if (Model.ProjectDetailList != null && Model.ProjectDetailList.Any())
     {
@@ -236,7 +273,7 @@
             }
         </div>
     }
-    else if (Model.Summary == null)
+    else if (Model.Summary == null && !Model.ManualEntries.Any() && !Model.ProjectDiaryReports.Any())
     {
         <div class="text-center py-5 text-muted">
             <i class="bi bi-calendar-x fs-1 d-block mb-3"></i>

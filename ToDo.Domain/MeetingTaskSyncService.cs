@@ -550,7 +550,7 @@ public class MeetingTaskSyncService
 
         var operatorUser = await _context.Users.FirstOrDefaultAsync(item => item.Id == operatorId);
         if (operatorUser == null || !await CanApproveWritesAsync(meeting, operatorUser))
-            return MeetingSyncResult.Failed("仅系统管理员、项目负责人或该项目管理员可以确认任务写入");
+            return MeetingSyncResult.Failed("仅系统管理员、项目负责人或会议关联项目的管理员可以确认任务写入");
 
         // ===== 多项目改造：加载会议关联的所有项目 =====
         var meetingProjects = await _context.MeetingMinutesProjects
@@ -1159,7 +1159,7 @@ public class MeetingTaskSyncService
         {
             OperationType = operationType == "创建" ? OperationType.创建 : OperationType.更新,
             OperationStatus = OperationStatus.成功,
-            OperatedAt = AppTime.Now,
+            OperatedAt = AppTime.UtcNow,
             OperationTarget = OperationTarget.任务,
             OperatedByUserId = operatorId,
             OperatedByUserName = operatorUser?.UserName ?? "",
@@ -1736,9 +1736,19 @@ public class MeetingTaskSyncService
             return false;
         if (user.Role == UserRole.systemAdmin) return true;
         if (meeting.Project?.LeaderUserId == user.Id) return true;
+
+        // 多项目会议：会议任一关联项目的管理员都可以确认，而不只是主项目的管理员
+        var approvableProjectIds = await _context.MeetingMinutesProjects
+            .AsNoTracking()
+            .Where(link => link.MeetingMinutesId == meeting.Id)
+            .Select(link => link.ProjectId)
+            .ToListAsync();
+        if (!approvableProjectIds.Contains(meeting.ProjectId))
+            approvableProjectIds.Add(meeting.ProjectId);
+
         return await _context.ProjectUsers
             .AsNoTracking()
-            .AnyAsync(item => item.ProjectId == meeting.ProjectId
+            .AnyAsync(item => approvableProjectIds.Contains(item.ProjectId)
                 && item.UserId == user.Id
                 && item.ProjectRole == (int)ProjectRole.Admin);
     }

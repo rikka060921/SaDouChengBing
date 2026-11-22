@@ -1,0 +1,41 @@
+@page
+@model ToDo.Razor.Pages.Reports.WeeklyModel
+@{ ViewData["Title"] = "项目周报"; ViewData["WorkReportSection"] = "weekly"; }
+<div class="container py-4" style="max-width:1100px">
+    <partial name="_WorkReportNav" view-data="ViewData" />
+    <h1 class="h3">项目周报</h1>
+    <p class="text-muted">汇总本项目的人工日报、系统整理和任务变化，保留来源快照。含成员日报的报告仅管理人员可见，生成后可人工修订。</p>
+    <div asp-validation-summary="All" class="text-danger" role="alert"></div>
+    @if (Model.Projects.Any())
+    {
+        <form method="post" class="card card-body mb-4" id="weekly-report-form">
+            <div class="row g-3">
+                <div class="col-md-6"><label asp-for="ProjectId" class="form-label">项目</label><select asp-for="ProjectId" asp-items="Model.Projects" class="form-select" required><option value="">请选择项目</option></select></div>
+                <div class="col-md-3"><label asp-for="StartDate" class="form-label">开始日期</label><input asp-for="StartDate" type="date" class="form-control" required /></div>
+                <div class="col-md-3"><label asp-for="EndDate" class="form-label">截止日期</label><input asp-for="EndDate" type="date" max="@ToDo.Entities.AppTime.Today.ToString("yyyy-MM-dd")" class="form-control" required /></div>
+            </div>
+            <div class="form-text">最多7天。进行中的本周只汇总至今天，不预写未来工作。</div>
+            <label class="form-check mt-3"><input asp-for="Regenerate" class="form-check-input" /><span class="form-check-label">重新生成一份（保留旧报告和人工修改，不覆盖）</span></label>
+            <div><button class="btn btn-primary mt-3" id="generate-weekly">生成项目周报</button></div>
+            <div class="small text-muted mt-2" id="weekly-progress" role="status">同项目、同日期范围已有周报时默认直接打开，避免重复调用AI。</div>
+        </form>
+    }
+    else { <p class="alert alert-info">当前没有你可以汇总的活跃项目。普通成员可在“我的日报”填写自己的工作记录。</p> }
+    <h2 class="h5">最近的项目周报</h2>
+    @if (!Model.RecentReports.Any()) { <p class="text-muted">暂无汇总周报。先填写日报或更新任务，再选择范围生成。</p> }
+    else
+    {
+        <div class="table-responsive"><table class="table align-middle"><thead><tr><th>项目与报告</th><th>周期</th><th>内容来源</th><th>操作</th></tr></thead><tbody>
+        @foreach (var report in Model.RecentReports)
+        { <tr><td>@report.ReportTitle</td><td>@report.PeriodStartDate?.ToString("yyyy-MM-dd") 至 @report.PeriodEndDate?.ToString("yyyy-MM-dd")</td><td>@report.ContentOrigin</td><td><a asp-page="Details" asp-route-id="@report.Id">查看与核对来源</a></td></tr> }
+        </tbody></table></div>
+    }
+</div>
+@section Scripts {
+<script>
+document.getElementById('weekly-report-form')?.addEventListener('submit', function () {
+    const button = document.getElementById('generate-weekly'); button.disabled = true; button.textContent = '正在汇总，请稍候…';
+    document.getElementById('weekly-progress').textContent = '正在读取授权来源并生成周报。请勿重复提交；原报告与日报不会被覆盖。';
+});
+</script>
+}

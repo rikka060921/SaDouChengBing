@@ -132,8 +132,16 @@ public sealed class PersonalDailySummaryService
                      join detail in _context.DailyProjectSummaryDetails.AsNoTracking()
                          on summary.Id equals detail.DailySummaryId
                      where detail.ProjectId == project.Id && !detail.IsDeleted
-                     select new { summary.UserId, summary.TotalSummary, detail.ProjectSummary })
+                     select new { summary.UserId, detail.ProjectSummary })
                     .ToListAsync(cancellationToken);
+                var manualNotes = await _context.DailyReportSupplements.AsNoTracking()
+                    .Where(n => n.ProjectId == project.Id && n.ReportDate == date
+                        && ! _context.DailyReportSupplements.Any(later => later.ProjectId == n.ProjectId && later.UserId == n.UserId
+                            && later.ReportDate == n.ReportDate && later.Revision > n.Revision))
+                    .ToListAsync(cancellationToken);
+                var projectDiaries = await _context.DailyReport.AsNoTracking().Where(r => r.ProjectId == project.Id
+                    && !r.IsDeleted && r.ReportType == 1 && r.ReportDate >= date && r.ReportDate < date.AddDays(1))
+                    .Select(r => new { r.ReporterId, r.ReportContent, r.IsSystemGenerated }).ToListAsync(cancellationToken);
 
                 var allUsers = await _context.Users.AsNoTracking()
                     .Where(u => memberUserIds.Contains(u.Id))
@@ -156,31 +164,14 @@ public sealed class PersonalDailySummaryService
                         ? (string.IsNullOrWhiteSpace(u.RealName) ? u.UserName ?? $"用户#{u.Id}" : u.RealName)
                         : $"用户#{uid}";
 
-                    if (detailsByUser.TryGetValue(uid, out var details) && details.Count > 0)
-                    {
-                        // 同一成员在本项目下可能有多条分项，合并
-                        foreach (var d in details)
-                        {
-                            members.Add(new MemberSummaryInfo
-                            {
-                                UserName = name,
-                                HasDailyReport = true,
-                                ProjectSummary = d.ProjectSummary ?? string.Empty,
-                                TotalSummary = d.TotalSummary ?? string.Empty
-                            });
-                        }
-                    }
-                    else
-                    {
-                        // 成员当日没有该项目的个人日报内容，明确标记
-                        members.Add(new MemberSummaryInfo
-                        {
-                            UserName = name,
-                            HasDailyReport = false,
-                            ProjectSummary = string.Empty,
-                            TotalSummary = string.Empty
-                        });
-                    }
+                    var parts = new List<string>();
+                    if (detailsByUser.TryGetValue(uid, out var details))
+                        parts.AddRange(details.Select(d => "【系统工作记录】\n" + d.ProjectSummary));
+                    parts.AddRange(manualNotes.Where(n => n.UserId == uid).Select(n => $"【人工填写／校订 v{n.Revision}，成员自述】\n{n.Content}"));
+                    parts.AddRange(projectDiaries.Where(r => r.ReporterId == uid).Select(r =>
+                        (r.IsSystemGenerated ? "【系统项目日报】\n" : "【人工项目日报，成员自述】\n") + r.ReportContent));
+                    members.Add(new MemberSummaryInfo { UserName = name, HasDailyReport = parts.Count > 0,
+                        ProjectSummary = string.Join("\n\n", parts), TotalSummary = string.Empty });
                 }
 
                 // 4) 获取项目任务组快照（有分组才生成，无则空列表）
@@ -277,10 +268,12 @@ public sealed class PersonalDailySummaryService
                 }
                 else
                 {
+                    if (existing.LastHumanEditedAt.HasValue) { batch.SkippedProjects++; continue; }
                     existing.ReportTitle = $"{project.Name} 团队汇报 {date:yyyy-MM-dd}";
                     existing.LastModifiedAt = AppTime.Now;
                 }
                 existing.ReportContent = aiResult.GeneratedReport;
+                existing.GeneratedContent = aiResult.GeneratedReport;
                 await _context.SaveChangesAsync(cancellationToken);
                 batch.GeneratedProjects++;
             }

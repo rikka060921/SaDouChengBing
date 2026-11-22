@@ -585,6 +585,8 @@ public class ApprovalRequestService
                 ReportDate = payload.ReportDate.Date,
                 ReportTitle = title.Length > 200 ? title[..200] : title,
                 ReportContent = payload.Content.Trim(),
+                GeneratedContent = payload.Content.Trim(),
+                IsSystemGenerated = true,
                 ReporterId = request.RequestedById,
                 CreatedAt = AppTime.Now,
                 LastModifiedAt = AppTime.Now

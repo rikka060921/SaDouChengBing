@@ -25,7 +25,7 @@ namespace ToDo.Domain
         Task<(bool CanEdit, string ErrorMessage)> CheckEditPermission(DailyReport original, ApplicationUser currentUser);
         Task DeleteAttachments(List<int> deletedIds, DailyReport original, string webRootPath, ApplicationUser currentUser);
         Task AddNewAttachments(List<IFormFile> newAttachments, DailyReport original, string webRootPath, ApplicationUser currentUser);
-        Task UpdateDailyReport(DailyReport original, string title, string content, int reportType, DateTime reportDate, ApplicationUser currentUser);
+        Task UpdateDailyReport(DailyReport original, string title, string content, int reportType, DateTime reportDate, ApplicationUser currentUser, string? expectedToken = null);
 
         // 列表相关
         // 列表相关：新增 filterKeyword 参数

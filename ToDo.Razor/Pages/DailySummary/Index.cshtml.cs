@@ -1,183 +1,93 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using ToDo.Context;
+using ToDo.Domain;
 using ToDo.Entities;
 using ToDo.Entities.DailySummary;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Security.Claims;
-using System.Threading.Tasks;
 
-namespace ToDo.Razor.Pages.DailySummary
+namespace ToDo.Razor.Pages.DailySummary;
+
+[Authorize]
+public class IndexModel(ApplicationDbContext context, ILogger<IndexModel> logger) : PageModel
 {
-    [Authorize]
-    public class IndexModel : PageModel
+    [BindProperty(SupportsGet = true)] public DateTime SelectDate { get; set; } = AppTime.Today;
+    [BindProperty(SupportsGet = true)] public int? UserId { get; set; }
+    [BindProperty(SupportsGet = true)] public DateTime? FilterStartDate { get; set; }
+    [BindProperty(SupportsGet = true)] public DateTime? FilterEndDate { get; set; }
+    public DailyWorkSummary? Summary { get; set; }
+    public List<DailyProjectSummaryDetail> ProjectDetailList { get; set; } = [];
+    public List<DailyWorkSummary> SummaryHistoryList { get; set; } = [];
+    public List<DailyReportSupplement> ManualEntries { get; set; } = [];
+    public List<DailyReport> ProjectDiaryReports { get; set; } = [];
+    public HashSet<DateTime> ManualDates { get; set; } = [];
+    public string ErrorMessage { get; set; } = string.Empty;
+    public string ViewingUserName { get; set; } = "我的";
+    public bool CanGenerateForCurrentUser { get; set; } = true;
+    public bool IsAnyProjectLeader { get; set; }
+
+    public async Task OnGetAsync()
     {
-        private readonly ApplicationDbContext _context;
-        private readonly ILogger<IndexModel> _logger;
-
-        public IndexModel(ApplicationDbContext context, ILogger<IndexModel> logger)
+        Response.Headers.CacheControl = "private, no-store";
+        try
         {
-            _context = context;
-            _logger = logger;
+            if (!int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var actorId))
+            { ErrorMessage = "请先登录后查看数据"; return; }
+            var actor = await context.Users.AsNoTracking().SingleOrDefaultAsync(u => u.Id == actorId && !u.IsDeleted);
+            if (actor == null) { ErrorMessage = "用户信息不存在"; return; }
+            var targetId = actor.Role == UserRole.systemAdmin && UserId.HasValue ? UserId.Value : actorId;
+            var target = targetId == actorId ? actor : await context.Users.AsNoTracking().SingleOrDefaultAsync(u => u.Id == targetId && !u.IsDeleted);
+            if (target == null) { ErrorMessage = "要查看的用户不存在"; return; }
+            CanGenerateForCurrentUser = actorId == targetId;
+            UserId = CanGenerateForCurrentUser ? null : targetId;
+            ViewingUserName = CanGenerateForCurrentUser ? "我的" : $"{target.RealName ?? target.UserName}的";
+            IsAnyProjectLeader = await MemberReportAccess.Projects(context, actor).AnyAsync();
+            var projects = context.Project.Where(p => !p.IsDeleted && (actor.Role == UserRole.systemAdmin
+                || p.LeaderUserId == actorId || context.ProjectUsers.Any(m => m.ProjectId == p.Id && m.UserId == actorId))).Select(p => p.Id);
+            Summary = await context.DailyWorkSummaries.AsNoTracking().Where(s => s.UserId == targetId
+                && s.SummaryDate == SelectDate.Date && !s.IsDeleted).OrderByDescending(s => s.CreateTime).FirstOrDefaultAsync();
+            if (Summary != null)
+                ProjectDetailList = await context.DailyProjectSummaryDetails.AsNoTracking()
+                    .Where(d => d.DailySummaryId == Summary.Id && !d.IsDeleted && projects.Contains(d.ProjectId))
+                    .OrderBy(d => d.ProjectId).ToListAsync();
+            var service = new WorkReportService(context, null!);
+            ManualEntries = await service.PersonalNotesAsync(actorId, targetId, SelectDate, HttpContext.RequestAborted);
+            var notes = await service.PersonalNotesAsync(actorId, targetId, null, HttpContext.RequestAborted, FilterStartDate, FilterEndDate);
+            var projectReports = context.DailyReport.AsNoTracking().Include(r => r.Project).Where(r => r.ReporterId == targetId
+                && r.ReportType == 1 && !r.IsDeleted && projects.Contains(r.ProjectId));
+            var day = SelectDate.Date; var nextDay = day.AddDays(1);
+            ProjectDiaryReports = await projectReports.Where(r => r.ReportDate >= day && r.ReportDate < nextDay)
+                .OrderByDescending(r => r.CreatedAt).Take(100).ToListAsync();
+            ManualDates = notes.Select(n => n.ReportDate).ToHashSet();
+            // Always load history, including when the selected day has no generated summary.
+            var history = context.DailyWorkSummaries.AsNoTracking().Where(s => s.UserId == targetId && !s.IsDeleted);
+            if (FilterStartDate.HasValue) history = history.Where(s => s.SummaryDate >= FilterStartDate.Value.Date);
+            if (FilterEndDate.HasValue) history = history.Where(s => s.SummaryDate <= FilterEndDate.Value.Date);
+            SummaryHistoryList = await history.OrderByDescending(s => s.SummaryDate).ThenByDescending(s => s.CreateTime).Take(100).ToListAsync();
+            var legacyHistory = projectReports;
+            if (FilterStartDate.HasValue) legacyHistory = legacyHistory.Where(r => r.ReportDate >= FilterStartDate.Value.Date);
+            if (FilterEndDate.HasValue) { var until = FilterEndDate.Value.Date.AddDays(1); legacyHistory = legacyHistory.Where(r => r.ReportDate < until); }
+            var reportHistory = await legacyHistory.OrderByDescending(r => r.ReportDate).ThenByDescending(r => r.Id).Take(100).ToListAsync();
+            var knownDates = SummaryHistoryList.Select(s => s.SummaryDate.Date).ToHashSet();
+            foreach (var group in notes.Where(n => (!FilterStartDate.HasValue || n.ReportDate >= FilterStartDate.Value.Date)
+                && (!FilterEndDate.HasValue || n.ReportDate <= FilterEndDate.Value.Date)).GroupBy(n => n.ReportDate))
+            {
+                if (knownDates.Add(group.Key)) SummaryHistoryList.Add(new DailyWorkSummary { UserId = targetId,
+                    SummaryDate = group.Key, Title = $"{group.Key:yyyy-MM-dd} 人工日报", SummaryStatus = 1,
+                    CreateTime = group.Max(n => n.CreatedAt), TotalSummary = string.Join("\n", group.Select(n => $"{n.Project.Name}：{n.Content}")) });
+            }
+            foreach (var group in reportHistory.GroupBy(r => r.ReportDate.Date))
+                if (knownDates.Add(group.Key)) SummaryHistoryList.Add(new DailyWorkSummary { Id = -group.First().Id, UserId = targetId,
+                    SummaryDate = group.Key, Title = $"{group.Key:yyyy-MM-dd} 已提交项目日报", SummaryStatus = 1,
+                    CreateTime = group.Max(r => r.CreatedAt), TotalSummary = string.Join("\n", group.Select(r => $"{r.Project.Name}：{r.ReportContent}")) });
+            SummaryHistoryList = SummaryHistoryList.OrderByDescending(s => s.SummaryDate).ThenByDescending(s => s.CreateTime).Take(100).ToList();
         }
-
-        [BindProperty(SupportsGet = true)]
-        public DateTime SelectDate { get; set; } = AppTime.Now.Date;
-
-        [BindProperty(SupportsGet = true)]
-        public int? UserId { get; set; }
-
-        [BindProperty(SupportsGet = true)]
-        public DateTime? FilterStartDate { get; set; }
-
-        [BindProperty(SupportsGet = true)]
-        public DateTime? FilterEndDate { get; set; }
-
-        public DailyWorkSummary? Summary { get; set; }
-        public List<DailyProjectSummaryDetail> ProjectDetailList { get; set; } = new();
-        public List<DailyWorkSummary> SummaryHistoryList { get; set; } = new();
-        public string ErrorMessage { get; set; } = string.Empty;
-        public string ViewingUserName { get; set; } = "我的";
-        public bool CanGenerateForCurrentUser { get; set; } = true;
-        /// <summary>当前用户是否是任一项目的管理员（用于显示「团队日报」Tab）</summary>
-        public bool IsAnyProjectLeader { get; set; }
-
-        public async Task OnGetAsync()
+        catch (Exception ex)
         {
-            try
-            {
-
-                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-                if (string.IsNullOrEmpty(userId) || !int.TryParse(userId, out int currentUserId))
-                {
-                    ErrorMessage = "请先登录后查看数据";
-                    ProjectDetailList = new List<DailyProjectSummaryDetail>();
-                    return;
-                }
-
-                // 获取当前用户完整信息（匹配会议模块的currentUser对象）
-                var currentUser = await _context.Users
-                    .FirstOrDefaultAsync(u => u.Id == currentUserId);
-
-                if (currentUser == null)
-                {
-                    ErrorMessage = "用户信息不存在";
-                    ProjectDetailList = new List<DailyProjectSummaryDetail>();
-                    return;
-                }
-
-                var targetUserId = currentUser.Role == UserRole.systemAdmin && UserId.HasValue
-                    ? UserId.Value
-                    : currentUserId;
-                CanGenerateForCurrentUser = targetUserId == currentUserId;
-                UserId = CanGenerateForCurrentUser ? null : targetUserId;
-                var targetUser = targetUserId == currentUserId
-                    ? currentUser
-                    : await _context.Users.AsNoTracking().FirstOrDefaultAsync(item => item.Id == targetUserId && !item.IsDeleted);
-                if (targetUser == null)
-                {
-                    ErrorMessage = "要查看的用户不存在";
-                    return;
-                }
-                ViewingUserName = targetUserId == currentUserId
-                    ? "我的"
-                    : $"{(string.IsNullOrWhiteSpace(targetUser.RealName) ? targetUser.UserName : targetUser.RealName)}的";
-
-                // 入口反映历史查看权限，不以是否还有活跃项目决定。
-                IsAnyProjectLeader = await ToDo.Domain.MemberReportAccess.Projects(_context, currentUser).AnyAsync();
-
-                // 查询当日汇总主数据
-                Summary = await _context.DailyWorkSummaries
-                    .FirstOrDefaultAsync(s => s.UserId == targetUserId
-                        && s.SummaryDate.Date == SelectDate.Date
-                        && !s.IsDeleted);
-
-                if (Summary == null)
-                {
-                    ProjectDetailList = new List<DailyProjectSummaryDetail>();
-                    return;
-                }
-
-                IQueryable<int> accessibleProjectIds;
-                // 1. 系统管理员：查看所有项目（复用会议模块systemAdmin判断）
-                bool isSystemAdmin = currentUser.Role == UserRole.systemAdmin;
-
-                if (isSystemAdmin)
-                {
-                    // 系统管理员：全量未删除项目
-                    accessibleProjectIds = _context.Project
-                        .Where(p => !p.IsDeleted)
-                        .Select(p => p.Id);
-                }
-                else
-                {
-                    // 2. 普通用户：项目负责人或项目成员。
-                    accessibleProjectIds = _context.Project
-                        .Where(project => !project.IsDeleted
-                            && (project.LeaderUserId == currentUser.Id
-                                || _context.ProjectUsers.Any(member => member.ProjectId == project.Id && member.UserId == currentUser.Id)))
-                        .Select(project => project.Id);
-                }
-
-                // 筛选有权限的汇总明细
-                ProjectDetailList = await _context.DailyProjectSummaryDetails
-                    .Where(d => d.DailySummaryId == Summary.Id
-                          && accessibleProjectIds.Contains(d.ProjectId))
-                    .OrderByDescending(d => d.CreateTime)
-                    .ToListAsync();
-
-                // 无权限提示（和系统提示风格统一）
-                if (!ProjectDetailList.Any() && !isSystemAdmin)
-                {
-                    ErrorMessage = "无权限查看此汇总（仅项目成员/项目管理员/系统管理员可查看）";
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to load daily summary for date {SelectDate}", SelectDate);
-                ErrorMessage = "数据加载失败，请稍后重试";
-                ProjectDetailList = new List<DailyProjectSummaryDetail>();
-            }
-
-            // 加载个人日报历史列表（按日期倒序，支持日期范围筛选）
-            try
-            {
-                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-                if (!string.IsNullOrEmpty(userId) && int.TryParse(userId, out int currentUserId))
-                {
-                    var currentUser = await _context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == currentUserId);
-                    if (currentUser != null)
-                    {
-                        var targetUserId = currentUser.Role == UserRole.systemAdmin && UserId.HasValue
-                            ? UserId.Value
-                            : currentUserId;
-
-                        var historyQuery = _context.DailyWorkSummaries.AsNoTracking()
-                            .Where(s => s.UserId == targetUserId && !s.IsDeleted);
-
-                        if (FilterStartDate.HasValue)
-                            historyQuery = historyQuery.Where(s => s.SummaryDate.Date >= FilterStartDate.Value.Date);
-                        if (FilterEndDate.HasValue)
-                            historyQuery = historyQuery.Where(s => s.SummaryDate.Date <= FilterEndDate.Value.Date);
-
-                        SummaryHistoryList = await historyQuery
-                            .OrderByDescending(s => s.SummaryDate)
-                            .ThenByDescending(s => s.CreateTime)
-                            .Take(100)
-                            .ToListAsync();
-                    }
-                }
-            }
-            catch
-            {
-                // 列表加载失败不影响主页面，忽略错误
-                SummaryHistoryList = new List<DailyWorkSummary>();
-            }
-
+            logger.LogError(ex, "Loading personal reports failed for {Date}", SelectDate);
+            ErrorMessage = "日报加载失败，请稍后重试";
         }
     }
-    }
+}

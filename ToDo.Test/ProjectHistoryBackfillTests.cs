@@ -29,7 +29,10 @@ public sealed class ProjectHistoryBackfillTests
             b.Add(ProjectDevelopmentLedger.FileName,Json(Ledger()));
             var body="原站旧任务内容，未改成当前任务";
             b.Add(ProjectArchivePackage.FileName,badArchive?"broken":Json(new ProjectArchivePackage{FormatVersion=1,ProjectId=20,RecordedAt=new DateTimeOffset(2026,10,13,0,0,0,TimeSpan.Zero),
-                Records=[new(){Key="old14-task1",Kind="task",Title="旧任务",SourceLabel="原站项目14",SourceUrl="/Tasks/Details/1",Body=body,ContentHash=ProjectArchivePackage.HashBody(body)}]}));
+                Records=[
+                    new(){Key="old14-task1",Kind="task",Title="旧任务",SourceLabel="原站项目14",SourceUrl="/Tasks/Details/1",Body=body,ContentHash=ProjectArchivePackage.HashBody(body)},
+                    new(){Key="git-task1",Kind="task",Title="开发记录",SourceLabel="Git: aaaaaaaa",Body=body,ContentHash=ProjectArchivePackage.HashBody(body)}
+                ]}));
             b.Add("需求.md","# 保留来源的项目资料");return b;
         }
     }
@@ -47,7 +50,9 @@ public sealed class ProjectHistoryBackfillTests
         Assert.Equal(result.ProjectId,ledger!.Value.Ledger.ProjectId);Assert.Single(ledger.Value.Ledger.Changes);
         var doc=await f.Context.ProjectDocuments.SingleAsync(d=>d.ProjectId==result.ProjectId&&d.FileName==ProjectArchivePackage.FileName);
         var archive=ProjectArchivePackage.Parse(await File.ReadAllTextAsync(f.Documents.ResolveStoragePath(doc.StoragePath)),result.ProjectId);
-        Assert.Empty(Assert.Single(archive.Records).SourceUrl);Assert.Contains("原站",archive.Records[0].SourceLabel);
+        Assert.All(archive.Records, record => Assert.Empty(record.SourceUrl));
+        Assert.Contains("原站", archive.Records.Single(record => record.Key == "old14-task1").SourceLabel);
+        Assert.Equal("Git: aaaaaaaa", archive.Records.Single(record => record.Key == "git-task1").SourceLabel);
         var log=Assert.Single(await f.Context.ChangeLogs.ToListAsync());Assert.StartsWith("[历史补录]",log.AfterContent);Assert.Equal(1,log.OperatedByUserId);
         Assert.True(log.OperatedAt>new DateTime(2026,10,13));
     }

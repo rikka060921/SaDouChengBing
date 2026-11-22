@@ -102,6 +102,9 @@ builder.Services.AddScoped<TaskAssistanceService>();
 builder.Services.AddScoped<RedBlueService>();
 builder.Services.AddScoped<ScheduledJobService>();
 builder.Services.AddScoped<PersonalDailySummaryService>();
+// Manual daily writing and report browsing must not require a configured model.
+builder.Services.AddScoped(sp => new WorkReportService(sp.GetRequiredService<ApplicationDbContext>(), null,
+    () => sp.GetRequiredService<ToDo.Domain.AI.IAIService>()));
 builder.Services.AddScoped<ProjectDocumentService>();
 builder.Services.AddScoped<ProjectDocumentIndexService>();
 builder.Services.AddScoped<DocumentCategoryService>();

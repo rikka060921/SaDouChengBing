@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
 using ToDo.Context;
 using ToDo.Domain;
+using ToDo.Domain.AI;
 using ToDo.Entities;
 
 namespace ToDo.Razor.Pages.Projects;
@@ -21,6 +22,40 @@ public sealed class DocumentEditModel(ApplicationDbContext context, ProjectDocum
     [BindProperty, Required(ErrorMessage = "资料版本标识丢失，请先复制输入，再刷新页面")]
     public string ExpectedToken { get; set; } = string.Empty;
     public DocumentEditSnapshot? Snapshot { get; set; }
+    [BindProperty, StringLength(2000)] public string AiRequirement { get; set; } = string.Empty;
+    public bool HasAiPreview { get; set; }
+    public DocumentTextComparison Comparison => DocumentTextDiff.Compare(Snapshot?.Content ?? string.Empty, EditedContent);
+    public bool CanUseAi => DraftId == 0 && DocumentId > 0;
+    public async Task<IActionResult> OnPostAiAdjustAsync(bool previewOnly = false)
+    {
+        var user = await users.GetUserAsync(User); if (user == null) return Challenge();
+        if (DraftId > 0 || DocumentId <= 0) return BadRequest();
+        try
+        {
+            if (!ModelState.IsValid) return await LoadAsync(false);
+            var aiEditor = new ProjectDocumentAiEditingService(context, documents,
+                HttpContext.RequestServices.GetRequiredService<IAgentRegistry>(), HttpContext.RequestServices.GetRequiredService<IAIService>());
+            var result = await aiEditor.AdjustAsync(ProjectId, DocumentId, user.Id, ExpectedToken, EditedContent, AiRequirement, HttpContext.RequestAborted);
+            if (previewOnly)
+            {
+                EditedContent = result.Content; ModelState.Remove(nameof(EditedContent)); HasAiPreview = true;
+                return await LoadAsync(false);
+            }
+            await new ProjectDocumentEditingService(context, documents).SaveAsync(ProjectId, DocumentId, 0, user.Id,
+                ExpectedToken, result.Content, HttpContext.RequestAborted, $"AI调整正文；Agent：{result.AgentName}；要求：{result.Requirement}");
+            TempData["SuccessMessage"] = "AI调整已保存为新版本，原件与历史版本保留，可在版本历史中恢复。";
+            return RedirectToPage("./Materials", new { projectId = ProjectId });
+        }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+        catch (InvalidOperationException ex) { ModelState.AddModelError(string.Empty, ex.Message); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            HttpContext.RequestServices.GetService<ILogger<DocumentEditModel>>()?.LogError(ex, "AI document editing failed");
+            ModelState.AddModelError(string.Empty, "AI调整未成功，原资料未被覆盖，你的输入仍保留。");
+        }
+        context.ChangeTracker.Clear();
+        return await LoadAsync(false);
+    }
     public async Task<IActionResult> OnGetAsync() => await LoadAsync(true);
     private async Task<IActionResult> LoadAsync(bool initialize)
     {

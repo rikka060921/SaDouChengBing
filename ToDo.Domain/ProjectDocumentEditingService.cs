@@ -50,7 +50,8 @@ public sealed class ProjectDocumentEditingService(ApplicationDbContext context, 
         return new(document.FileName, content, Token(content), document.VersionNumber, false);
     }
 
-    public async Task SaveAsync(int projectId, int documentId, int draftId, int userId, string expectedToken, string content, CancellationToken ct = default)
+    public async Task SaveAsync(int projectId, int documentId, int draftId, int userId, string expectedToken, string content, CancellationToken ct = default,
+        string? changeReason = null)
     {
         if (string.IsNullOrWhiteSpace(content) || content.Length > MaxCharacters || Encoding.UTF8.GetByteCount(content) > 2 * 1024 * 1024)
             throw new InvalidOperationException("请输入有效正文，最多 10 万字符、2 MB");
@@ -85,7 +86,7 @@ public sealed class ProjectDocumentEditingService(ApplicationDbContext context, 
             }
             else
             {
-                var revision = await documents.SaveRevisionAsync(projectId, documentId, userId, content, "成员在网页中校订正文", ct);
+                var revision = await documents.SaveRevisionAsync(projectId, documentId, userId, content, changeReason ?? "成员在网页中校订正文", ct);
                 createdPath = documents.ResolveStoragePath(revision.StoragePath);
                 targetId = revision.Id;
             }
@@ -95,7 +96,7 @@ public sealed class ProjectDocumentEditingService(ApplicationDbContext context, 
                 OperationStatus = OperationStatus.成功, OperatedByUserId = userId, OperatedByUserName = actor.UserName,
                 OperatedByRealName = actor.RealName, OperatedAt = AppTime.Now, TargetId = projectId,
                 TargetName = snapshot.FileName, BeforeContent = snapshot.IsDraft ? $"草稿 #{draftId}；前一文件：{beforeDraftPath}；正文校验：{snapshot.Token}" : $"资料 #{documentId} v{snapshot.SourceVersion}",
-                AfterContent = snapshot.IsDraft ? $"人工校订草稿 #{targetId}，尚未发布；历史草稿文件保留" : $"网页校订正文，新资料 #{targetId}，基于资料 #{documentId} v{snapshot.SourceVersion}；保留历史版本"
+                AfterContent = snapshot.IsDraft ? $"人工校订草稿 #{targetId}，尚未发布；历史草稿文件保留" : $"{changeReason ?? "网页校订正文"}，新资料 #{targetId}，基于资料 #{documentId} v{snapshot.SourceVersion}；保留历史版本"
             });
             await context.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);

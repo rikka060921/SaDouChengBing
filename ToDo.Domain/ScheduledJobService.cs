@@ -409,6 +409,7 @@ public class ScheduledJobService
                 ReportDate = reportDate.Date,
                 ReportTitle = $"{project.Name} 自动日报 {summaryCutoff:yyyy-MM-dd HH:mm}",
                 ReportContent = aiResult.GeneratedReport,
+                GeneratedContent = aiResult.GeneratedReport,
                 ReporterId = reporterId,
                 IsSystemGenerated = true,
                 CreatedAt = AppTime.Now,

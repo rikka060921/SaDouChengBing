@@ -188,7 +188,7 @@
                         $"background-color: {lightRowColor};";
 
                         <tr style="@rowStyle">
-                            <td>@item.ReportTitle</td>
+                            <td>@item.ReportTitle <span class="badge bg-light text-dark">@item.ContentOrigin</span></td>
                             <td>@item.Project?.Name</td>
                             <td>
                                 @(item.ReportType == 1 ? "日报" :

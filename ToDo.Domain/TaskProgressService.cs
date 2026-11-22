@@ -69,7 +69,7 @@ public sealed class TaskProgressService(ApplicationDbContext context)
         context.ChangeLogs.Add(new ChangeLog
         {
             OperationType = OperationType.状态变更, OperationTarget = OperationTarget.任务,
-            OperatedAt = AppTime.Now, OperatedByUserId = userId, OperatedByUserName = user.UserName,
+            OperatedAt = AppTime.UtcNow, OperatedByUserId = userId, OperatedByUserName = user.UserName,
             OperatedByRealName = user.RealName, ProjectId = task.ProjectId, TaskId = task.Id,
             TaskTitle = task.Title, TargetId = task.Id, BeforeContent = before,
             AfterContent = $"状态：{task.Status}；进度：{task.Progress}%\n{note}"

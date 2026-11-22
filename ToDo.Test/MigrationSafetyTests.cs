@@ -7,6 +7,18 @@ namespace ToDo.Test;
 
 public sealed class MigrationSafetyTests
 {
+    [Fact]
+    public void WorkReportUpgrade_IsAdditiveAndDoesNotRewriteHistoricalReports()
+    {
+        using var context = MultiProjectContext();
+        var script = context.GetService<IMigrator>().GenerateScript("20261014060504_AddMeetingPrepDraftDocumentFields",
+            "20261117203932_AddWorkReportProvenance");
+        Assert.Contains("CREATE TABLE `daily_report_supplements`", script);
+        Assert.Contains("ADD `GeneratedContent`", script);
+        Assert.DoesNotContain("DROP TABLE", script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("DELETE FROM", script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("UPDATE `DailyReport`", script);
+    }
     // 固定版本的 MySQL provider 仅用于离线生成 SQL/比较模型，不连接数据库。
     private static ApplicationDbContext MultiProjectContext() => new(new DbContextOptionsBuilder<ApplicationDbContext>()
         .UseMySql("Server=localhost;Database=migration_safety;Uid=test;Pwd=test;",

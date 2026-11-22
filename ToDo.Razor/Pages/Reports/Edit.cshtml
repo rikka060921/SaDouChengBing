@@ -3,7 +3,7 @@
 @using System.IO;
 @{
     ViewData["Title"] = Model.Input.Id == 0 ? "新建项目报告" : "编辑项目报告";
-    string timeTip = Model.IsReadOnly
+    string timeTip = Model.HasSourceSnapshot ? "人工修订只修改当前正文，AI初始正文与来源快照保留；周报类型和周期不可改写。" : Model.IsReadOnly
         ? "创建者可在发布后24小时内修改"
         : "创建者可在发布后24小时内修改";
 }
@@ -33,6 +33,7 @@
     <form method="post" enctype="multipart/form-data" id="reportForm">
         <!-- 隐藏域 -->
         <input type="hidden" asp-for="Input.Id" />
+        <input type="hidden" asp-for="ExpectedReportToken" />
         <input type="hidden" asp-for="Input.ProjectId" />
         <input type="hidden" asp-for="Input.ReporterId" />
         <input type="hidden" id="deletedAttachmentIds" name="DeletedAttachmentIds" value="" />
@@ -70,6 +71,7 @@
                        required
                        onchange="updateTitle()"
                        max="@AppTime.Today.ToString("yyyy-MM-dd")"
+                       readonly="@Model.HasSourceSnapshot"
                        disabled="@Model.IsReadOnly">
                 <span asp-validation-for="Input.ReportDate" class="text-danger"></span>
             </div>
@@ -77,11 +79,12 @@
                 <label asp-for="Input.ReportType" class="form-label fw-bold text-dark required">
                     报告类型 <span class="text-danger">*</span>
                 </label>
+                @if (Model.HasSourceSnapshot) { <input asp-for="Input.ReportType" id="LockedReportType" type="hidden" /> }
                 <select asp-for="Input.ReportType" asp-items="Model.ReportTypeOptions"
                         class="form-select @(ViewData.ModelState.ContainsKey("Input.ReportType") ? "is-invalid" : "")"
                         required
                         onchange="updateTitle()"
-                        disabled="@Model.IsReadOnly">
+                        disabled="@(Model.IsReadOnly || Model.HasSourceSnapshot)">
                     <option value="">请选择类型</option>
                 </select>
                 <span asp-validation-for="Input.ReportType" class="text-danger"></span>
@@ -368,7 +371,7 @@
                 const dateInput = document.querySelector('input[name="Input.ReportDate"]');
                 const titleInput = document.querySelector('input[name="Input.ReportTitle"]');
 
-                if (!@Model.IsReadOnly && reporterName && typeSelect?.value && dateInput?.value && (!titleInput?.value || titleInput.value.trim() === '')) {
+                if (!@Model.IsReadOnly.ToString().ToLowerInvariant() && reporterName && typeSelect?.value && dateInput?.value && (!titleInput?.value || titleInput.value.trim() === '')) {
                     const typeText = reportTypeMap[typeSelect.value] || '报告';
                     const formattedDate = dateInput.value.replace(/-/g, '');
                     titleInput.value = `${reporterName}_${formattedDate}_${typeText}`;

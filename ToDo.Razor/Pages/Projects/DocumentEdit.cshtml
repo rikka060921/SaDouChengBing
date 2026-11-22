@@ -15,7 +15,34 @@
             <label asp-for="EditedContent" class="form-label">@(Model.DraftId > 0 ? "调整后的草稿正文" : "资料正文（Markdown / TXT）")</label>
             <textarea asp-for="EditedContent" rows="20" maxlength="100000" class="form-control font-monospace" required spellcheck="false"></textarea>
             <div class="form-text">最多 10 万字符。这里编辑文本，不修改 Office 原件版式；不支持的原件请下载后处理。</div>
+            @if (Model.HasAiPreview) { <p class="alert alert-info mt-3">AI修订预览已填入编辑区，尚未保存。请对照原文；保存后生成新版本。</p> }
+            @if (Model.HasAiPreview)
+            {
+                var comparison = Model.Comparison;
+                <details class="mt-3" open><summary>AI预览与原资料的按行差异</summary>
+                    @if (!comparison.Changes.Any()) { <p class="text-muted">正文没有变化。</p> }
+                    @if (comparison.IsRangeComparison) { <p class="small text-muted">变化较多，以下对比整个变化区间，区间内可能包含未改的行。</p> }
+                    <div class="border rounded p-2 mt-2" style="max-height:360px;overflow:auto">
+                    @foreach (var change in comparison.Changes)
+                    { <pre class="text-wrap mb-1 @(change.Added ? "text-success" : "text-danger")">@(change.Added ? "+" : "−") @change.Line  @change.Text</pre> }
+                    </div>
+                    @if (comparison.IsTruncated) { <p class="small text-muted">差异预览最多200行；完整正文仍在编辑区，保存内容不会被截断。</p> }
+                </details>
+            }
             @if (Model.Snapshot != null) { <details class="mt-3"><summary>对照修改前正文</summary><pre class="bg-light border rounded p-3 text-wrap" style="max-height:350px;overflow:auto">@Model.Snapshot.Content</pre></details> }
+            @if (Model.CanUseAi)
+            {
+                <fieldset class="border rounded p-3 mt-3">
+                    <legend class="float-none w-auto fs-6 px-2">让AI调整这份资料</legend>
+                    <label asp-for="AiRequirement" class="form-label">修改要求</label>
+                    <textarea asp-for="AiRequirement" rows="2" maxlength="2000" class="form-control" placeholder="例如：补充验收标准，保留现有任务编号与已确认事实"></textarea>
+                    <div class="form-text">使用当前编辑区正文，只选择本分类已授权的Agent；不联网、不调用其他业务工具。旧版本保留，过期版本不会覆盖。</div>
+                    <div class="d-flex flex-wrap gap-2 mt-2">
+                        <button type="submit" asp-page-handler="AiAdjust" class="btn btn-outline-primary">AI调整并保存新版本</button>
+                        <button type="submit" asp-page-handler="AiAdjust" asp-route-previewOnly="true" class="btn btn-outline-secondary">只生成预览</button>
+                    </div>
+                </fieldset>
+            }
             <div class="d-flex flex-wrap gap-2 mt-3"><button class="btn btn-primary" id="save-document">@(Model.DraftId > 0 ? "保存草稿校订（不发布）" : "保存新版本")</button><a asp-page="./Materials" asp-route-projectId="@Model.ProjectId" class="btn btn-outline-secondary">取消</a></div>
         </form>
     }
@@ -27,7 +54,17 @@
     if (!form) return;
     let dirty = false;
     form.querySelector('textarea').addEventListener('input', () => dirty = true);
-    form.addEventListener('submit', () => { dirty = false; document.getElementById('save-document').disabled = true; });
+    form.addEventListener('submit', event => {
+        if (event.submitter?.formAction.includes('AiAdjust') && !document.getElementById('AiRequirement').value.trim()) {
+            event.preventDefault(); document.getElementById('AiRequirement').focus(); return;
+        }
+        dirty = false;
+        document.getElementById('save-document').disabled = true;
+        if (event.submitter?.formAction.includes('AiAdjust')) {
+            event.submitter.textContent = 'AI正在调整，请稍候…';
+            setTimeout(() => form.querySelectorAll('button[type="submit"]').forEach(button => button.disabled = true), 0);
+        }
+    });
     window.addEventListener('beforeunload', event => { if (dirty) { event.preventDefault(); event.returnValue = ''; } });
 })();
 </script>

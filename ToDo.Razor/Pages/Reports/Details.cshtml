@@ -58,12 +58,30 @@
                     </div>
 
                     <!-- Markdown 内容渲染（复用会议纪要逻辑） -->
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                        <span class="badge bg-secondary">@Model.DailyReport.ContentOrigin</span>
+                        @if (Model.DailyReport.ContainsMemberDailyData) { <span class="badge bg-warning text-dark">含成员日报 · 仅管理人员可见</span> }
+                        @if (Model.DailyReport.LastHumanEditedAt.HasValue) { <span class="small text-muted">人工修订 @Model.DailyReport.LastHumanEditedAt.Value.ToString("yyyy-MM-dd HH:mm")</span> }
+                        @if (Model.CanEdit) { <a asp-page="Edit" asp-route-id="@Model.DailyReport.Id" class="btn btn-sm btn-outline-primary">人工修订</a> }
+                    </div>
                     <div class="mb-4">
                         <h5 class="mb-3">
                             <i class="fas fa-file-alt me-2"></i>报告内容
                         </h5>
                         <div class="markdown-body" id="markdown-content">@Html.Raw(Model.ReportContentHtml)</div>
                     </div>
+                    @if (Model.DailyReport.GeneratedContent != null)
+                    {
+                        <details class="mb-4"><summary>对照 AI 初始正文（人工修订不会覆盖）</summary><pre class="text-wrap border rounded p-3 mt-2">@Model.DailyReport.GeneratedContent</pre></details>
+                    }
+                    @if (Model.Sources.Any())
+                    {
+                        <details class="mb-4"><summary>核对生成时的来源快照（@Model.Sources.Count 份）</summary>
+                        <p class="small text-muted mt-2">只包含本项目来源。人工内容是成员自述；任务记录是生成时的当前快照，不自动证明历史已完成。</p>
+                        @foreach (var source in Model.Sources)
+                        { <article class="border-bottom py-3"><h3 class="h6">@source.Kind #@source.Id · @source.Date.ToString("yyyy-MM-dd") · @source.Label</h3><pre class="text-wrap mb-0">@source.Content</pre></article> }
+                        </details>
+                    }
 
                     <!-- 附件列表（复用会议纪要逻辑） -->
                     @if (Model.Attachments.Any())

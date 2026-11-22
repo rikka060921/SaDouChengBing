@@ -124,6 +124,8 @@ public class MeetingPreparationModel : PageModel
 
             // 加载过滤任务
             CurrentTasks = await LoadFilteredTasksAsync(SelectedProjectIds);
+            await AttachTaskChangeInfoAsync(CurrentTasks);
+            SortTasksForDisplay(CurrentTasks);
             RecentlyCompletedByProject = await LoadRecentlyCompletedTasksAsync(SelectedProjectIds);
             ProjectMemberNames = await LoadProjectMemberNamesAsync(SelectedProjectIds);
             AgentNames = await LoadAgentNamesAsync();
@@ -150,6 +152,8 @@ public class MeetingPreparationModel : PageModel
         var validProjectIds = projectIds?.Where(id => accessibleIds.Contains(id)).ToList() ?? new List<int>();
 
         var tasks = await LoadFilteredTasksAsync(validProjectIds);
+        await AttachTaskChangeInfoAsync(tasks);
+        SortTasksForDisplay(tasks);
         var completedByProject = await LoadRecentlyCompletedTasksAsync(validProjectIds);
         // 状态/优先级以字符串下发，供前端筛选与徽章使用（枚举默认会被序列化成数字）
         var taskPayload = tasks.Select(t => new
@@ -162,7 +166,8 @@ public class MeetingPreparationModel : PageModel
             assigneeName = t.AssigneeName,
             deadline = t.DeadlineAt?.ToString("yyyy-MM-dd"),
             isOverdue = t.IsOverdue,
-            isNearDeadline = t.IsNearDeadline
+            isNearDeadline = t.IsNearDeadline,
+            changeInfo = t.ChangeInfo
         }).ToList();
         return new JsonResult(new
         {
@@ -405,7 +410,7 @@ public class MeetingPreparationModel : PageModel
             .OrderBy(n => n)
             .ToListAsync();
 
-    /// <summary>加载过滤任务：仅展示未开始、进行中、待审核的任务；排序：逾期→临近截止3天→普通→待审核，组内按截止日期升序</summary>
+    /// <summary>加载过滤任务：仅展示未开始、进行中、待审核的任务，最终排序见 SortTasksForDisplay</summary>
     private async Task<List<MeetingPrepTaskRow>> LoadFilteredTasksAsync(IEnumerable<int> projectIds)
     {
         var ids = projectIds?.ToList() ?? new List<int>();
@@ -435,12 +440,44 @@ public class MeetingPreparationModel : PageModel
             })
             .ToListAsync();
 
-        // 分组键：0=逾期, 1=临近截止3天, 2=普通, 3=待审核
-        // 组内按 DeadlineAt 升序（null 排最后）
+        // 先按截止时间做基础排序，最终顺序在附加变更信息后由 SortTasksForDisplay 决定
         return rows
-            .OrderBy(t => t.Status == ToDo.Entities.TaskStatus.PendingConfirmation ? 3 : t.IsOverdue ? 0 : t.IsNearDeadline ? 1 : 2)
-            .ThenBy(t => t.DeadlineAt ?? DateTime.MaxValue)
+            .OrderBy(t => t.DeadlineAt ?? DateTime.MaxValue)
+            .ThenBy(t => t.Id)
             .ToList();
+    }
+
+    /// <summary>列表排序：有变更 → 逾期 → 进行中 → 未开始 → 待审核；
+    /// 组内按截止时间升序（无截止时间排最后），"有变更"组内按最近变更时间倒序</summary>
+    private static void SortTasksForDisplay(List<MeetingPrepTaskRow> rows)
+    {
+        rows.Sort((a, b) =>
+        {
+            var bucketA = GetSortBucket(a);
+            var bucketB = GetSortBucket(b);
+            if (bucketA != bucketB) return bucketA.CompareTo(bucketB);
+
+            if (bucketA == 0)
+            {
+                // 最近改过的排前面
+                var changeCompare = Nullable.Compare(b.LastChangeAt, a.LastChangeAt);
+                if (changeCompare != 0) return changeCompare;
+            }
+
+            var deadlineA = a.DeadlineAt ?? DateTime.MaxValue;
+            var deadlineB = b.DeadlineAt ?? DateTime.MaxValue;
+            if (deadlineA != deadlineB) return deadlineA.CompareTo(deadlineB);
+            return a.Id.CompareTo(b.Id);
+        });
+    }
+
+    private static int GetSortBucket(MeetingPrepTaskRow row)
+    {
+        if (row.HasChanges) return 0;
+        if (row.IsOverdue) return 1;
+        if (row.Status == ToDo.Entities.TaskStatus.InProgress) return 2;
+        if (row.Status == ToDo.Entities.TaskStatus.NotStarted) return 3;
+        return 4; // 待审核
     }
 
     /// <summary>按项目加载"上次会议至今已完成"的任务</summary>
@@ -492,6 +529,213 @@ public class MeetingPreparationModel : PageModel
         return result;
     }
 
+    // --- 变更详情 ---
+
+    /// <summary>每条任务最多展示的变更条数；完整记录可在任务详情页查看</summary>
+    private const int MaxChangeLinesPerTask = 5;
+
+    private static readonly Dictionary<string, string> ChangeFieldLabels = new()
+    {
+        ["状态"] = "状态",
+        ["负责人ID"] = "负责人",
+        ["截止时间"] = "截止时间",
+        ["优先级"] = "优先级",
+        ["进度"] = "完成进度"
+    };
+
+    private static readonly Dictionary<string, string> ChangeStatusLabels = new()
+    {
+        ["NotStarted"] = "未开始",
+        ["InProgress"] = "进行中",
+        ["PendingConfirmation"] = "待审核",
+        ["Completed"] = "已完成",
+        ["Cancelled"] = "已取消"
+    };
+
+    private static readonly Dictionary<string, string> ChangePriorityLabels = new()
+    {
+        ["High"] = "高",
+        ["Medium"] = "中",
+        ["Low"] = "低"
+    };
+
+    /// <summary>为任务行附加"变更详情"文本：仅取最近若干条变更记录，多条用换行分隔</summary>
+    private async Task AttachTaskChangeInfoAsync(List<MeetingPrepTaskRow> rows)
+    {
+        if (rows.Count == 0) return;
+        var taskIds = rows.Select(r => r.Id).Distinct().ToList();
+
+        var logs = await _context.ChangeLogs.AsNoTracking()
+            .Where(l => l.TaskId.HasValue && taskIds.Contains(l.TaskId.Value)
+                && l.OperationTarget == OperationTarget.任务
+                // 新建任务的日志不算"变更"，否则每个新任务都会带徽标
+                && l.OperationType != OperationType.创建)
+            .OrderByDescending(l => l.OperatedAt)
+            .Select(l => new
+            {
+                TaskId = l.TaskId!.Value,
+                l.OperatedAt,
+                l.OperationType,
+                l.BeforeContent,
+                l.AfterContent,
+                OperatorName = l.OperatedByRealName ?? l.OperatedByUserName
+            })
+            .ToListAsync();
+        if (logs.Count == 0) return;
+
+        // 变更文本里的负责人以 ID 保存，这里统一解析成姓名，避免弹层出现裸 ID
+        var assigneeIds = new HashSet<int>();
+        foreach (var log in logs)
+        {
+            CollectAssigneeIds(log.BeforeContent, assigneeIds);
+            CollectAssigneeIds(log.AfterContent, assigneeIds);
+        }
+        var userNames = assigneeIds.Count == 0
+            ? new Dictionary<int, string>()
+            : await _context.Users.AsNoTracking()
+                .Where(u => assigneeIds.Contains(u.Id))
+                .Select(u => new { u.Id, Name = u.RealName ?? u.UserName })
+                .ToDictionaryAsync(u => u.Id, u => u.Name ?? "未知用户");
+
+        var perTask = new Dictionary<int, List<string>>();
+        var latestChangeAt = new Dictionary<int, DateTime>();
+        foreach (var log in logs)
+        {
+            if (!perTask.TryGetValue(log.TaskId, out var lines))
+            {
+                lines = new List<string>();
+                perTask[log.TaskId] = lines;
+            }
+            // logs 已按时间倒序，每个任务第一次出现的就是最近一次变更
+            latestChangeAt.TryAdd(log.TaskId, log.OperatedAt);
+            if (lines.Count >= MaxChangeLinesPerTask) continue;
+            var summary = BuildChangeSummary(log.BeforeContent, log.AfterContent, userNames, log.OperationType);
+            lines.Add($"{AppTime.ToBeijingTime(log.OperatedAt):MM-dd HH:mm} · {log.OperatorName ?? "系统"} · {summary}");
+        }
+
+        foreach (var row in rows)
+        {
+            if (perTask.TryGetValue(row.Id, out var lines))
+                row.ChangeInfo = string.Join("\n", lines);
+            row.LastChangeAt = latestChangeAt.GetValueOrDefault(row.Id, default);
+        }
+    }
+
+    /// <summary>从 "负责人ID: N" 结构中收集负责人 ID</summary>
+    private static void CollectAssigneeIds(string? content, HashSet<int> target)
+    {
+        if (string.IsNullOrWhiteSpace(content)) return;
+        foreach (var (key, value) in ParseStateText(content))
+        {
+            if (key == "负责人ID" && int.TryParse(value, out var id) && id > 0)
+                target.Add(id);
+        }
+    }
+
+    /// <summary>把 "字段: 值；字段: 值" 形式的变更前后快照解析成键值对</summary>
+    private static Dictionary<string, string> ParseStateText(string? text)
+    {
+        var result = new Dictionary<string, string>();
+        if (string.IsNullOrWhiteSpace(text)) return result;
+        foreach (var segment in text.Split(new[] { '\n', '；', ';' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var separatorIndex = segment.IndexOfAny(new[] { ':', '：' });
+            if (separatorIndex <= 0) continue;
+            var key = segment[..separatorIndex].Trim();
+            var value = segment[(separatorIndex + 1)..].Trim();
+            if (key.Length == 0) continue;
+            result[key] = value;
+        }
+        return result;
+    }
+
+    /// <summary>收集没有"字段: 值"结构的行，例如进展说明、描述中的换行内容</summary>
+    private static List<string> ParseFreeTextLines(string? text)
+    {
+        var result = new List<string>();
+        if (string.IsNullOrWhiteSpace(text)) return result;
+        foreach (var line in text.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            if (trimmed.Length == 0) continue;
+            // 带冒号的行属于"字段: 值"，交给 ParseStateText 处理
+            if (trimmed.IndexOfAny(new[] { ':', '：' }) > 0) continue;
+            result.Add(trimmed);
+        }
+        return result;
+    }
+
+    /// <summary>对比变更前后快照，输出所有发生变化的字段以及进展说明</summary>
+    private static string BuildChangeSummary(
+        string? before,
+        string? after,
+        IReadOnlyDictionary<int, string> userNames,
+        OperationType operationType)
+    {
+        var beforeValues = ParseStateText(before);
+        var afterValues = ParseStateText(after);
+        var keys = beforeValues.Keys.Concat(afterValues.Keys).Distinct().ToList();
+        var parts = new List<string>();
+
+        foreach (var key in keys)
+        {
+            var beforeValue = beforeValues.GetValueOrDefault(key);
+            var afterValue = afterValues.GetValueOrDefault(key);
+            if (string.Equals(beforeValue, afterValue, StringComparison.Ordinal)) continue;
+
+            var label = ChangeFieldLabels.GetValueOrDefault(key, key);
+            var beforeText = FormatChangeValue(key, beforeValue, userNames);
+            var afterText = FormatChangeValue(key, afterValue, userNames);
+            if (string.IsNullOrEmpty(beforeText))
+                parts.Add($"{label}：{afterText}");
+            else if (string.IsNullOrEmpty(afterText))
+                parts.Add($"{label}：{beforeText} → 清空");
+            else
+                parts.Add($"{label}：{beforeText} → {afterText}");
+        }
+
+        // 进展更新的备注、描述换行等内容没有字段名，单独按界面上的字段名展示
+        var noteLabel = operationType == OperationType.状态变更 ? "进展或成果说明" : "补充说明";
+        var beforeNote = ShortenChangeText(string.Join(" ", ParseFreeTextLines(before)));
+        var afterNote = ShortenChangeText(string.Join(" ", ParseFreeTextLines(after)));
+        if (!string.Equals(beforeNote, afterNote, StringComparison.Ordinal))
+        {
+            if (string.IsNullOrEmpty(beforeNote))
+                parts.Add($"{noteLabel}：{afterNote}");
+            else if (string.IsNullOrEmpty(afterNote))
+                parts.Add($"{noteLabel}：{beforeNote} → 清空");
+            else
+                parts.Add($"{noteLabel}：{beforeNote} → {afterNote}");
+        }
+
+        return parts.Count == 0 ? "任务信息更新" : string.Join("；", parts);
+    }
+
+    private static string FormatChangeValue(string field, string? value, IReadOnlyDictionary<int, string> userNames)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value == "未设置") return string.Empty;
+
+        if (field == "负责人ID")
+        {
+            return int.TryParse(value, out var id) && id > 0
+                ? userNames.GetValueOrDefault(id, $"用户#{id}")
+                : string.Empty;
+        }
+        if (field == "状态")
+            return ChangeStatusLabels.GetValueOrDefault(value, value);
+        if (field == "优先级")
+            return ChangePriorityLabels.GetValueOrDefault(value, value);
+        return ShortenChangeText(value);
+    }
+
+    /// <summary>变更文本压成一行并截断，避免长描述把浮层撑爆</summary>
+    private static string ShortenChangeText(string? value, int maxLength = 80)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+        var oneLine = value.Replace("\r", " ").Replace("\n", " ").Trim();
+        return oneLine.Length <= maxLength ? oneLine : oneLine[..maxLength] + "…";
+    }
+
     // --- DTO ---
 
     public class ProjectOption
@@ -512,6 +756,11 @@ public class MeetingPreparationModel : PageModel
         public string AssigneeName { get; set; } = string.Empty;
         public bool IsOverdue { get; set; }
         public bool IsNearDeadline { get; set; }
+        /// <summary>最近变更详情（多条用换行分隔）；空表示该任务没有变更记录</summary>
+        public string ChangeInfo { get; set; } = string.Empty;
+        public bool HasChanges => !string.IsNullOrEmpty(ChangeInfo);
+        /// <summary>最近一次变更时间（UTC），用于"有变更"分组内倒序</summary>
+        public DateTime? LastChangeAt { get; set; }
 
         public string StatusText => Status switch
         {

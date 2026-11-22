@@ -262,6 +262,9 @@ namespace ToDo.Domain
             if (!await _context.Project.AnyAsync(p => p.Id == original.ProjectId && !p.IsDeleted && p.Status == ProjectStatus.Active))
                 return (false, ProjectLifecycleRules.ReadOnlyMessage);
 
+            if (original.ContainsMemberDailyData && await MemberReportAccess.Projects(_context, currentUser, true)
+                .AnyAsync(p => p.Id == original.ProjectId)) return (true, string.Empty);
+
             // 仅保留创建人判断
             bool isCreator = original.ReporterId == currentUser.Id;
             bool within24Hours = (AppTime.Now - original.CreatedAt) <= TimeSpan.FromHours(24);
@@ -467,10 +470,22 @@ namespace ToDo.Domain
             }
         }
 
-        public async Task UpdateDailyReport(DailyReport original, string title, string content, int reportType, DateTime reportDate, ApplicationUser currentUser)
+        public static string ReportVersionToken(DailyReport report) => ProjectDocumentEditingService.Token(
+            $"{report.Id}|{report.LastModifiedAt.Ticks}|{report.ReportType}|{report.ReportDate.Ticks}|{report.ReportTitle}|{report.ReportContent}");
+
+        public async Task UpdateDailyReport(DailyReport original, string title, string content, int reportType, DateTime reportDate, ApplicationUser currentUser, string? expectedToken = null)
         {
             if (original == null)
                 throw new Exception("日报信息不存在");
+            var permission = await CheckEditPermission(original, currentUser);
+            if (!permission.CanEdit) throw new UnauthorizedAccessException(permission.ErrorMessage);
+            if (string.IsNullOrWhiteSpace(title) || title.Length > 200 || string.IsNullOrWhiteSpace(content) || content.Length > 100000
+                || reportType is < 1 or > 3 || reportDate.Date > AppTime.Today)
+                throw new InvalidOperationException("报告标题、正文、类型或日期无效");
+            if (original.SourceSnapshotJson != null && (reportType != 2 || reportDate.Date != original.PeriodEndDate))
+                throw new InvalidOperationException("自动汇总周报的类型和周期不能改写，请按新周期重新生成");
+            if (expectedToken != null && expectedToken != ReportVersionToken(original))
+                throw new InvalidOperationException("报告已由其他人修改。输入已保留，请复制后刷新对比最新版本");
 
             bool hasTitleChange = original.ReportTitle != title?.Trim();
             bool hasContentChange = original.ReportContent != content?.Trim();
@@ -480,15 +495,26 @@ namespace ToDo.Domain
             if (!hasTitleChange && !hasContentChange && !hasTypeChange && !hasDateChange)
                 return;
 
-            using var transaction = await _context.Database.BeginTransactionAsync();
+            using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             try
             {
+                if (expectedToken != null)
+                {
+                    var latest = await _context.DailyReport.AsNoTracking().SingleAsync(r => r.Id == original.Id && !r.IsDeleted);
+                    if (expectedToken != ReportVersionToken(latest))
+                        throw new InvalidOperationException("报告刚被更新，未覆盖最新正文。请复制输入后刷新对比");
+                }
                 string oldTitle = original.ReportTitle;
                 // 不再保存完整的旧内容，仅用于判断变更
                 int oldReportType = original.ReportType;
                 DateTime oldReportDate = original.ReportDate;
 
                 original.ReportTitle = title?.Trim() ?? "";
+                if (original.IsSystemGenerated || original.GeneratedContent != null)
+                {
+                    original.GeneratedContent ??= original.ReportContent;
+                    original.LastHumanEditedAt = AppTime.Now;
+                }
                 original.ReportContent = content?.Trim() ?? "";
                 original.ReportType = reportType;
                 original.ReportDate = reportDate;
@@ -732,11 +758,11 @@ namespace ToDo.Domain
             // 团队汇报（ReportType=4）：仅项目管理员（ProjectRole.Admin，负责人同时也是管理员）可见
             // 其余报告：按原项目成员权限
             return query.Where(report =>
-                (report.ReportType == 4 &&
+                ((report.ReportType == 4 || report.ContainsMemberDailyData) &&
                     _context.ProjectUsers.Any(pu => pu.ProjectId == report.ProjectId
                         && pu.UserId == user.Id
                         && pu.ProjectRole == (int)ProjectRole.Admin))
-                || (report.ReportType != 4
+                || (report.ReportType != 4 && !report.ContainsMemberDailyData
                     && (report.Project!.LeaderUserId == user.Id
                         || _context.ProjectUsers.Any(member => member.ProjectId == report.ProjectId
                             && member.UserId == user.Id

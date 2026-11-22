@@ -1,0 +1,32 @@
+@page
+@model ToDo.Razor.Pages.DailySummary.WriteModel
+@{ ViewData["Title"] = "填写人工日报"; }
+<div class="container py-4" style="max-width:1000px">
+    <a asp-page="./Index" asp-route-selectDate="@Model.ReportDate.ToString("yyyy-MM-dd")">← 我的日报</a>
+    <h1 class="h3 mt-3">填写或校订日报</h1>
+    <p class="text-muted">补充系统没有记录的工作，或注明对自动汇总的更正。人工内容单独保存，重新生成不会覆盖；每次保存留存历史版本。</p>
+    @if (!Model.Projects.Any()) { <p class="alert alert-info">暂无可填写日报的活跃项目。请先加入项目；归档项目的历史记录仍在“我的日报”中查看。</p> }
+    <form method="get" class="row g-2 mb-4">
+        <div class="col-md-6"><label asp-for="ProjectId" class="form-label">项目</label><select asp-for="ProjectId" asp-items="Model.Projects" class="form-select" required><option value="">请选择项目</option></select></div>
+        <div class="col-md-4"><label asp-for="ReportDate" class="form-label">工作日期（可补录）</label><input asp-for="ReportDate" type="date" max="@ToDo.Entities.AppTime.Today.ToString("yyyy-MM-dd")" class="form-control" required /></div>
+        <div class="col-md-2 d-flex align-items-end"><button class="btn btn-outline-primary w-100">加载日报</button></div>
+    </form>
+    @if (!ViewData.ModelState.IsValid) { <div asp-validation-summary="All" class="alert alert-danger"></div> }
+    @if (Model.ProjectId > 0 && (Model.Projects.Any(p => p.Value == Model.ProjectId.ToString())
+        || (!ViewData.ModelState.IsValid && !string.IsNullOrEmpty(Model.ManualContent))))
+    {
+        <form method="post">
+            <input asp-for="ProjectId" type="hidden" /><input asp-for="ReportDate" type="hidden" /><input asp-for="ExpectedRevision" type="hidden" />
+            <label asp-for="ManualContent" class="form-label">人工填写／校订内容</label>
+            <textarea asp-for="ManualContent" class="form-control" rows="12" maxlength="12000" required placeholder="实际完成了什么；遇到了什么问题；对系统整理有哪些更正；下一步准备做什么"></textarea>
+            <div class="form-text">这是成员自述，不会被标记为系统已核实。请勿填入密码或与本项目无关的私人内容。</div>
+            <button class="btn btn-primary mt-3">保存人工日报</button>
+        </form>
+    }
+    @if (Model.History.Any())
+    {
+        <details class="mt-4"><summary>查看人工修订历史（最近30版）</summary>
+        @foreach (var note in Model.History) { <article class="border-bottom py-3"><h2 class="h6">人工 v@note.Revision · @note.CreatedAt.ToString("yyyy-MM-dd HH:mm")</h2><pre class="text-wrap mb-0">@note.Content</pre></article> }
+        </details>
+    }
+</div>

@@ -36,6 +36,16 @@ namespace ToDo.Entities
         public DateTime LastModifiedAt { get; set; } = AppTime.Now;
         /// <summary>由系统定时任务自动生成，不计入某个人的主动工作产出。</summary>
         public bool IsSystemGenerated { get; set; } = false;
+        /// <summary>Immutable generation baseline; ReportContent is the current, possibly human-revised text.</summary>
+        [Column(TypeName = "longtext")] public string? GeneratedContent { get; set; }
+        [Column(TypeName = "longtext")] public string? SourceSnapshotJson { get; set; }
+        public DateTime? PeriodStartDate { get; set; }
+        public DateTime? PeriodEndDate { get; set; }
+        public DateTime? LastHumanEditedAt { get; set; }
+        public bool ContainsMemberDailyData { get; set; }
+        [NotMapped]
+        public string ContentOrigin => LastHumanEditedAt.HasValue ? "AI 生成后人工修订"
+            : GeneratedContent != null || IsSystemGenerated ? "AI / 系统生成" : "人工填写";
         public bool IsDeleted { get; set; } = false;
 
         [ForeignKey("ProjectId")]

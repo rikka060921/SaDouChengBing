@@ -124,7 +124,11 @@ public sealed class ProjectHistoryBackfillService(ApplicationDbContext context, 
                     _ = ProjectArchivePackage.Parse(Encoding.UTF8.GetString(bytes), archive.ProjectId);
                     archive.ProjectId = project.Id;
                     // Source database IDs are NOT portable. Keep the origin label, never link to an unrelated local task.
-                    foreach (var record in archive.Records) { record.SourceUrl = ""; record.SourceLabel = "原站历史快照（非本地编号）；" + record.SourceLabel; }
+                    foreach (var record in archive.Records.Where(record => record.SourceUrl.Length > 0))
+                    {
+                        record.SourceUrl = "";
+                        record.SourceLabel = "原站历史快照（非本地编号）；" + record.SourceLabel;
+                    }
                     var old = await context.ProjectDocuments.AsNoTracking().Where(d => d.ProjectId == project.Id && d.FileName == item.Name && d.IsCurrent).OrderByDescending(d => d.VersionNumber).FirstOrDefaultAsync(ct);
                     if (old != null)
                     {

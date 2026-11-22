@@ -1940,8 +1940,14 @@ namespace ToDo.Context.Migrations
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<bool>("ContainsMemberDailyData")
+                        .HasColumnType("tinyint(1)");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)");
+
+                    b.Property<string>("GeneratedContent")
+                        .HasColumnType("longtext");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("tinyint(1)");
@@ -1949,7 +1955,16 @@ namespace ToDo.Context.Migrations
                     b.Property<bool>("IsSystemGenerated")
                         .HasColumnType("tinyint(1)");
 
+                    b.Property<DateTime?>("LastHumanEditedAt")
+                        .HasColumnType("datetime(6)");
+
                     b.Property<DateTime>("LastModifiedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime?>("PeriodEndDate")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime?>("PeriodStartDate")
                         .HasColumnType("datetime(6)");
 
                     b.Property<int>("ProjectId")
@@ -1972,6 +1987,9 @@ namespace ToDo.Context.Migrations
 
                     b.Property<int>("ReporterId")
                         .HasColumnType("int");
+
+                    b.Property<string>("SourceSnapshotJson")
+                        .HasColumnType("longtext");
 
                     b.HasKey("Id");
 
@@ -2025,6 +2043,44 @@ namespace ToDo.Context.Migrations
                     b.HasIndex("DailyReportId");
 
                     b.ToTable("DailyReportAttachments");
+                });
+
+            modelBuilder.Entity("ToDo.Entities.DailyReportSupplement", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasMaxLength(12000)
+                        .HasColumnType("varchar(12000)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("ReportDate")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId");
+
+                    b.HasIndex("UserId", "ProjectId", "ReportDate", "Revision")
+                        .IsUnique();
+
+                    b.ToTable("daily_report_supplements");
                 });
 
             modelBuilder.Entity("ToDo.Entities.DailySummary.DailyProjectSummaryDetail", b =>
@@ -4410,6 +4466,25 @@ namespace ToDo.Context.Migrations
                         .HasConstraintName("FK_DailyReportAttachments_DailyReport_Id");
 
                     b.Navigation("DailyReport");
+                });
+
+            modelBuilder.Entity("ToDo.Entities.DailyReportSupplement", b =>
+                {
+                    b.HasOne("Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ToDo.Entities.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Project");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("ToDo.Entities.DailySummary.DailyProjectSummaryDetail", b =>

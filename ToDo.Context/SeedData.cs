@@ -55,21 +55,16 @@ namespace ToDo.Razor.Data
             //}
             try
             {
-#if DEBUG
-                // 仅本地VS调试F5时生效：强制全新库初始化，解决本地重建数据库的迁移BUG
-                await BootstrapFreshDatabaseAsync(context);
-#else
-    // Release打包/服务器环境：原版完整逻辑，用于增量迁移
-    if (await IsDatabaseEmptyAsync(context))
-    {
-        await BootstrapFreshDatabaseAsync(context);
-    }
-    else
-    {
-        await RepairInterruptedDocumentCategoryMigrationAsync(context);
-        await context.Database.MigrateAsync();
-    }
-#endif
+                // Debug and Release must both migrate existing schemas. EnsureCreated on
+                // an existing database does nothing; marking every migration then would
+                // permanently hide unapplied columns/tables from the migration runner.
+                if (await IsDatabaseEmptyAsync(context))
+                    await BootstrapFreshDatabaseAsync(context);
+                else
+                {
+                    await RepairInterruptedDocumentCategoryMigrationAsync(context);
+                    await context.Database.MigrateAsync();
+                }
             }
             catch (Exception migrationException)
             {
@@ -438,6 +433,8 @@ namespace ToDo.Razor.Data
         /// </summary>
         private static async Task BootstrapFreshDatabaseAsync(ApplicationDbContext context)
         {
+            if (!await IsDatabaseEmptyAsync(context))
+                throw new InvalidOperationException("仅允许对空数据库初始化迁移基线，已有数据库必须执行增量迁移。");
             await context.Database.EnsureCreatedAsync();
             await EnsureMigrationHistoryAsync(context);
 

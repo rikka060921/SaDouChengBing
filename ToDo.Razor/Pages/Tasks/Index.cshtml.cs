@@ -203,6 +203,8 @@ public class IndexModel : PageModel
             || await _dbcontext.Project.AsNoTracking().AnyAsync(item => item.Id == task.ProjectId && !item.IsDeleted && item.LeaderUserId == userId)
             || await _dbcontext.ProjectUsers.AnyAsync(item => item.ProjectId == task.ProjectId && item.UserId == userId);
         if (!canAccessProject) return Forbid();
+        var beforeStatus = task.Status;
+        var beforeAssigneeId = task.AssigneeId;
         task.AssigneeId = userId;
         task.ClaimerId = userId;
         task.AssigneeType = TaskAssigneeType.Human;
@@ -210,6 +212,17 @@ public class IndexModel : PageModel
         task.StartTime ??= AppTime.Now;
         task.UpdatedAt = AppTime.Now;
         await _dbcontext.SaveChangesAsync();
+        await _taskDomainService.LogTaskOperationAsync(
+            OperationType.更新,
+            OperationTarget.任务,
+            userId,
+            beforeState: $"状态: {beforeStatus}；负责人ID: {(beforeAssigneeId.HasValue ? beforeAssigneeId.Value.ToString() : "未设置")}",
+            afterState: $"状态: {task.Status}；负责人ID: {userId}",
+            projectId: task.ProjectId,
+            taskId: task.Id,
+            taskTitle: task.Title,
+            targetId: task.Id,
+            status: OperationStatus.成功);
         if (task.CreatorId != userId) await _notifications.NotifyAsync(task.CreatorId, "任务已被认领", $"任务「{task.Title}」已被成员认领", "Task", $"/Tasks/Details/{task.Id}");
         TempData["Message"] = "任务认领成功";
         return RedirectToPage(new { projectId = task.ProjectId });

@@ -48,6 +48,8 @@ namespace ToDo.Razor.Pages.Reports
         public List<SelectListItem> ReportTypeOptions { get; set; } = new();
         public string ErrorDetails { get; set; } = "";
         public bool IsReadOnly { get; private set; }
+        public bool HasSourceSnapshot { get; private set; }
+        [BindProperty] public string? ExpectedReportToken { get; set; }
         public DateTime ReportCreatedAt { get; set; }
         public DateTime ReportLastModifiedAt { get; set; }
         public List<AttachmentViewModel> ExistingAttachments { get; set; } = new();
@@ -114,6 +116,8 @@ namespace ToDo.Razor.Pages.Reports
                     // 检查编辑权限（核心：仅创建者24小时内可编辑）
                     var (canEdit, errorMsg) = await _service.CheckEditPermission(report, currentUser);
                     IsReadOnly = !canEdit;
+                    HasSourceSnapshot = report.SourceSnapshotJson != null;
+                    ExpectedReportToken = DailyReportService.ReportVersionToken(report);
                     if (IsReadOnly)
                     {
                         ErrorDetails = errorMsg; // 显示无权限原因
@@ -198,6 +202,19 @@ namespace ToDo.Razor.Pages.Reports
                     await LoadDependenciesAsync(currentUser);
                     return Page();
                 }
+                HasSourceSnapshot = original.SourceSnapshotJson != null;
+                if (string.IsNullOrWhiteSpace(ExpectedReportToken) || ExpectedReportToken != DailyReportService.ReportVersionToken(original))
+                {
+                    ErrorDetails = "报告已变化或版本标识缺失。你的输入已保留，请先复制，再刷新对比。";
+                    await LoadDependenciesAsync(currentUser);
+                    return Page();
+                }
+                if (HasSourceSnapshot && (Input.ReportType != 2 || Input.ReportDate.Date != original.PeriodEndDate))
+                {
+                    ErrorDetails = "自动汇总周报的类型和周期不可改写，请按新周期重新生成。";
+                    await LoadDependenciesAsync(currentUser);
+                    return Page();
+                }
 
                 // 再次校验权限（防前端绕过）
                 var (canEdit, errorMsg) = await _service.CheckEditPermission(original, currentUser);
@@ -234,7 +251,8 @@ namespace ToDo.Razor.Pages.Reports
                     Input.ReportContent,
                     Input.ReportType,
                     Input.ReportDate ,
-                    currentUser
+                    currentUser,
+                    ExpectedReportToken
                 );
 
                 return RedirectToPage("./Index");
@@ -242,7 +260,7 @@ namespace ToDo.Razor.Pages.Reports
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to save report {ReportId}", Input.Id);
-                ErrorDetails = "保存失败，请稍后重试";
+                ErrorDetails = ex is InvalidOperationException ? ex.Message : "保存失败，输入已保留，请稍后重试";
                 await LoadDependenciesAsync(await _userManager.GetUserAsync(User));
                 return Page();
             }

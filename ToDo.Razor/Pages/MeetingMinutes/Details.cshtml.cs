@@ -87,15 +87,21 @@ public class DetailsModel : PageModel
                 if (!ok) item.AssigneeId = null;
             }
 
+            var groupCleared = false;
             if (!string.IsNullOrEmpty(item.GroupName))
             {
                 var ok = await _context.TaskGroups.AnyAsync(g =>
                     g.ProjectId == effectiveProjectId && !g.IsDeleted && g.Name == item.GroupName);
-                if (!ok) item.GroupName = null;
+                if (!ok)
+                {
+                    item.GroupName = null;
+                    groupCleared = true;
+                }
             }
 
             await _context.SaveChangesAsync();
-            return new JsonResult(new { success = true, msg = "项目已更新" });
+            return new JsonResult(new { success = true, groupCleared,
+                msg = groupCleared ? "项目已更新，原分组不属于新项目，已改为无分组。" : "项目已更新" });
         }
         catch (Exception ex)
         {
@@ -173,12 +179,14 @@ public class DetailsModel : PageModel
                     return new JsonResult(new { success = false, msg = "任务状态无效" });
                 item.TaskStatus = taskStatus;
             }
-            if (groupName != null)
+            // 空表单值可能被模型绑定为 null，仍需区分“明确清空”和“未提交该字段”。
+            if (groupName != null || (Request.HasFormContentType && Request.Form.ContainsKey(nameof(groupName))))
             {
-                // ✅ 替换：meeting.ProjectId → effectiveProjectId
+                groupName = groupName?.Trim() ?? string.Empty;
                 if (!await IsValidGroupAsync(effectiveProjectId, groupName))
                     return new JsonResult(new { success = false, msg = "任务分组不属于当前项目" });
-                item.GroupName = string.IsNullOrEmpty(groupName) ? null : groupName;
+
+                item.GroupName = groupName.Length == 0 ? null : groupName;
             }
             if (meetingAgendaId.HasValue)
             {
@@ -636,6 +644,7 @@ public class DetailsModel : PageModel
     }
 
     // ====================== 弹窗编辑（跳转页面） ======================
+    // ====================== 弹窗编辑（跳转页面） ======================
     public async Task<IActionResult> OnPostUpdateActionItemAsync(
         int itemId,
         int meetingId,
@@ -647,7 +656,11 @@ public class DetailsModel : PageModel
         string taskStatus,
         string? groupName,
         int? prepDraftTaskId = null,
-        int? sourceDecisionIndex = null)
+        int? sourceDecisionIndex = null,
+    int? projectId = null,
+    string? changeDescription = null,
+    string? actionType = null,
+    int? matchedTaskId = null)
     {
         try
         {
@@ -662,7 +675,8 @@ public class DetailsModel : PageModel
             }
 
             // 保存原有的匹配任务ID
-            var matchedTaskId = item.MatchedTaskId;
+            var originalMatchedTaskId = item.MatchedTaskId;
+
 
             title = title?.Trim() ?? string.Empty;
             if (title.Length == 0 || title.Length > 255)
@@ -675,11 +689,92 @@ public class DetailsModel : PageModel
                 TempData["ErrorMessage"] = "优先级或任务状态无效";
                 return RedirectToPage(new { id = meetingId });
             }
-            if (!TryParseDeadline(deadline, out var parsedDeadline)
-                || !await TryResolveAssigneeAsync(meeting.ProjectId, assigneeId, meeting.Project?.LeaderUserId, item)
-                || !await IsValidGroupAsync(meeting.ProjectId, groupName))
+
+            groupName = string.IsNullOrWhiteSpace(groupName) ? null : groupName.Trim();
+            var originalGroupName = item.GroupName;
+            var groupCleared = false;
+            // ===== 处理所属项目切换 =====
+            var effectiveProjectId = item.ProjectId ?? meeting.ProjectId;
+            if (projectId.HasValue && projectId.Value != effectiveProjectId)
             {
-                TempData["ErrorMessage"] = "责任人、截止日期或任务分组不属于当前项目";
+                // 校验新项目必须在会议关联项目里
+                var validIds = await _context.MeetingMinutesProjects
+                    .Where(x => x.MeetingMinutesId == meetingId)
+                    .Select(x => x.ProjectId)
+                    .ToListAsync();
+                if (validIds.Count == 0) validIds.Add(meeting.ProjectId);
+
+                if (!validIds.Contains(projectId.Value))
+                {
+                    TempData["ErrorMessage"] = "项目不在本次会议关联范围内";
+                    return RedirectToPage(new { id = meetingId });
+                }
+
+                item.ProjectId = projectId.Value;
+                effectiveProjectId = projectId.Value;
+
+                // 切换项目后，清掉不属于新项目的数据
+                if (item.MatchedTaskId.HasValue)
+                {
+                    var taskOk = await _context.ToDoTasks.AnyAsync(t =>
+                        t.Id == item.MatchedTaskId.Value
+                        && t.ProjectId == effectiveProjectId
+                        && !t.IsDeleted);
+                    if (!taskOk) item.MatchedTaskId = null;
+                }
+                if (item.AssigneeId.HasValue)
+                {
+                    var ok = await _context.ProjectUsers
+                        .AnyAsync(pu => pu.ProjectId == effectiveProjectId && pu.UserId == item.AssigneeId.Value);
+                    if (!ok) item.AssigneeId = null;
+                }
+                if (!string.IsNullOrEmpty(item.GroupName))
+                {
+                    var ok = await _context.TaskGroups.AnyAsync(g =>
+                        g.ProjectId == effectiveProjectId && !g.IsDeleted && g.Name == item.GroupName);
+                    if (!ok) item.GroupName = null;
+                }
+
+                // 重新校验责任人/分组是否仍属于新项目
+                if (!string.IsNullOrWhiteSpace(assigneeId))
+                {
+                    if (!int.TryParse(assigneeId, out var parsedAid) || parsedAid <= 0
+                        || !await _context.ProjectUsers.AnyAsync(pu => pu.ProjectId == effectiveProjectId && pu.UserId == parsedAid))
+                    {
+                        assigneeId = null;
+                    }
+                }
+                if (!string.IsNullOrWhiteSpace(groupName))
+                {
+                    var groupOk = await _context.TaskGroups.AnyAsync(g =>
+                        g.ProjectId == effectiveProjectId && !g.IsDeleted && g.Name == groupName);
+                    if (!groupOk)
+                    {
+                        if (groupName == originalGroupName)
+                        {
+                            groupName = null;
+                            groupCleared = true;
+                        }
+                        else
+                        {
+                            TempData["ErrorMessage"] = "任务分组不属于当前项目";
+                            return RedirectToPage(new { id = meetingId });
+                        }
+                    }
+                }
+            }
+
+            // 无分组是合法选择；只校验明确选择的分组。
+            if (!await IsValidGroupAsync(effectiveProjectId, groupName))
+            {
+                TempData["ErrorMessage"] = "任务分组不属于当前项目";
+                return RedirectToPage(new { id = meetingId });
+            }
+
+            if (!TryParseDeadline(deadline, out var parsedDeadline)
+                || !await TryResolveAssigneeAsync(effectiveProjectId, assigneeId, meeting.Project?.LeaderUserId, item))
+            {
+                TempData["ErrorMessage"] = "责任人、截止日期不属于当前项目";
                 return RedirectToPage(new { id = meetingId });
             }
 
@@ -690,7 +785,46 @@ public class DetailsModel : PageModel
             item.Priority = priority;
             item.TaskStatus = taskStatus;
             item.GroupName = string.IsNullOrEmpty(groupName) ? null : groupName;
+            item.ChangeDescription = string.IsNullOrWhiteSpace(changeDescription) ? null : changeDescription.Trim();
+            // ===== 处理类型切换：新增 ↔ 变更 =====
+            if (!string.IsNullOrWhiteSpace(actionType)
+                && (actionType == "NewTask" || actionType == "TaskChange"))
+            {
+                if (actionType == "TaskChange")
+                {
+                    if (!matchedTaskId.HasValue || matchedTaskId.Value <= 0)
+                    {
+                        TempData["ErrorMessage"] = "改为「变更」类型时必须选择要关联的历史任务";
+                        return RedirectToPage(new { id = meetingId });
+                    }
 
+                    var targetTask = await _context.ToDoTasks.FirstOrDefaultAsync(t =>
+                        t.Id == matchedTaskId.Value
+                        && t.ProjectId == effectiveProjectId
+                        && !t.IsDeleted);
+                    if (targetTask == null)
+                    {
+                        TempData["ErrorMessage"] = "关联的历史任务不存在、已删除或不属于当前项目";
+                        return RedirectToPage(new { id = meetingId });
+                    }
+
+                    item.ActionType = "TaskChange";
+                    item.MatchedTaskId = matchedTaskId.Value;
+                    item.BeforeStatus = targetTask.Status.ToString();
+                    item.BeforeAssigneeId = targetTask.AssigneeId;
+                    item.BeforeDeadline = targetTask.EndTime;
+                    item.BeforePriority = targetTask.Priority.ToString();
+                }
+                else
+                {
+                    item.ActionType = "NewTask";
+                    item.MatchedTaskId = null;
+                    item.BeforeStatus = null;
+                    item.BeforeAssigneeId = null;
+                    item.BeforeDeadline = null;
+                    item.BeforePriority = null;
+                }
+            }
             // 关联会前事项（草稿快照 ID，负数表示手工填写事项）
             if (prepDraftTaskId.HasValue)
             {
@@ -732,11 +866,12 @@ public class DetailsModel : PageModel
             }
 
             // 如果已同步，同步更新对应的正式任务
-            if (item.IsConfirmed && matchedTaskId.HasValue)
+            // 原来：if (item.IsConfirmed && matchedTaskId.HasValue)
+            if (item.IsConfirmed && originalMatchedTaskId.HasValue)
             {
                 var updated = await UpdateMatchedTaskFullAsync(
-                    matchedTaskId.Value,
-                    meeting.ProjectId,
+                    originalMatchedTaskId.Value,
+                    effectiveProjectId,
                     item,
                     assigneeId);
                 if (!updated)
@@ -746,10 +881,13 @@ public class DetailsModel : PageModel
                 }
             }
 
+
             // 行动项与正式任务在同一次 SaveChanges 中原子提交。
             await _context.SaveChangesAsync();
 
-            TempData["SuccessMessage"] = "任务项修改成功";
+            TempData["SuccessMessage"] = groupCleared
+                ? "任务项修改成功，原分组不属于新项目，已改为无分组。"
+                : "任务项修改成功";
         }
         catch (Exception ex)
         {
@@ -976,6 +1114,18 @@ public class DetailsModel : PageModel
     /// <summary>从哪个项目列表进入详情（URL 参数）；不存在时回退到默认项目</summary>
     public int? FromProjectId { get; set; }
     public List<DomainSelectListItem> ProjectTaskGroups { get; set; } = new();
+    /// <summary>每个项目下可供手动关联的历史任务（供"新增"改为"变更"时选择）</summary>
+    public Dictionary<int, List<HistoricalTaskOption>> HistoricalTasksByProject { get; set; } = new();
+
+    public class HistoricalTaskOption
+    {
+        public int Id { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public string? Status { get; set; }
+        public string? AssigneeName { get; set; }
+        public string? Deadline { get; set; }
+        public string DisplayText => $"{Title}｜{Status ?? "未开始"}｜{AssigneeName ?? "未分配"}｜{Deadline ?? "无截止"}";
+    }
     public List<MeetingPrepDraftTaskItem> PrepDraftAllTasks { get; set; } = new();
     public List<MeetingPrepDraftTaskItem> UndiscussedDraftTasks { get; set; } = new();
     public MeetingPrepDraft? LinkedPrepDraft { get; set; }
@@ -1188,6 +1338,29 @@ public class DetailsModel : PageModel
 
             ProjectTaskGroupsByProject[pid] = await _taskDomainService
                 .GetProjectTaskGroupSelectListAsync(pid);
+        }
+        // 加载各项目下可关联的历史任务（供手动将"新增"改为"变更"）
+        HistoricalTasksByProject = new();
+        foreach (var pid in meetingProjectIds)
+        {
+            var tasks = await _context.ToDoTasks
+                .Where(t => t.ProjectId == pid && !t.IsDeleted
+                    && t.Status != Entities.TaskStatus.Completed
+                    && t.Status != Entities.TaskStatus.Cancelled)
+                .OrderByDescending(t => t.UpdatedAt)
+                .Take(500)
+                .Select(t => new HistoricalTaskOption
+                {
+                    Id = t.Id,
+                    Title = t.Title,
+                    Status = t.Status == Entities.TaskStatus.InProgress ? "进行中"
+                           : t.Status == Entities.TaskStatus.PendingConfirmation ? "待审核"
+                           : "未开始",
+                    AssigneeName = t.Assignee != null ? t.Assignee.RealName : null,
+                    Deadline = t.EndTime.HasValue ? t.EndTime.Value.ToString("yyyy-MM-dd") : null
+                })
+                .ToListAsync();
+            HistoricalTasksByProject[pid] = tasks;
         }
         // Markdown渲染
         var markdownPipeline = new MarkdownPipelineBuilder()

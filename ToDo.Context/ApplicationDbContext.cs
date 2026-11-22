@@ -24,6 +24,7 @@ namespace ToDo.Context
 
         // DbSet 定义
         public DbSet<DailyReport> DailyReport { get; set; }
+        public DbSet<DailyReportSupplement> DailyReportSupplements { get; set; }
         public DbSet<MeetingMinutes> MeetingMinutes { get; set; }
         public DbSet<Project> Project { get; set; }  // 注意：这是 DbSet<Project>，不是 Projects
         public DbSet<TaskGroup> TaskGroups { get; set; }
@@ -92,6 +93,12 @@ namespace ToDo.Context
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+            modelBuilder.Entity<DailyReportSupplement>()
+                .HasIndex(n => new { n.UserId, n.ProjectId, n.ReportDate, n.Revision }).IsUnique();
+            modelBuilder.Entity<DailyReportSupplement>().HasOne(n => n.Project).WithMany()
+                .HasForeignKey(n => n.ProjectId).OnDelete(DeleteBehavior.Restrict);
+            modelBuilder.Entity<DailyReportSupplement>().HasOne(n => n.User).WithMany()
+                .HasForeignKey(n => n.UserId).OnDelete(DeleteBehavior.Restrict);
 
             // 1. MeetingMinutes ↔ Project（多对一）
             modelBuilder.Entity<MeetingMinutes>()

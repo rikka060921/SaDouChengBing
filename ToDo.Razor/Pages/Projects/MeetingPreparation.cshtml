@@ -13,6 +13,21 @@
     #taskTable tbody td { font-size: 0.875rem; }
     /* 表头下方的分类筛选行 */
     #taskTable thead tr.filter-row th { padding: .25rem .3rem; font-weight: normal; vertical-align: middle; }
+    /* 任务变更徽标与悬浮详情 */
+    .change-badge {
+        display: inline-block; margin-left: .35rem; padding: .1rem .4rem;
+        font-size: .72rem; line-height: 1.2; border-radius: .35rem;
+        color: #8a5a00; background: #fff3cd; border: 1px solid #ffd77a;
+        cursor: default; user-select: none; white-space: nowrap; vertical-align: middle;
+    }
+    .change-badge:hover, .change-badge:focus { background: #ffe69c; outline: none; }
+    .change-popover {
+        position: fixed; z-index: 1090; max-width: 460px;
+        padding: .5rem .65rem; background: #fff; border: 1px solid #dee2e6;
+        border-radius: .45rem; box-shadow: 0 6px 24px rgba(0, 0, 0, .15);
+        font-size: .8rem; line-height: 1.55; color: #333; white-space: pre-line;
+        pointer-events: none;
+    }
 </style>
 
 <partial name="_ProjectNav" view-data="ViewData" />
@@ -183,7 +198,7 @@
                                     data-status="@task.Status" data-priority="@task.Priority" data-due="@(task.DeadlineAt?.ToString("yyyy-MM-dd"))"
                                     data-overdue="@(task.IsOverdue ? "1" : "0")" data-assignee="@task.AssigneeName">
                                     <td>@if (!Model.IsReadOnly) { <text><input type="checkbox" class="form-check-input task-checkbox" value="@task.Id" @(isChecked ? "checked" : "") /></text> }</td>
-                                    <td>@task.Title</td>
+                                    <td>@task.Title@if (task.HasChanges) { <span class="change-badge" tabindex="0" data-change-info="@task.ChangeInfo">变更</span> }</td>
                                     <td class="text-muted small">@task.ProjectName</td>
                                     <td>
                                         <span class="badge @(task.Status == ToDo.Entities.TaskStatus.PendingConfirmation ? "bg-warning text-dark" : task.Status == ToDo.Entities.TaskStatus.InProgress ? "bg-primary" : "bg-secondary")">@task.StatusText</span>
@@ -293,6 +308,51 @@
         function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
         function escapeAttr(s) { return escapeHtml(s).replace(/"/g, '&quot;'); }
 
+        // ===== 任务变更徽标：悬浮/聚焦查看最近变更详情 =====
+        let changePopoverEl = null;
+        function ensureChangePopover() {
+            if (changePopoverEl) return changePopoverEl;
+            changePopoverEl = document.createElement('div');
+            changePopoverEl.className = 'change-popover d-none';
+            document.body.appendChild(changePopoverEl);
+            return changePopoverEl;
+        }
+        function showChangePopover(badge) {
+            const info = badge.getAttribute('data-change-info');
+            if (!info) return;
+            const panel = ensureChangePopover();
+            panel.textContent = info;
+            panel.classList.remove('d-none');
+            const rect = badge.getBoundingClientRect();
+            const panelRect = panel.getBoundingClientRect();
+            let left = rect.left;
+            if (left + panelRect.width > window.innerWidth - 12) left = window.innerWidth - panelRect.width - 12;
+            let top = rect.bottom + 6;
+            if (top + panelRect.height > window.innerHeight - 12) top = rect.top - panelRect.height - 6;
+            panel.style.left = Math.max(12, left) + 'px';
+            panel.style.top = Math.max(12, top) + 'px';
+        }
+        function hideChangePopover() { changePopoverEl?.classList.add('d-none'); }
+        document.addEventListener('mouseover', e => {
+            const badge = e.target.closest?.('.change-badge');
+            if (badge) showChangePopover(badge);
+        });
+        document.addEventListener('mouseout', e => {
+            if (e.target.closest?.('.change-badge')) hideChangePopover();
+        });
+        document.addEventListener('click', e => {
+            const badge = e.target.closest?.('.change-badge');
+            if (badge) { showChangePopover(badge); } else { hideChangePopover(); }
+        });
+        document.addEventListener('focusin', e => {
+            const badge = e.target.closest?.('.change-badge');
+            if (badge) showChangePopover(badge);
+        });
+        document.addEventListener('focusout', e => {
+            if (e.target.closest?.('.change-badge')) hideChangePopover();
+        });
+        window.addEventListener('scroll', hideChangePopover, true);
+
         // ===== 会议内容：按项目分组汇总勾选任务 =====
         function buildContent() {
             const groups = new Map();
@@ -367,11 +427,14 @@
                             : t.status === 'InProgress'
                                 ? '<span class="badge bg-primary">进行中</span>'
                                 : '<span class="badge bg-secondary">未开始</span>';
+                        const changeBadge = t.changeInfo
+                            ? `<span class="change-badge" tabindex="0" data-change-info="${escapeAttr(t.changeInfo)}">变更</span>`
+                            : '';
                         return `<tr class="${rowClass}" data-task-id="${t.id}" data-project-name="${escapeAttr(t.projectName)}" data-task-title="${escapeAttr(t.title)}"
                             data-status="${escapeAttr(t.status)}" data-priority="${escapeAttr(t.priority)}" data-due="${escapeAttr(t.deadline || '')}"
                             data-overdue="${t.isOverdue ? '1' : '0'}" data-assignee="${escapeAttr(t.assigneeName)}">
                             <td><input type="checkbox" class="form-check-input task-checkbox" value="${t.id}" ${checked} /></td>
-                            <td>${escapeHtml(t.title)}</td>
+                            <td>${escapeHtml(t.title)}${changeBadge}</td>
                             <td class="text-muted small">${escapeHtml(t.projectName)}</td>
                             <td>${statusBadge}${extraBadge}</td>
                             <td class="small">${t.priority}</td>
